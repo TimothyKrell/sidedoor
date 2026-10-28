@@ -7,7 +7,7 @@ import { paths } from './config'
  * Secrets live one per file in userdata/secrets (0600), never in the settings table, and are never
  * sent to clients (T3 Code stores its secrets the same way).
  */
-export const SECRET_NAMES = ['agent-token', 'access-token', 'hunter-api-key', 'ntfy-token'] as const
+export const SECRET_NAMES = ['agent-token', 'access-token', 'hunter-api-key', 'ntfy-token', 'grokbot-token', 'grokbot-webhook-key'] as const
 export type SecretName = (typeof SECRET_NAMES)[number]
 
 const file = (name: SecretName) => resolve(paths.secrets, `${name}.bin`)
@@ -51,6 +51,20 @@ export const agentToken = () => {
 export const rotateAgentToken = () => {
   setSecret('agent-token', '')
   return agentToken()
+}
+
+/**
+ * Grok Bot's own token for `/mcp`. Its Bots run on a cloud computer and reach Sidedoor at a public
+ * address, so it gets a token of its own that can be revoked without disconnecting anything else.
+ * Empty until the user turns Grok Bot on.
+ */
+export const grokBotToken = (create = false) => {
+  let t = getSecret('grokbot-token')
+  if (!t && create) {
+    t = `sdg_${randomBytes(24).toString('base64url')}`
+    setSecret('grokbot-token', t)
+  }
+  return t
 }
 
 export const safeEqual = (a: string, b: string) => {

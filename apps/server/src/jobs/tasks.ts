@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNull, notInArray, sql } from 'drizzle-orm'
 import { Effect } from 'effect'
 import { z } from 'zod'
 import { logActivity } from '../activity'
@@ -15,6 +15,7 @@ import { htmlToText, truncate } from '../text'
 import { mcpFor, runJob } from '../ai'
 import { context, render, userName } from '../prompts'
 import { runFillForm } from './fill-form'
+import { grokBotKinds } from './handoff'
 import { buildResumePdf, tailoredFor } from '../services/resumes'
 import { editDrafts, editPackage } from '../writing/editor'
 
@@ -287,8 +288,11 @@ const runPrep = async (task: schema.Task): Promise<TaskOutcome> => {
   return { output: r.data.summary, sessionId: r.sessionId, costUsd: r.costUsd ?? undefined, log: r.log, provider: r.provider, model: r.model }
 }
 
-const runResearch = async (task: schema.Task): Promise<TaskOutcome> => {
-  const s = getSettings()
+/**
+ * Company research for an application: the prompt, and the bookkeeping once an agent has done it
+ * (here, or Grok Bot through its task queue).
+ */
+export const researchWork = (task: schema.Task) => {
   const a = task.applicationId ? getApplication(task.applicationId) : undefined
   if (!a) throw new Error('application missing')
   const p = a.postingId ? db.select().from(schema.postings).where(eq(schema.postings.id, a.postingId)).get() : undefined
@@ -305,18 +309,26 @@ const runResearch = async (task: schema.Task): Promise<TaskOutcome> => {
     KNOWN_PEOPLE: known.map((x) => `- ${x.name} (${x.title ?? x.kind}) id=${x.id}`).join('\n') || '- none',
     INSTRUCTIONS: typeof task.input.instructions === 'string' ? task.input.instructions : '(none)',
   })
-  const r = await runJob({ job: 'research', prompt, web: true, mcp: mcpFor('app'), maxTurns: 70, timeoutMs: 40 * 60_000 })
-  const linked = db.select({ n: sql<number>`count(*)` }).from(schema.applicationPeople).where(eq(schema.applicationPeople.applicationId, a.id)).get()?.n ?? 0
-  logActivity('research', `Researched ${a.companyName}: ${linked} people to reach`, { detail: truncate(r.text, 400), link: `/applications/${a.id}` })
-  if (linked > 0) enqueueTask('outreach', `Draft outreach: ${a.companyName} – ${a.role}`, { applicationId: a.id })
-  await notifyPromise({
-    kind: 'research-ready',
-    title: `${a.companyName}: research + ${linked} contacts`,
-    body: truncate(r.text, 400),
-    path: `/applications/${a.id}`,
-    priority: 3,
-    dedupeKey: `research:${task.id}`,
-  })
+  const finish = async (text: string) => {
+    const linked = db.select({ n: sql<number>`count(*)` }).from(schema.applicationPeople).where(eq(schema.applicationPeople.applicationId, a.id)).get()?.n ?? 0
+    logActivity('research', `Researched ${a.companyName}: ${linked} people to reach`, { detail: truncate(text, 400), link: `/applications/${a.id}` })
+    if (linked > 0) enqueueTask('outreach', `Draft outreach: ${a.companyName} – ${a.role}`, { applicationId: a.id })
+    await notifyPromise({
+      kind: 'research-ready',
+      title: `${a.companyName}: research + ${linked} contacts`,
+      body: truncate(text, 400),
+      path: `/applications/${a.id}`,
+      priority: 3,
+      dedupeKey: `research:${task.id}`,
+    })
+  }
+  return { prompt, finish }
+}
+
+const runResearch = async (task: schema.Task): Promise<TaskOutcome> => {
+  const w = researchWork(task)
+  const r = await runJob({ job: 'research', prompt: w.prompt, web: true, mcp: mcpFor('app'), maxTurns: 70, timeoutMs: 40 * 60_000 })
+  await w.finish(r.text)
   return { output: r.text, sessionId: r.sessionId, costUsd: r.costUsd ?? undefined, log: r.log, provider: r.provider, model: r.model }
 }
 
@@ -585,14 +597,15 @@ export const RUNNERS: Partial<Record<schema.TaskKind, (t: schema.Task) => Promis
   'import-resume': (t) => import('./import-resume').then((m) => m.runImportResume(t)),
 }
 
-/** Claim the next runnable task (highest priority, oldest). */
+/** Claim the next runnable task (highest priority, oldest). Tasks sent to Grok Bot wait for it instead. */
 export const claimNextTask = () =>
   db.transaction((tx) => {
     const now = nowIso()
+    const away = grokBotKinds()
     const next = tx
       .select()
       .from(schema.tasks)
-      .where(and(eq(schema.tasks.status, 'queued'), sql`(${schema.tasks.runAfter} is null or ${schema.tasks.runAfter} <= ${now})`))
+      .where(and(eq(schema.tasks.status, 'queued'), sql`(${schema.tasks.runAfter} is null or ${schema.tasks.runAfter} <= ${now})`, ...(away.length ? [notInArray(schema.tasks.kind, away)] : [])))
       .orderBy(desc(schema.tasks.priority), asc(schema.tasks.createdAt))
       .get()
     if (!next) return null

@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import type { IncomingMessage } from 'node:http'
 import { config } from '../config'
-import { agentToken, getSecret, safeEqual, setSecret } from '../secrets'
+import { agentToken, getSecret, grokBotToken, safeEqual, setSecret } from '../secrets'
 
 /**
  * Who may talk to the server. No implicit localhost trust (T3 Code makes the same call): every
@@ -10,6 +10,7 @@ import { agentToken, getSecret, safeEqual, setSecret } from '../secrets'
  * - The desktop app passes a per-launch token on its bootstrap and sets the cookie itself.
  * - Other browsers and phones pair with the access token (a `/pair#token=` link or QR code).
  * - Agents use the agent token on `/mcp` only.
+ * - Grok Bot uses its own token, on `/mcp` (the app tools) only.
  */
 export const COOKIE = 'sidedoor_session'
 
@@ -43,10 +44,13 @@ export const validClientToken = (t: string | null | undefined) => !!t && (safeEq
 /** A browser or the desktop window. */
 export const isClient = (req: IncomingMessage) => validClientToken(readCookie(req.headers.cookie, COOKIE)) || validClientToken(bearer(req))
 
-/** An agent on /mcp. The user's own client token works too (handy for testing tools). */
-export const isAgent = (req: IncomingMessage) => {
+/** Which agent is calling /mcp: one of ours or the user's own (the user's client token works too, handy for testing tools), or Grok Bot. */
+export const agentFor = (req: IncomingMessage): 'agent' | 'grokbot' | null => {
   const t = bearer(req)
-  return !!t && (safeEqual(t, agentToken()) || validClientToken(t))
+  if (!t) return null
+  if (safeEqual(t, agentToken()) || validClientToken(t)) return 'agent'
+  const g = grokBotToken()
+  return g && safeEqual(t, g) ? 'grokbot' : null
 }
 
 /**

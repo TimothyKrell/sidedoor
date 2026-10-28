@@ -952,9 +952,34 @@ export const STAGES_HELP = Object.entries(STAGE_LABEL)
   .map(([k, v]) => `${k} (${v})`)
   .join(' → ')
 
-/** Tool sets per MCP endpoint. Story interviews may only save stories; JSON jobs may only look things up. */
+/** Grok Bot's task queue: the work Sidedoor sends it (see jobs/handoff.ts). Only Grok Bot's token sees these. */
+export const grokBotTools = [
+  tool(
+    'take_task',
+    "Take a task Sidedoor sent you: the one named by taskId (from the routine's webhook request), or the next one waiting. Returns its instructions; do them with Sidedoor's tools, then call finish_task. Returns 'nothing to do' when nothing is waiting.",
+    { taskId: z.string().optional() },
+    safe(async ({ taskId }) => {
+      const t = await (await import('../jobs/handoff')).takeTask(taskId)
+      if (!t) return taskId ? `Nothing to do: task ${taskId} isn't waiting (another run took it, or it was cancelled).` : 'Nothing to do: no tasks are waiting.'
+      return `${t.instructions}\n\n---\nSidedoor task ${t.id} (${t.kind}): ${t.title}\nWhen you're done, call finish_task with taskId "${t.id}" and a short summary the user can read on their phone. If you can't finish it, call finish_task with error saying why.`
+    }),
+  ),
+  tool(
+    'finish_task',
+    'Report back on a task you took with take_task: summary when it is done (who and what you found, the best next move), or error when you could not do it. Sidedoor then notifies the user and starts any follow-on work.',
+    { taskId: z.string(), summary: z.string().optional(), error: z.string().optional() },
+    safe(async ({ taskId, summary, error }) => {
+      if (!summary && !error) throw new Error('Give a summary, or an error if you could not do it.')
+      await (await import('../jobs/handoff')).finishTask(taskId, error ? { error } : { summary: summary! })
+      return error ? 'Recorded as failed.' : 'Done. Sidedoor has it.'
+    }),
+  ),
+]
+
+/** Tool sets per MCP endpoint. Story interviews may only save stories; JSON jobs may only look things up; Grok Bot adds its task queue. */
 export const TOOL_PROFILES = {
   app: null,
+  grokbot: null,
   story: ['save_story', 'check_tells', 'get_profile_doc'],
   lookup: ['read_page', 'board_jobs', 'get_company', 'list_sources'],
 } as const
@@ -962,7 +987,7 @@ export type ToolProfile = keyof typeof TOOL_PROFILES
 
 export const toolsFor = (profile: ToolProfile) => {
   const only = TOOL_PROFILES[profile]
-  const all = [...appTools, ...profileTools]
+  const all = [...appTools, ...profileTools, ...(profile === 'grokbot' ? grokBotTools : [])]
   return only ? all.filter((t) => (only as readonly string[]).includes(t.name)) : all
 }
 

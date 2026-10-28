@@ -6,6 +6,7 @@ import { type ReactNode, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { AiConnections, CopyCommand } from '~/components/app/ai-connect'
 import { ChipsInput, PillSelect } from '~/components/app/chips'
+import { GrokBotCard } from '~/components/app/grok-bot'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Switch } from '~/components/ui/switch'
@@ -421,6 +422,9 @@ function AiSection() {
         <Row label="Pause all AI work">
           <Switch checked={worker.v.paused} onCheckedChange={(paused) => worker.set({ paused })} />
         </Row>
+      </Card>
+      <Card title="Grok Bot" desc="xAI’s Grok Bot agent. Its Bots can work on your search, and take the research you send them.">
+        <GrokBotCard />
       </Card>
       <OtherAgents />
     </>

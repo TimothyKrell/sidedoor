@@ -169,6 +169,22 @@ export const AppSettings = z.object({
       opencode: z.object({ path: z.string().default('') }).prefault({}),
     })
     .prefault({}),
+  /**
+   * xAI's Grok Bot, an agent that runs on a cloud computer: it reaches Sidedoor's MCP endpoint at a
+   * public address, and takes the jobs sent to it from a queue (a routine webhook wakes it).
+   */
+  grokBot: z
+    .object({
+      /** The public address Grok Bot reaches Sidedoor at, e.g. a Tailscale Funnel URL. */
+      publicUrl: z.string().default(''),
+      /** The POST URL of the Grok Bot routine that takes Sidedoor's tasks. Its key is a secret. */
+      webhookUrl: z.string().default(''),
+      /** Send company research to Grok Bot instead of running it here. */
+      research: z.boolean().default(false),
+      /** Send research on X to Grok Bot. */
+      x: z.boolean().default(false),
+    })
+    .prefault({}),
   app: z
     .object({
       theme: z.enum(['system', 'light', 'dark']).default('system'),

@@ -169,6 +169,65 @@ export const router = {
   }),
   connectInfo: proc(none, async () => (await import('../ai/connect')).connectInfo()),
 
+  // ------------------------------------------------------------------ Grok Bot
+  grokBot: proc(none, async () => {
+    const { grokBotToken, hasSecret } = await import('../secrets')
+    const { grokBotStatus } = await import('../jobs/handoff')
+    const { config } = await import('../config')
+    const { template } = await import('../prompts')
+    const g = (await settingsm()).getSettings().grokBot
+    const token = grokBotToken()
+    const base = g.publicUrl.trim().replace(/\/$/, '')
+    return {
+      on: !!token,
+      token,
+      mcpUrl: base ? `${base}/mcp` : '',
+      header: `Authorization: Bearer ${token}`,
+      settings: g,
+      hasKey: hasSecret('grokbot-webhook-key'),
+      // Tailscale Funnel publishes only /mcp; the rest of the app stays private.
+      funnel: `tailscale funnel --bg --https=443 --set-path=/mcp http://127.0.0.1:${config.port}/mcp`,
+      // Unwrapped, so it reads and pastes as plain paragraphs.
+      routine: template('grokbot-routine').replace(/(\S)\n(?!\n|\d+\. )\s*/g, '$1 ').trim(),
+      ...grokBotStatus(),
+    }
+  }),
+  /** Turn Grok Bot on (it gets its own MCP token) or off (the token and the webhook key are removed). */
+  setGrokBot: proc(z.object({ on: z.boolean() }), async ({ on }) => {
+    const { grokBotToken, setSecret } = await import('../secrets')
+    if (on) grokBotToken(true)
+    else {
+      setSecret('grokbot-token', '')
+      setSecret('grokbot-webhook-key', '')
+    }
+    return { ok: true }
+  }),
+  rotateGrokBotToken: proc(none, async () => {
+    const { grokBotToken, setSecret } = await import('../secrets')
+    setSecret('grokbot-token', '')
+    grokBotToken(true)
+    return { ok: true }
+  }),
+  saveGrokBot: proc(
+    z.object({ publicUrl: z.string().optional(), webhookUrl: z.string().optional(), webhookKey: z.string().optional(), research: z.boolean().optional(), x: z.boolean().optional() }),
+    async ({ webhookKey, ...patch }) => {
+      if (patch.publicUrl) patch.publicUrl = new URL(patch.publicUrl.trim()).origin
+      if (patch.webhookUrl) {
+        const u = new URL(patch.webhookUrl.trim())
+        if (u.protocol !== 'https:') throw new Error('The webhook URL starts with https://')
+        patch.webhookUrl = u.href
+      }
+      ;(await settingsm()).updateSettings('grokBot', patch)
+      // The routine's key is shown as a whole header in Grok Bot; keep only the key.
+      if (webhookKey !== undefined) (await import('../secrets')).setSecret('grokbot-webhook-key', webhookKey.trim().replace(/^authorization:\s*/i, '').replace(/^bearer\s+/i, ''))
+      return { ok: true }
+    },
+  ),
+  testGrokBot: proc(none, async () => {
+    await (await import('../jobs/handoff')).wakeGrokBot()
+    return { ok: true }
+  }),
+
   // ------------------------------------------------------------------ onboarding + profile
   docs: proc(none, async () => {
     const d = await docs()

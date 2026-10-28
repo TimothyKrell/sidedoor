@@ -102,6 +102,21 @@ contract.
 Each background job kind (triage, prep, research, ...) picks a provider + model in Settings, with
 one default. Jobs run in an empty scratch directory per task, never in a user folder.
 
+## Grok Bot
+
+xAI's Grok Bot isn't a CLI on this computer: its Bots run on a cloud computer. It connects the
+other way round.
+
+- **It reaches Sidedoor** at a public address (Tailscale Funnel publishing `/mcp` only) with its
+  own token (`secrets/grokbot-token.bin`). That token works on `/mcp` alone and gets the app tools
+  plus `take_task` / `finish_task`.
+- **Sidedoor sends it work** through the task queue (`jobs/handoff.ts`). Kinds the user sends to
+  Grok Bot (company research, research on X) are skipped by the local runner. A tick POSTs each
+  waiting task to the user's Grok Bot routine webhook. The Bot calls `take_task` to get the same
+  prompt a local AI would get, does it with the app tools, and calls `finish_task`. That runs the
+  same bookkeeping as a local run (activity, notification, outreach next). Tasks it takes and
+  doesn't finish in two hours go back in the queue. Restarts leave its tasks alone.
+
 ## Repository layout
 
 ```

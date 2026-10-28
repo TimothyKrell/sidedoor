@@ -1,6 +1,7 @@
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lte, sql } from 'drizzle-orm'
 import { Duration, Effect, Fiber, Ref, Schedule } from 'effect'
 import { logActivity } from '../activity'
+import { grokBotTick } from './handoff'
 import { claimNextTask, executeTask, runTriage } from './tasks'
 import { db, schema } from '../db/client'
 import { nowIso, today } from '../ids'
@@ -52,11 +53,13 @@ const taskLoop = Effect.gen(function* () {
   const running = yield* Ref.make(0)
   // Anything left "running" belongs to a previous process that died: run it again, unless it has
   // already been interrupted twice (it may be what's taking the server down).
+  // Grok Bot's tasks run on its computer, not in this process: they keep going.
+  const ours = and(eq(schema.tasks.status, 'running'), sql`coalesce(${schema.tasks.provider}, '') <> 'grokbot'`)
   db.update(schema.tasks)
     .set({ status: 'failed', error: 'Stopped twice when Sidedoor quit or crashed while it ran; not retrying. Use Retry to run it again.', finishedAt: nowIso() })
-    .where(and(eq(schema.tasks.status, 'running'), gte(schema.tasks.attempts, 2)))
+    .where(and(ours, gte(schema.tasks.attempts, 2)))
     .run()
-  db.update(schema.tasks).set({ status: 'queued', startedAt: null }).where(eq(schema.tasks.status, 'running')).run()
+  db.update(schema.tasks).set({ status: 'queued', startedAt: null }).where(ours).run()
   yield* Effect.gen(function* () {
     const s = getSettings().worker
     if (s.paused) return
@@ -172,7 +175,8 @@ const main = Effect.gen(function* () {
   const triage = yield* triageTick.pipe((e) => guarded('triage', e), Effect.repeat(Schedule.spaced(Duration.seconds(15))), Effect.forkChild)
   const tasks = yield* taskLoop.pipe(Effect.forkChild)
   const sched = yield* scheduleTick.pipe((e) => guarded('schedule', e), Effect.repeat(Schedule.spaced(Duration.minutes(1))), Effect.forkChild)
-  yield* Fiber.joinAll([scout, triage, tasks, sched])
+  const grok = yield* Effect.promise(() => grokBotTick()).pipe((e) => guarded('grokbot', e), Effect.repeat(Schedule.spaced(Duration.seconds(15))), Effect.forkChild)
+  yield* Fiber.joinAll([scout, triage, tasks, sched, grok])
 })
 
 /** Start the background loops. Returns a function that stops them. */

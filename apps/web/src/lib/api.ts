@@ -38,6 +38,7 @@ export const qo = {
   starterSources: () => queryOptions({ queryKey: ['sources', 'starter'], queryFn: () => rpc.starterSources() }),
   access: () => queryOptions({ queryKey: ['settings', 'access'], queryFn: () => rpc.access() }),
   connectInfo: () => queryOptions({ queryKey: ['aiStatus', 'connectInfo'], queryFn: () => rpc.connectInfo() }),
+  grokBot: () => queryOptions({ queryKey: ['grokBot'], queryFn: () => rpc.grokBot() }),
 }
 
 // The page components were written against `fooFn({ data })` server functions; these keep that

@@ -8,7 +8,7 @@ import { docBody, isWritten } from './services/documents'
 import { getSettings } from './settings'
 
 const cache = new Map<string, string>()
-const template = (name: string) => {
+export const template = (name: string) => {
   // Prompts ship with the app; read once per process (dev restarts on change).
   let t = cache.get(name)
   if (t === undefined) {

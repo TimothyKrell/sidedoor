@@ -41,7 +41,7 @@ Things I decided provisionally or couldn't decide alone, roughly by how soon the
 8. **Grok Bot: decided** (Oct 28). It means xAI's Grok Bot desktop agent, not only the Grok Build
    CLI. Its Bots run on a cloud computer, so it reaches Sidedoor's MCP endpoint at a public address
    (Tailscale Funnel on `/mcp` only, with its own revocable token), and it takes research work
-   from a queue in Sidedoor that a Grok Bot routine checks. Grok Bot has no API for starting a
+   from a queue in Sidedoor; a Grok Bot routine webhook wakes it. Grok Bot has no API for starting a
    task from another app.
 9. **New-user defaults.** Auto-prep, auto-research and the funding radar start off (they spend the
    user's subscription); triage and daily discovery start on. Your migrated settings keep yours

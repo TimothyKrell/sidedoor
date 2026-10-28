@@ -67,6 +67,7 @@ function TaskRow({ t }: { t: T }) {
           {t.status === 'failed' && t.error && <span className={cn('block truncate text-xs', byEmail(t) ? 'text-muted-foreground' : 'text-destructive')}>{headline(t.error)}</span>}
         </span>
         {t.status === 'queued' && <span className="shrink-0 text-xs text-muted-foreground">Waiting</span>}
+        {t.status === 'running' && t.provider === 'grokbot' && <span className="shrink-0 text-xs text-muted-foreground">Grok Bot is on it</span>}
         {t.status === 'cancelled' && <span className="shrink-0 text-xs text-muted-foreground">Stopped</span>}
         <TimeAgo iso={t.finishedAt ?? t.startedAt ?? t.createdAt} className="hidden shrink-0 text-xs text-muted-foreground sm:block" />
       </button>

@@ -63,6 +63,15 @@ current when making a non-obvious call. Open questions for the maintainer live i
   comments and technical docs still name the CLI.
 - **Grok for X.** Grok Build can search X, so "Research on X" (find people at a company on X,
   scan for hiring posts) prefers Grok when it's connected.
+- **Grok Bot takes work from a queue; nothing pushes it.** Grok Bot (xAI's desktop agent) has no
+  API for starting a task, and its Bots run on a cloud computer. So it connects to Sidedoor's
+  `/mcp` at a public address with a token of its own. Research sent to it waits in the task queue,
+  a routine webhook wakes the Bot, and it takes and reports back on tasks through MCP. Driving its
+  desktop window instead (as an unofficial macOS tool does) would be fragile. Polling on a schedule
+  would spend the user's Grok Bot usage when there's nothing to do.
+- **Only `/mcp` goes public for Grok Bot.** Tailscale Funnel publishes that one path. The web app,
+  files and pairing stay on the tailnet. Grok Bot's token can't reach `/mcp/browser` or the API,
+  and turning Grok Bot off deletes it.
 
 ## MCP
 
