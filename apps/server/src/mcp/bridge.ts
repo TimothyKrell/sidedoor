@@ -4,14 +4,23 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js'
 import { paths } from '../config'
-import { agentToken } from '../secrets'
+import { agentToken, grokBotToken } from '../secrets'
 
 /**
  * `sidedoor mcp`: a stdio MCP server that forwards to the running app's `/mcp` endpoint. This is
  * what "Connect" registers in the user's Claude Code / Codex / Grok / OpenCode: their config holds
- * a command, never a port or token, so it keeps working when either changes.
+ * a command, never a port or token, so it keeps working when either changes. `sidedoor mcp grokbot`
+ * is the same for Grok Bot when its Bot runs on this computer: it signs in with Grok Bot's token.
  */
 export const runtimeFile = () => resolve(paths.state, 'server-runtime.json')
+
+/** Where the bridge connects for a profile, and with which token. */
+export const bridgeTarget = (profile: string) => {
+  if (profile !== 'grokbot') return { path: `/mcp${profile ? `/${profile}` : ''}`, token: agentToken() }
+  const token = grokBotToken()
+  if (!token) throw new Error('Grok Bot is turned off. Turn it on in Sidedoor: Settings → AI → Grok Bot.')
+  return { path: '/mcp', token }
+}
 
 export const runBridge = async (profile = '') => {
   const stdio = new StdioServerTransport()
@@ -23,8 +32,9 @@ export const runBridge = async (profile = '') => {
     const f = runtimeFile()
     if (!existsSync(f)) throw new Error('Sidedoor is not running. Open the Sidedoor app, then try again.')
     const { port } = JSON.parse(readFileSync(f, 'utf8')) as { port: number }
-    const t = new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp${profile ? `/${profile}` : ''}`), {
-      requestInit: { headers: { Authorization: `Bearer ${agentToken()}` } },
+    const { path, token } = bridgeTarget(profile)
+    const t = new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}${path}`), {
+      requestInit: { headers: { Authorization: `Bearer ${token}` } },
     })
     t.onmessage = (m) => void stdio.send(m)
     t.onerror = (e) => console.error('[sidedoor mcp]', e.message)

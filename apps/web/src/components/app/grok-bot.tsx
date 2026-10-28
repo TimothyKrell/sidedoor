@@ -22,9 +22,10 @@ const Step = ({ n, title, children }: { n: number; title: string; children: Reac
 const Hint = ({ children }: { children: ReactNode }) => <p className="text-xs text-muted-foreground">{children}</p>
 
 /**
- * xAI's Grok Bot, as a row in "Your AI": its Bots run on a cloud computer, so they reach Sidedoor at
- * a public address with their own token, and take the research sent to them from Sidedoor's queue.
- * A routine webhook wakes the Bot when something is waiting.
+ * xAI's Grok Bot, as a row in "Your AI". A Bot that runs on this computer starts Sidedoor's MCP
+ * bridge with Grok Bot's own token; one on Grok Bot's cloud computer reaches /mcp at a public address.
+ * Either way it takes the research sent to it from Sidedoor's queue, and a routine webhook wakes it
+ * when something is waiting.
  */
 export function GrokBotRow() {
   const qc = useQueryClient()
@@ -80,7 +81,7 @@ export function GrokBotRow() {
               <span className="text-xs text-hot">Waiting for Grok Bot to connect</span>
             )}
           </div>
-          <p className="mt-0.5 text-sm text-muted-foreground">xAI’s Grok Bot. Its Bots run in the cloud: they can work on your search, and take the research you send them.</p>
+          <p className="mt-0.5 text-sm text-muted-foreground">xAI’s Grok Bot. Its Bots can work on your search, and take the research you send them.</p>
           {data.on && work.length > 0 && <p className="mt-0.5 text-xs text-muted-foreground">{work.join(' · ')}</p>}
         </div>
         {data.on ? (
@@ -96,24 +97,33 @@ export function GrokBotRow() {
 
       {showSetup && (
         <div className="mt-3 space-y-5 border-t pt-3">
-          <Step n={1} title="Let Grok Bot reach Sidedoor">
-            <Hint>
-              Grok Bot runs on a cloud computer, so it needs a public address. Tailscale Funnel publishes Sidedoor’s agent endpoint (/mcp) and nothing else; every request needs Grok Bot’s token.
-            </Hint>
-            <CopyCommand cmd={data.funnel} />
-            <div className="flex gap-2">
-              <Input value={publicUrl} onChange={(e) => setPublicUrl(e.target.value)} placeholder="https://your-machine.your-tailnet.ts.net" />
-              <Button variant="outline" disabled={publicUrl === data.settings.publicUrl || !!busy} onClick={() => void run('url', () => rpc.saveGrokBot({ publicUrl }), 'Saved')}>
-                {spin('url')} Save
-              </Button>
-            </div>
-            {data.mcpUrl && (
-              <>
-                <Hint>In Grok Bot, add a custom MCP server with this server URL and HTTP header:</Hint>
-                <CopyCommand cmd={data.mcpUrl} />
-                <CopyCommand cmd={data.header} />
-              </>
-            )}
+          <Step n={1} title="Connect it to Sidedoor">
+            <Hint>In Grok Bot, add a custom MCP server: Command, “Run a command on your local computer”, with this command and arguments. Grok Bot needs to be open on this computer.</Hint>
+            <CopyCommand cmd={data.command.command} />
+            <CopyCommand cmd={data.command.args.join(' ')} />
+            {Object.entries(data.command.env).map(([k, v]) => (
+              <CopyCommand key={k} cmd={`${k}=${v}`} />
+            ))}
+            <details className="text-sm">
+              <summary className="cursor-pointer text-muted-foreground hover:text-foreground">If your Bot runs on Grok Bot’s computer instead</summary>
+              <div className="mt-2 space-y-2">
+                <Hint>It needs a public address then. Tailscale Funnel publishes Sidedoor’s agent endpoint (/mcp) and nothing else; every request needs Grok Bot’s token.</Hint>
+                <CopyCommand cmd={data.funnel} />
+                <div className="flex gap-2">
+                  <Input value={publicUrl} onChange={(e) => setPublicUrl(e.target.value)} placeholder="https://your-machine.your-tailnet.ts.net" />
+                  <Button variant="outline" disabled={publicUrl === data.settings.publicUrl || !!busy} onClick={() => void run('url', () => rpc.saveGrokBot({ publicUrl }), 'Saved')}>
+                    {spin('url')} Save
+                  </Button>
+                </div>
+                {data.mcpUrl && (
+                  <>
+                    <Hint>Add a custom MCP server, Remote HTTPS, with this server URL and HTTP header:</Hint>
+                    <CopyCommand cmd={data.mcpUrl} />
+                    <CopyCommand cmd={data.header} />
+                  </>
+                )}
+              </div>
+            </details>
           </Step>
 
           <Step n={2} title="Send it research">

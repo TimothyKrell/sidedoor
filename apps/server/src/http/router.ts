@@ -175,6 +175,7 @@ export const router = {
     const { grokBotStatus } = await import('../jobs/handoff')
     const { config } = await import('../config')
     const { template } = await import('../prompts')
+    const bridge = (await import('../ai/connect')).bridgeCommand()
     const g = (await settingsm()).getSettings().grokBot
     const token = grokBotToken()
     const base = g.publicUrl.trim().replace(/\/$/, '')
@@ -185,6 +186,8 @@ export const router = {
       header: `Authorization: Bearer ${token}`,
       settings: g,
       hasKey: hasSecret('grokbot-webhook-key'),
+      // A Bot that runs on this computer starts Sidedoor's MCP bridge as a command, as Claude does.
+      command: { ...bridge, args: [...bridge.args, 'grokbot'] },
       // Tailscale Funnel publishes only /mcp; the rest of the app stays private.
       funnel: `tailscale funnel --bg --https=443 --set-path=/mcp http://127.0.0.1:${config.port}/mcp`,
       // Unwrapped, so it reads and pastes as plain paragraphs.

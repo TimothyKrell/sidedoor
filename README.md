@@ -68,9 +68,10 @@ Sidedoor exposes its tools over [MCP](https://modelcontextprotocol.io). In **Set
 "Add Sidedoor to Claude" (or Codex, Grok, OpenCode; each shows once it's installed and signed
 in) and it registers itself in that tool's config. Any other MCP client can connect too; the same page shows the config to paste.
 
-**Grok Bot** (xAI's agent) runs in the cloud, so it connects the other way: Settings → AI → Grok
-Bot gives it its own token for a public address of your choosing (Tailscale Funnel works). You can
-send it company research and research on X, and a Grok Bot routine picks those up.
+**Grok Bot** (xAI's agent) is in the same list. A Bot that runs on your computer connects with a
+local command, as Claude does; one on Grok Bot's own computer needs a public address (Tailscale
+Funnel works). Either way it gets its own token. You can send it company research and research on
+X, and a Grok Bot routine picks those up.
 
 Agents can read your pipeline, edit your resume line by line (you review each change), draft
 messages, log touchpoints, look up job boards and read JavaScript-heavy job pages. They can't send

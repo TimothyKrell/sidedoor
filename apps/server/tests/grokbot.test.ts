@@ -5,6 +5,7 @@ import { db, schema } from '../src/db/client'
 import { agentFor } from '../src/http/auth'
 import { finishTask, grokBotKinds, grokBotSeen, grokBotStatus, grokBotTick, STALE_MS, takeTask } from '../src/jobs/handoff'
 import { claimNextTask } from '../src/jobs/tasks'
+import { bridgeTarget } from '../src/mcp/bridge'
 import { toolsFor } from '../src/mcp/tools'
 import { agentToken, grokBotToken, setSecret } from '../src/secrets'
 import { createApplication } from '../src/services/applications'
@@ -38,6 +39,14 @@ describe('Grok Bot connects with its own token', () => {
     expect(agentFor(req(t))).toBe('grokbot')
     setSecret('grokbot-token', '')
     expect(agentFor(req(t))).toBeNull()
+  })
+
+  test('a Bot on this computer connects through the local bridge as Grok Bot', () => {
+    expect(() => bridgeTarget('grokbot')).toThrow(/turned off/)
+    const t = grokBotToken(true)
+    expect(bridgeTarget('grokbot')).toEqual({ path: '/mcp', token: t })
+    expect(agentFor(req(bridgeTarget('grokbot').token))).toBe('grokbot')
+    expect(bridgeTarget('')).toEqual({ path: '/mcp', token: agentToken() })
   })
 
   test('Settings can tell once Grok Bot has connected', () => {

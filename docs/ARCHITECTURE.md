@@ -104,12 +104,14 @@ one default. Jobs run in an empty scratch directory per task, never in a user fo
 
 ## Grok Bot
 
-xAI's Grok Bot isn't a CLI on this computer: its Bots run on a cloud computer. It connects the
-other way round.
+xAI's Grok Bot isn't a CLI Sidedoor runs: it's an agent with its own app, and it connects to
+Sidedoor rather than the other way round.
 
-- **It reaches Sidedoor** at a public address (Tailscale Funnel publishing `/mcp` only) with its
-  own token (`secrets/grokbot-token.bin`). That token works on `/mcp` alone and gets the app tools
-  plus `take_task` / `finish_task`.
+- **It reaches Sidedoor** with its own token (`secrets/grokbot-token.bin`), which works on `/mcp`
+  alone and gets the app tools plus `take_task` / `finish_task`. A Bot that runs on this computer
+  starts the stdio bridge as `sidedoor mcp grokbot`, which signs in with that token. A Bot on Grok
+  Bot's cloud computer reaches `/mcp` at a public address (Tailscale Funnel publishing that path
+  only).
 - **Sidedoor sends it work** through the task queue (`jobs/handoff.ts`). Kinds the user sends to
   Grok Bot (company research, research on X) are skipped by the local runner. A tick POSTs each
   waiting task to the user's Grok Bot routine webhook. The Bot calls `take_task` to get the same
