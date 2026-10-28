@@ -184,6 +184,7 @@ const handle = async (req: IncomingMessage, res: ServerResponse) => {
     if (agent === 'grokbot') {
       if (profile !== 'app') return json(res, 404, { error: 'Unknown MCP endpoint' })
       profile = 'grokbot'
+      ;(await import('../jobs/handoff')).grokBotSeen()
     }
     const body = req.method === 'POST' ? await readJson(req) : undefined
     const { handleMcp } = await import('../mcp/server')

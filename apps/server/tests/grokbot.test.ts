@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { db, schema } from '../src/db/client'
 import { agentFor } from '../src/http/auth'
-import { finishTask, grokBotKinds, grokBotTick, STALE_MS, takeTask } from '../src/jobs/handoff'
+import { finishTask, grokBotKinds, grokBotSeen, grokBotStatus, grokBotTick, STALE_MS, takeTask } from '../src/jobs/handoff'
 import { claimNextTask } from '../src/jobs/tasks'
 import { toolsFor } from '../src/mcp/tools'
 import { agentToken, grokBotToken, setSecret } from '../src/secrets'
@@ -38,6 +38,12 @@ describe('Grok Bot connects with its own token', () => {
     expect(agentFor(req(t))).toBe('grokbot')
     setSecret('grokbot-token', '')
     expect(agentFor(req(t))).toBeNull()
+  })
+
+  test('Settings can tell once Grok Bot has connected', () => {
+    turnOn()
+    grokBotSeen()
+    expect(grokBotStatus().seenAt).toBeTruthy()
   })
 
   test('only Grok Bot sees its task queue tools', () => {

@@ -155,6 +155,14 @@ export const grokBotTick = async () => {
   }
 }
 
+let lastSeen = 0
+/** Note that Grok Bot reached Sidedoor, at most every few minutes, so Settings can say it's connected. */
+export const grokBotSeen = () => {
+  if (Date.now() - lastSeen < 5 * 60_000) return
+  lastSeen = Date.now()
+  setMeta('grokBotSeenAt', nowIso())
+}
+
 /** What Settings shows about Grok Bot. */
 export const grokBotStatus = () => {
   const kinds = Object.keys(HANDOFF) as schema.TaskKind[]
@@ -163,6 +171,7 @@ export const grokBotStatus = () => {
   return {
     waiting: grokBotKinds().length ? count('queued') : 0,
     working: count('running'),
+    seenAt: getMeta<string>('grokBotSeenAt') ?? null,
     tookAt: getMeta<string>('grokBotTookAt') ?? null,
     finishedAt: getMeta<string>('grokBotFinishedAt') ?? null,
     wake: getMeta<WakeState>('grokBotWake') ?? null,

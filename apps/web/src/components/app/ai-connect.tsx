@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, Copy, ExternalLink, Loader2, RefreshCw } from 'lucide-react'
-import { useState } from 'react'
+import { type ReactNode, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '~/components/ui/button'
 import { Switch } from '~/components/ui/switch'
@@ -43,9 +43,10 @@ export function CopyCommand({ cmd }: { cmd: string }) {
 
 /**
  * The AI CLIs on this computer: installed or not, signed in or not, which one Sidedoor uses, and
- * whether the user's own sessions can reach Sidedoor (its MCP server registered in that CLI).
+ * whether the user's own sessions can reach Sidedoor (its MCP server registered in that CLI). `extra`
+ * goes after them, for AIs that aren't a CLI here (Grok Bot).
  */
-export function AiConnections({ compact = false }: { compact?: boolean }) {
+export function AiConnections({ compact = false, extra }: { compact?: boolean; extra?: ReactNode }) {
   const qc = useQueryClient()
   const { data, isFetching } = useQuery(qo.aiStatus())
   const [busy, setBusy] = useState<string | null>(null)
@@ -145,6 +146,7 @@ export function AiConnections({ compact = false }: { compact?: boolean }) {
           </div>
         )
       })}
+      {extra}
       <Button variant="ghost" size="sm" onClick={() => void recheck()} disabled={isFetching}>
         <RefreshCw className={cn(isFetching && 'animate-spin')} /> Check again
       </Button>
