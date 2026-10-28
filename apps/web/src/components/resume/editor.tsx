@@ -1,13 +1,13 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { ArrowLeft, Bot, Check, FileDown, Loader2, MessageSquarePlus, Minus, PanelRightClose, PanelRightOpen, Plus } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ArrowLeft, Bot, Check, ChevronUp, FileDown, Loader2, MessageSquarePlus, Minus, PanelRightClose, PanelRightOpen, Plus, TriangleAlert } from 'lucide-react'
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { diffResume, type ResumeContent, resumeLines, setLine, type ThemeOptions } from '@sidedoor/shared/resume'
 import { renderResume, THEMES } from '@sidedoor/shared/resume-themes'
-import type { MatchLevel } from '@sidedoor/shared/match'
+import { LEVEL_META, type MatchLevel } from '@sidedoor/shared/match'
 import { checkTellsWith, STRONG_WEIGHT } from '@sidedoor/shared/tells'
-import { MatchList, MatchRing, RecheckButton } from '~/components/app/match'
+import { LevelBar, MatchList, MatchRing, RecheckButton } from '~/components/app/match'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Switch } from '~/components/ui/switch'
@@ -52,6 +52,7 @@ export function ResumeEditor({ resumeId }: { resumeId: string }) {
   const [tab, setTab] = useState<Tab>(() => (pref('tab', 'content') as Tab) || 'content')
   // On a phone the panel covers the page, so start with the page.
   const [panel, setPanel] = useState(() => pref('panel', '1') === '1' && (typeof window === 'undefined' || window.innerWidth >= 768))
+  const [matchOpen, setMatchOpen] = useState(() => pref('matchFloat', '1') === '1')
   const [fit, setFit] = useState(1)
   const [pages, setPages] = useState(1)
   const [building, setBuilding] = useState(false)
@@ -360,6 +361,18 @@ export function ResumeEditor({ resumeId }: { resumeId: string }) {
 
       <div className="relative flex min-h-0 flex-1">
         <div ref={stage} className="relative min-w-0 flex-1 overflow-auto bg-muted/50">
+          {match && (
+            <MatchFloat
+              d={match}
+              open={matchOpen}
+              onToggle={() => {
+                setMatchOpen(!matchOpen)
+                setPref('matchFloat', matchOpen ? '0' : '1')
+              }}
+              onRecheck={() => void rpc.startTask({ kind: 'match', applicationId: match.applicationId })}
+              onDetails={() => openTab('match')}
+            />
+          )}
           <div className="mx-auto py-6" style={{ width: size.w * scale }}>
             <div style={{ width: size.w, height: Math.max(size.h, pages * size.h) * (options.scale ?? 1), transform: `scale(${scale})`, transformOrigin: 'top left' }}>
               {srcDoc && <iframe key={renderKey} ref={frame} title="Resume preview" srcDoc={srcDoc} onLoad={onLoad} sandbox="allow-same-origin" className="size-full border-0" />}
@@ -447,6 +460,83 @@ export function ResumeEditor({ resumeId }: { resumeId: string }) {
         )}
       </div>
     </div>
+  )
+}
+
+type DocMatch = NonNullable<Awaited<ReturnType<typeof rpc.resume>>['match']>
+
+/**
+ * The match at a glance, floating over the page whatever the side panel shows: score, must-haves,
+ * gaps, and whether the resume changed since the check. Collapses to a score pill.
+ */
+function MatchFloat({ d, open, onToggle, onRecheck, onDetails }: { d: DocMatch; open: boolean; onToggle: () => void; onRecheck: () => void; onDetails: () => void }) {
+  const m = d.match
+  const shell = 'pointer-events-auto rounded-xl border bg-background/90 shadow-lg backdrop-blur'
+  // A zero-height sticky row, so the card stays put while the page scrolls under it.
+  const pin = (card: ReactNode) => <div className="pointer-events-none sticky top-4 z-10 flex h-0 justify-end pr-6">{card}</div>
+  if (!m)
+    return pin(
+      <div className={cn(shell, 'flex h-fit items-center gap-2 p-1.5 pl-3 text-xs text-muted-foreground')}>
+        No match check yet
+        <RecheckButton stale={false} running={d.running} onRecheck={onRecheck} />
+      </div>,
+    )
+  const must = m.requirements.filter((r) => r.kind === 'must')
+  const covered = must.filter((r) => r.level === 'strong' || r.level === 'partial').length
+  const gaps = must.filter((r) => r.level === 'weak' || r.level === 'missing')
+  if (!open)
+    return pin(
+      <button type="button" onClick={onToggle} className={cn(shell, 'flex h-fit items-center gap-2 py-1.5 pr-3 pl-1.5 text-xs transition-colors hover:bg-accent')} title="Show the resume match">
+        <MatchRing score={m.score} size={30} />
+        {must.length > 0 && (
+          <span className="text-muted-foreground tabular-nums">
+            {covered}/{must.length} must-haves
+          </span>
+        )}
+        {d.running ? <Loader2 className="size-3.5 animate-spin text-primary" /> : d.stale && <TriangleAlert className="size-3.5 text-hot" aria-label="Resume changed since check" />}
+      </button>,
+    )
+  return pin(
+    <div className={cn(shell, 'h-fit w-[min(22rem,calc(100%-2rem))] p-3')}>
+      <div className="flex items-center gap-3">
+        <MatchRing score={m.score} size={44} />
+        <div className="min-w-0 flex-1 space-y-1.5">
+          <div className="flex items-baseline gap-2 text-sm">
+            <span className="font-medium">Match</span>
+            {must.length > 0 && (
+              <span className="text-xs text-muted-foreground">
+                <span className={cn('font-medium tabular-nums', covered === must.length ? 'text-success' : 'text-foreground')}>
+                  {covered}/{must.length}
+                </span>{' '}
+                must-haves
+              </span>
+            )}
+            <Button size="icon" variant="ghost" className="-my-1 -mr-1 ml-auto size-6" onClick={onToggle} aria-label="Collapse the match">
+              <ChevronUp />
+            </Button>
+          </div>
+          <LevelBar reqs={m.requirements} className="h-1.5" />
+        </div>
+      </div>
+      {gaps.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1">
+          {gaps.map((g) => (
+            <button key={g.id} type="button" onClick={onDetails} title={g.quote} className={cn('max-w-full truncate rounded px-1.5 py-0.5 text-[11px]', LEVEL_META[g.level].soft, LEVEL_META[g.level].text)}>
+              {g.short}
+            </button>
+          ))}
+        </div>
+      )}
+      <p className="mt-2 line-clamp-3 text-xs leading-relaxed text-muted-foreground" title={m.summary}>
+        {m.summary}
+      </p>
+      <div className="mt-2 flex items-center gap-1">
+        <RecheckButton stale={d.stale} running={d.running} onRecheck={onRecheck} className="-ml-2" />
+        <Button size="sm" variant="ghost" className="ml-auto h-7 text-xs" onClick={onDetails}>
+          Details
+        </Button>
+      </div>
+    </div>,
   )
 }
 

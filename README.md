@@ -23,7 +23,7 @@ are due?" from your terminal.
 | **People** | Finds the hiring manager, recruiters and team, their email addresses (with honest confidence labels), LinkedIn and X. Drafts outreach in your voice. You send it. |
 | **Follow-ups** | Every touchpoint schedules the next one. A morning digest says what's due. |
 | **Resume designer** | Templates (Modern, Classic, Compact, Deco), live editing on the page, fit-to-pages, PDF export, and a review of every line your AI changed, to keep or undo. |
-| **Resume match** | Each application lists what the posting asks for and the resume line that answers it. |
+| **Resume match** | Each application lists what the posting asks for and the resume line that answers it. In the resume editor, the score, must-haves and gaps float over the page. |
 | **Story bank** | Your AI interviews you, one question at a time, to capture career stories it can use later. |
 | **Writing check** | Flags phrases that make writing read as AI-generated, before anything goes out. |
 | **Chat** | Ask about anything ("Sarah from Ramp replied, call Thursday") and it updates the right records. |

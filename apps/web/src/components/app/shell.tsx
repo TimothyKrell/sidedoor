@@ -269,7 +269,8 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </aside>
 
-      <div className="flex min-w-0 flex-1 flex-col">
+      {/* Full-bleed pages get exactly the window's height (less the phone's bottom bar), so they scroll inside themselves. */}
+      <div className={cn('flex min-w-0 flex-1 flex-col', fullBleed && 'h-dvh max-md:pb-16')}>
         {/* Mobile top bar */}
         <header className="sticky top-0 z-30 flex items-center gap-2 border-b bg-background/85 px-4 py-2.5 backdrop-blur pt-safe md:hidden">
           <Link to="/" className="flex items-center gap-2">
@@ -287,7 +288,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </header>
 
         {/* Full-bleed pages (the resume editor) manage their own layout and use the whole width. */}
-        <main className={cn('w-full flex-1', fullBleed ? 'min-w-0' : cn('mx-auto px-4 pt-5 pb-28 md:px-8 md:pt-8 md:pb-10', wide ? 'min-w-0' : 'max-w-6xl'))}>{children}</main>
+        <main className={cn('w-full flex-1', fullBleed ? 'min-h-0 min-w-0' : cn('mx-auto px-4 pt-5 pb-28 md:px-8 md:pt-8 md:pb-10', wide ? 'min-w-0' : 'max-w-6xl'))}>{children}</main>
       </div>
 
       {/* Docked chat panel (desktop): slides in and pushes the page over instead of covering it */}
