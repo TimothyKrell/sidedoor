@@ -1,0 +1,8 @@
+packages:
+  - apps/*
+  - packages/*
+allowBuilds:
+  esbuild: true
+  electron: true
+  # Only builds Windows installers, on Windows; not needed to run anything.
+  electron-winstaller: false

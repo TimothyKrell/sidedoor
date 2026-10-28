@@ -1,0 +1,15 @@
+{
+  "_doc": "Patterns the writing check flags. weight >= 1 is a strong tell that agents must fix; weaker ones only matter in clusters. pattern is a case-insensitive regex.",
+  "rules": [
+    { "id": "not-just", "weight": 2, "label": "Not just X, it's Y", "pattern": "\\b(not just|isn['’]t just|wasn['’]t just|aren['’]t just|not only|not merely|not simply|more than just)\\b", "fix": "Drop the 'not X' half and say the point directly." },
+    { "id": "em-dash", "weight": 1, "label": "Em dash", "pattern": "—|\\s--\\s", "fix": "Use a period or a comma." },
+    { "id": "hype", "weight": 1, "label": "Hype word", "pattern": "\\b(passionate|thrilled|delve|leverag(e|ed|ing)|robust|seamless(ly)?|cutting[- ]edge|game[- ]changer|synerg(y|ies)|spearhead(ed|ing)?|tapestry|landscape|journey|unlock(ed|ing)?|elevat(e|ed|ing)|empower(ed|ing)?|revolutioniz(e|ed|ing)|transformative|innovative|dynamic)\\b", "fix": "Use a plain word, or cut it." },
+    { "id": "excited", "weight": 1, "label": "Excited / eager / love to", "pattern": "\\b(i['’]?m (so )?(excited|eager|thrilled)|i['’]?d love to|excited to)\\b", "fix": "Say what you want to do and why, without the feeling-word." },
+    { "id": "hope-well", "weight": 1, "label": "Template opener or closer", "pattern": "\\b(hope (this|you['’]re) (finds you|doing) well|looking forward to hearing from you|thank you for your time and consideration|please don['’]t hesitate)\\b", "fix": "Cut it; start with the point and end with a specific ask." },
+    { "id": "colon-reveal", "weight": 1, "label": "Colon reveal", "pattern": "\\b(here['’]s the (thing|kicker|deal)|the result|the best part|the truth|the secret|the answer)\\s*:", "fix": "State it plainly." },
+    { "id": "adverb", "weight": 0.5, "label": "Intensifying adverb", "pattern": "\\b(really|truly|deeply|incredibly|genuinely|extremely|highly|absolutely|literally)\\b", "fix": "Cut it." },
+    { "id": "and-opener", "weight": 0.3, "label": "And/But/So opener", "pattern": "(^|[.!?]\\s+)(And|But|So)\\s", "fix": "Fine now and then; connect it to the sentence before if there are several." },
+    { "id": "exclaim", "weight": 0.5, "label": "Exclamation point", "pattern": "!", "fix": "Keep at most one." },
+    { "id": "triad", "weight": 0.3, "label": "List of three", "pattern": "\\b\\w+(?:\\s\\w+)?,\\s\\w+(?:\\s\\w+)?,?\\s(and|or)\\s\\w+\\b", "fix": "Check whether all three earn their place." }
+  ]
+}

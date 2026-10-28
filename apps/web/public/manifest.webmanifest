@@ -1,0 +1,14 @@
+{
+  "name": "Sidedoor",
+  "short_name": "Sidedoor",
+  "description": "Your job search, run by your AI",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#17161c",
+  "theme_color": "#17161c",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

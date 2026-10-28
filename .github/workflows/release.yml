@@ -1,0 +1,110 @@
+name: Release
+
+# Push a tag like v0.2.0 (or run by hand) to build installers for every OS and publish a GitHub
+# release. The desktop app's updater reads latest*.yml from it.
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to build (e.g. 0.2.0-beta.1)
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, platform: linux, arch: x64 }
+          - { os: macos-latest, platform: mac, arch: arm64 }
+          - { os: macos-15-intel, platform: mac, arch: x64 }
+          - { os: windows-latest, platform: win, arch: x64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Version
+        shell: bash
+        run: |
+          V="${{ inputs.version }}"
+          [ -z "$V" ] && V="${GITHUB_REF_NAME#v}"
+          echo "SIDEDOOR_VERSION=$V" >> "$GITHUB_ENV"
+      - name: Build installer
+        shell: bash
+        env:
+          SIDEDOOR_GH_OWNER: ${{ github.repository_owner }}
+          SIDEDOOR_GH_REPO: ${{ github.event.repository.name }}
+          # Optional signing. Leave the secrets unset for unsigned builds.
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+        run: |
+          if [ -n "$APPLE_API_KEY_BASE64" ]; then
+            echo "$APPLE_API_KEY_BASE64" | base64 --decode > "$RUNNER_TEMP/apple.p8"
+            export APPLE_API_KEY="$RUNNER_TEMP/apple.p8"
+          fi
+          node scripts/build-desktop-artifact.mjs --platform ${{ matrix.platform }} --arch ${{ matrix.arch }} --version "$SIDEDOOR_VERSION"
+      - name: Smoke test
+        run: node scripts/smoke-packaged.mjs
+      - name: Name update manifests per arch
+        shell: bash
+        run: |
+          cd release/dist
+          # Each mac job writes latest-mac.yml; keep both and merge in the release job.
+          [ -f latest-mac.yml ] && mv latest-mac.yml latest-mac-${{ matrix.arch }}.yml || true
+      - uses: actions/upload-artifact@v5
+        with:
+          name: sidedoor-${{ matrix.platform }}-${{ matrix.arch }}
+          path: |
+            release/dist/*.AppImage
+            release/dist/*.deb
+            release/dist/*.dmg
+            release/dist/*.zip
+            release/dist/*.exe
+            release/dist/*.blockmap
+            release/dist/*.yml
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v5
+        with:
+          path: assets
+          merge-multiple: true
+      - name: Merge macOS update manifests
+        run: node scripts/merge-mac-manifests.mjs assets
+      - name: Version
+        run: |
+          V="${{ inputs.version }}"
+          [ -z "$V" ] && V="${GITHUB_REF_NAME#v}"
+          echo "SIDEDOOR_VERSION=$V" >> "$GITHUB_ENV"
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.SIDEDOOR_VERSION }}
+          name: Sidedoor ${{ env.SIDEDOOR_VERSION }}
+          prerelease: ${{ contains(env.SIDEDOOR_VERSION, '-') }}
+          generate_release_notes: true
+          fail_on_unmatched_files: false
+          files: |
+            assets/*.AppImage
+            assets/*.deb
+            assets/*.dmg
+            assets/*.zip
+            assets/*.exe
+            assets/*.blockmap
+            assets/latest*.yml

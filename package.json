@@ -1,0 +1,29 @@
+{
+  "name": "sidedoor-monorepo",
+  "private": true,
+  "version": "0.1.0",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:data": "node scripts/dev-data.mjs",
+    "dev:server": "pnpm --filter @sidedoor/server dev",
+    "dev:web": "pnpm --filter @sidedoor/web dev",
+    "dev:desktop": "pnpm --filter @sidedoor/desktop dev",
+    "build": "pnpm --filter @sidedoor/web build && pnpm --filter @sidedoor/server build",
+    "build:desktop": "pnpm build && pnpm --filter @sidedoor/desktop build",
+    "dist:desktop": "node scripts/build-desktop-artifact.mjs",
+    "ship": "node scripts/ship.mjs",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "licenses": "node scripts/third-party-licenses.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "typescript": "^7.0.2"
+  },
+  "engines": {
+    "node": ">=24.10"
+  },
+  "packageManager": "pnpm@12.15.0"
+}

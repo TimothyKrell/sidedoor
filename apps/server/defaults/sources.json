@@ -1,0 +1,1558 @@
+{
+ "_doc": "Starter job sources offered during onboarding. Public ATS boards and job feeds; each is checked like any other source.",
+ "feeds": [
+  {
+   "id": "remoteok:engineer",
+   "name": "RemoteOK \u00b7 Engineering",
+   "kind": "remoteok",
+   "board": "engineer",
+   "tags": [
+    "Remote",
+    "Engineering"
+   ]
+  },
+  {
+   "id": "rss:himalayas",
+   "name": "Himalayas \u00b7 Remote jobs",
+   "kind": "rss",
+   "board": "https://himalayas.app/jobs/rss",
+   "tags": [
+    "Remote"
+   ]
+  },
+  {
+   "id": "rss:hnrss-jobs",
+   "name": "Hacker News \u00b7 Jobs",
+   "kind": "rss",
+   "board": "https://hnrss.org/jobs",
+   "tags": [
+    "Startups",
+    "Engineering"
+   ]
+  },
+  {
+   "id": "hn:whoishiring",
+   "name": "Hacker News \u00b7 Who is hiring (monthly)",
+   "kind": "hn",
+   "board": "whoishiring",
+   "tags": [
+    "Startups",
+    "Engineering"
+   ]
+  },
+  {
+   "id": "rss:wwr-fullstack",
+   "name": "We Work Remotely \u00b7 Full-stack",
+   "kind": "rss",
+   "board": "https://weworkremotely.com/categories/remote-full-stack-programming-jobs.rss",
+   "tags": [
+    "Remote",
+    "Engineering"
+   ]
+  },
+  {
+   "id": "rss:wwr-frontend",
+   "name": "We Work Remotely \u00b7 Front-end",
+   "kind": "rss",
+   "board": "https://weworkremotely.com/categories/remote-front-end-programming-jobs.rss",
+   "tags": [
+    "Remote",
+    "Engineering"
+   ]
+  },
+  {
+   "id": "rss:wwr-backend",
+   "name": "We Work Remotely \u00b7 Back-end",
+   "kind": "rss",
+   "board": "https://weworkremotely.com/categories/remote-back-end-programming-jobs.rss",
+   "tags": [
+    "Remote",
+    "Engineering"
+   ]
+  },
+  {
+   "id": "rss:wwr-devops",
+   "name": "We Work Remotely \u00b7 DevOps",
+   "kind": "rss",
+   "board": "https://weworkremotely.com/categories/remote-devops-sysadmin-jobs.rss",
+   "tags": [
+    "Remote",
+    "Engineering"
+   ]
+  },
+  {
+   "id": "rss:wwr-design",
+   "name": "We Work Remotely \u00b7 Design",
+   "kind": "rss",
+   "board": "https://weworkremotely.com/categories/remote-design-jobs.rss",
+   "tags": [
+    "Remote",
+    "Design"
+   ]
+  },
+  {
+   "id": "rss:wwr-product",
+   "name": "We Work Remotely \u00b7 Product",
+   "kind": "rss",
+   "board": "https://weworkremotely.com/categories/remote-product-jobs.rss",
+   "tags": [
+    "Remote",
+    "Product"
+   ]
+  },
+  {
+   "id": "rss:wwr-management",
+   "name": "We Work Remotely \u00b7 Management & finance",
+   "kind": "rss",
+   "board": "https://weworkremotely.com/categories/remote-management-and-finance-jobs.rss",
+   "tags": [
+    "Remote",
+    "Management"
+   ]
+  },
+  {
+   "id": "rss:wwr-sales",
+   "name": "We Work Remotely \u00b7 Sales & marketing",
+   "kind": "rss",
+   "board": "https://weworkremotely.com/categories/remote-sales-and-marketing-jobs.rss",
+   "tags": [
+    "Remote",
+    "Sales & marketing"
+   ]
+  },
+  {
+   "id": "rss:wwr-support",
+   "name": "We Work Remotely \u00b7 Customer support",
+   "kind": "rss",
+   "board": "https://weworkremotely.com/categories/remote-customer-support-jobs.rss",
+   "tags": [
+    "Remote",
+    "Support"
+   ]
+  },
+  {
+   "id": "rss:cryptocurrencyjobs",
+   "name": "CryptocurrencyJobs",
+   "kind": "rss",
+   "board": "https://cryptocurrencyjobs.co/index.xml",
+   "tags": [
+    "Crypto & web3"
+   ]
+  }
+ ],
+ "companies": [
+  {
+   "id": "lever:anchorage",
+   "name": "Anchorage Digital",
+   "kind": "lever",
+   "board": "anchorage",
+   "domain": "anchorage.com",
+   "tags": [
+    "Tech"
+   ]
+  },
+  {
+   "id": "greenhouse:anthropic",
+   "name": "Anthropic",
+   "kind": "greenhouse",
+   "board": "anthropic",
+   "domain": null,
+   "tags": [
+    "Tech"
+   ]
+  },
+  {
+   "id": "ashby:anyscale",
+   "name": "Anyscale",
+   "kind": "ashby",
+   "board": "anyscale",
+   "domain": null,
+   "tags": [
+    "AI",
+    "Developer tools"
+   ]
+  },
+  {
+   "id": "lever:arcadia",
+   "name": "Arcadia",
+   "kind": "lever",
+   "board": "arcadia",
+   "domain": null,
+   "tags": [
+    "Tech"
+   ]
+  },
+  {
+   "id": "greenhouse:arizeai",
+   "name": "Arize AI",
+   "kind": "greenhouse",
+   "board": "arizeai",
+   "domain": null,
+   "tags": [
+    "Tech"
+   ]
+  },
+  {
+   "id": "ashby:arketa",
+   "name": "Arketa",
+   "kind": "ashby",
+   "board": "arketa",
+   "domain": null,
+   "tags": [
+    "Tech"
+   ]
+  },
+  {
+   "id": "ashby:ashby",
+   "name": "Ashby",
+   "kind": "ashby",
+   "board": "ashby",
+   "domain": "ashbyhq.com",
+   "tags": [
+    "Tech"
+   ]
+  },
+  {
+   "id": "ashby:ava-labs",
+   "name": "Ava Labs",
+   "kind": "ashby",
+   "board": "ava-labs",
+   "domain": null,
+   "tags": [
+    "Tech"
+   ]
+  },
+  {
+   "id": "ashby:baseten",
+   "name": "Baseten",
+   "kind": "ashby",
+   "board": "baseten",
+   "domain": null,
+   "tags": [
+    "AI",
+    "Developer tools"
+   ]
+  },
+  {
+   "id": "greenhouse:block",
+   "name": "Block",
+   "kind": "greenhouse",
+   "board": "block",
+   "domain": null,
+   "tags": [
+    "Fintech",
+    "Crypto & web3"
+   ]
+  },
+  {
+   "id": "greenhouse:blockchain",
+   "name": "Blockchain.com",
+   "kind": "greenhouse",
+   "board": "blockchain",
+   "domain": null,
+   "tags": [
+    "Crypto & web3",
+    "Fintech"
+   ]
+  },
+  {
+   "id": "greenhouse:brex",
+   "name": "Brex",
+   "kind": "greenhouse",
+   "board": "brex",
+   "domain": null,
+   "tags": [
+    "Fintech"
+   ]
+  },
+  {
+   "id": "ashby:cartesia",
+   "name": "Cartesia",
+   "kind": "ashby",
+   "board": "cartesia",
+   "domain": null,
+   "tags": [
+    "AI"
+   ]
+  },
+  {
+   "id": "ashby:chariotclaims",
+   "name": "Chariot Claims",
+   "kind": "ashby",
+   "board": "chariotclaims",
+   "domain": null,
+   "tags": [
+    "Tech"
+   ]
+  },
+  {
+   "id": "ashby:check-technologies",
+   "name": "Check",
+   "kind": "ashby",
+   "board": "check-technologies",
+   "domain": null,
+   "tags": [
+    "Tech"
+   ]
+  },
+  {
+   "id": "ashby:clair",
+   "name": "Clair",
+   "kind": "ashby",
+   "board": "clair",
+   "domain": null,
+   "tags": [
+    "Tech"
+   ]
+  },
+  {
+   "id": "ashby:clickhouse",
+   "name": "ClickHouse",
+   "kind": "ashby",
+   "board": "clickhouse",
+   "domain": "clickhouse.com",
+   "tags": [
+    "Developer tools",
+    "AI"
+   ]
+  },
+  {
+   "id": "greenhouse:cloudflare",
+   "name": "Cloudflare",
+   "kind": "greenhouse",
+   "board": "cloudflare",
+   "domain": null,
+   "tags": [
+    "Tech"
+   ]
+  },
+  {
+   "id": "ashby:coder",
+   "name": "Coder",
+   "kind": "ashby",
+   "board": "coder",
+   "domain": null,
+   "tags": [
+    "Tech"
+   ]
+  },
+  {
+   "id": "ashby:cohere",
+   "name": "Cohere",
+   "kind": "ashby",
+   "board": "cohere",
+   "domain": null,
+   "tags": [
+    "AI"
+   ]
+  },
+  {
+   "id": "greenhouse:coinbase",
+   "name": "Coinbase",
+   "kind": "greenhouse",
+   "board": "coinbase",
+   "domain": "coinbase.com",
+   "tags": [
+    "Tech"
+   ]
+  },
+  {
+   "id": "ashby:comfy-org",
+   "name": "Comfy Org",
+   "kind": "ashby",
+   "board": "comfy-org",
+   "domain": null,
+   "tags": [
+    "Creative AI",
+    "Developer tools"
+   ]
+  },
+  {
+   "id": "ashby:deepgram",
+   "name": "Deepgram",
+   "kind": "ashby",
+   "board": "deepgram",
+   "domain": null,
+   "tags": [
+    "AI",
+    "Developer tools"
+   ]
+  },
+  {
+   "id": "greenhouse:descript",
+   "name": "Descript",
+   "kind": "greenhouse",
+   "board": "descript",
+   "domain": null,
+   "tags": [
+    "Tech"
+   ]
+  },
+  {
+   "id": "greenhouse:discord",
+   "name": "Discord",
+   "kind": "greenhouse",
+   "board": "discord",
+   "domain": "discord.com",
+   "tags": [
+    "Tech"
+   ]
+  },
+  {
+   "id": "ashby:duck-duck-go",
+   "name": "DuckDuckGo",
+   "kind": "ashby",
+   "board": "duck-duck-go",
+   "domain": null,
+   "tags": [
+    "Tech"
+   ]
+  },
+  {
+   "id": "ashby:dune",
+   "name": "Dune",
+   "kind": "ashby",
+   "board": "dune",
+   "domain": "dune.com",
+   "tags": [
+    "Crypto & web3",
+    "Developer tools"
+   ]
+  },
+  {
+   "id": "ashby:elevenlabs",
+   "name": "ElevenLabs",
+   "kind": "ashby",
+   "board": "elevenlabs",
+   "domain": "elevenlabs.io",
+   "tags": [
+    "Tech"
+   ]
+  },
+  {
+   "id": "ashby:exa",
+   "name": "Exa",
+   "kind": "ashby",
+   "board": "exa",
+   "domain": null,
+   "tags": [
+    "AI",
+    "Developer tools"
+   ]
+  },
+  {
+   "id": "greenhouse:fastly",
+   "name": "Fastly",
+   "kind": "greenhouse",
+   "board": "fastly",
+   "domain": "fastly.com",
+   "tags": [
+    "Developer tools"
+   ]
+  },
+  {
+   "id": "greenhouse:figma",
+   "name": "Figma",
+   "kind": "greenhouse",
+   "board": "figma",
+   "domain": "figma.com",
+   "tags": [
+    "Tech"
+   ]
+  },
+  {
+   "id": "greenhouse:galaxydigitalservices",
+   "name": "Galaxy Digital",
+   "kind": "greenhouse",
+   "board": "galaxydigitalservices",
+   "domain": null,
+   "tags": [
+    "Crypto & web3",
+    "Fintech"
+   ]
+  },
+  {
+   "id": "greenhouse:garnerhealth",
+   "name": "Garner Health",
+   "kind": "greenhouse",
+   "board": "garnerhealth",
+   "domain": null,
+   "tags": [
+    "Tech"
+   ]
+  },
+  {
+   "id": "greenhouse:gitlab",
+   "name": "GitLab",
+   "kind": "greenhouse",
+   "board": "gitlab",
+   "domain": "gitlab.com",
+   "tags": [
+    "Tech"
+   ]
+  },
+  {
+   "id": "greenhouse:grafanalabs",
+   "name": "Grafana Labs",
+   "kind": "greenhouse",
+   "board": "grafanalabs",
+   "domain": "grafana.com",
+   "tags": [
+    "Developer tools"
+   ]
+  },
+  {
+   "id": "greenhouse:gusto",
+   "name": "Gusto",
+   "kind": "greenhouse",
+   "board": "gusto",
+   "domain": null,
+   "tags": [
+    "Fintech"
+   ]
+  },
+  {
+   "id": "ashby:helius",
+   "name": "Helius",
+   "kind": "ashby",
+   "board": "helius",
+   "domain": null,
+   "tags": [
+    "Tech"
+   ]
+  },
+  {
+   "id": "workable:huggingface",
+   "name": "Hugging Face",
+   "kind": "workable",
+   "board": "huggingface",
+   "domain": null,
+   "tags": [
+    "AI",
+    "Developer tools"
+   ]
+  },
+  {
+   "id": "lever:jito.wtf",
+   "name": "Jito Labs",
+   "kind": "lever",
+   "board": "jito.wtf",
+   "domain": "jito.network",
+   "tags": [
+    "Tech"
+   ]
+  },
+  {
+   "id": "ashby:kraken.com",
+   "name": "Kraken",
+   "kind": "ashby",
+   "board": "kraken.com",
+   "domain": "kraken.com",
+   "tags": [
+    "Tech"
+   ]
+  },
+  {
+   "id": "greenhouse:launchdarkly",
+   "name": "LaunchDarkly",
+   "kind": "greenhouse",
+   "board": "launchdarkly",
+   "domain": "launchdarkly.com",
+   "tags": [
+    "Developer tools"
+   ]
+  },
+  {
+   "id": "ashby:ledger",
+   "name": "Ledger",
+   "kind": "ashby",
+   "board": "ledger",
+   "domain": null,
+   "tags": [
+    "Crypto & web3"
+   ]
+  },
+  {
+   "id": "ashby:lightspark",
+   "name": "Lightspark",
+   "kind": "ashby",
+   "board": "lightspark",
+   "domain": null,
+   "tags": [
+    "Crypto & web3",
+    "Fintech"
+   ]
+  },
+  {
+   "id": "ashby:livekit",
+   "name": "LiveKit",
+   "kind": "ashby",
+   "board": "livekit",
+   "domain": null,
+   "tags": [
+    "Tech"
+   ]
+  },
+  {
+   "id": "lever:luxurypresence",
+   "name": "Luxury Presence",
+   "kind": "lever",
+   "board": "luxurypresence",
+   "domain": "luxurypresence.com",
+   "tags": [
+    "Tech"
+   ]
+  },
+  {
+   "id": "ashby:marqeta-inc",
+   "name": "Marqeta",
+   "kind": "ashby",
+   "board": "marqeta-inc",
+   "domain": null,
+   "tags": [
+    "Tech"
+   ]
+  },
+  {
+   "id": "greenhouse:mercury",
+   "name": "Mercury",
+   "kind": "greenhouse",
+   "board": "mercury",
+   "domain": "mercury.com",
+   "tags": [
+    "Fintech"
+   ]
+  },
+  {
+   "id": "ashby:mesh",
+   "name": "Mesh",
+   "kind": "ashby",
+   "board": "mesh",
+   "domain": null,
+   "tags": [
+    "Fintech",
+    "Crypto & web3"
+   ]
+  },
+  {
+   "id": "ashby:morpho",
+   "name": "Morpho",
+   "kind": "ashby",
+   "board": "morpho",
+   "domain": null,
+   "tags": [
+    "Crypto & web3",
+    "Fintech"
+   ]
+  },
+  {
+   "id": "lever:offchainlabs",
+   "name": "Offchain Labs ZeroDev",
+   "kind": "lever",
+   "board": "offchainlabs",
+   "domain": null,
+   "tags": [
+    "Tech"
+   ]
+  },
+  {
+   "id": "ashby:oneapp",
+   "name": "OnePay",
+   "kind": "ashby",
+   "board": "oneapp",
+   "domain": null,
+   "tags": [
+    "Tech"
+   ]
+  },
+  {
+   "id": "ashby:onebrief",
+   "name": "Onebrief",
+   "kind": "ashby",
+   "board": "onebrief",
+   "domain": null,
+   "tags": [
+    "Tech"
+   ]
+  },
+  {
+   "id": "ashby:openrouter",
+   "name": "OpenRouter",
+   "kind": "ashby",
+   "board": "openrouter",
+   "domain": null,
+   "tags": [
+    "AI",
+    "Developer tools",
+    "Fintech"
+   ]
+  },
+  {
+   "id": "greenhouse:otterai",
+   "name": "Otter.ai",
+   "kind": "greenhouse",
+   "board": "otterai",
+   "domain": "otter.ai",
+   "tags": [
+    "Tech"
+   ]
+  },
+  {
+   "id": "ashby:owner",
+   "name": "Owner.com",
+   "kind": "ashby",
+   "board": "owner",
+   "domain": null,
+   "tags": [
+    "Tech"
+   ]
+  },
+  {
+   "id": "ashby:PAR Technology",
+   "name": "PAR Technology PAR Retail",
+   "kind": "ashby",
+   "board": "PAR Technology",
+   "domain": null,
+   "tags": [
+    "Tech"
+   ]
+  },
+  {
+   "id": "ashby:phantom",
+   "name": "Phantom",
+   "kind": "ashby",
+   "board": "phantom",
+   "domain": "phantom.com",
+   "tags": [
+    "Tech"
+   ]
+  },
+  {
+   "id": "ashby:photoroom",
+   "name": "Photoroom",
+   "kind": "ashby",
+   "board": "photoroom",
+   "domain": null,
+   "tags": [
+    "Creative AI"
+   ]
+  },
+  {
+   "id": "ashby:pinecone",
+   "name": "Pinecone",
+   "kind": "ashby",
+   "board": "pinecone",
+   "domain": null,
+   "tags": [
+    "AI",
+    "Developer tools"
+   ]
+  },
+  {
+   "id": "ashby:plaid",
+   "name": "Plaid",
+   "kind": "ashby",
+   "board": "plaid",
+   "domain": "plaid.com",
+   "tags": [
+    "Fintech",
+    "Developer tools"
+   ]
+  },
+  {
+   "id": "greenhouse:planetscale",
+   "name": "PlanetScale",
+   "kind": "greenhouse",
+   "board": "planetscale",
+   "domain": null,
+   "tags": [
+    "Developer tools"
+   ]
+  },
+  {
+   "id": "ashby:PrimeIntellect",
+   "name": "Prime Intellect",
+   "kind": "ashby",
+   "board": "PrimeIntellect",
+   "domain": null,
+   "tags": [
+    "Tech"
+   ]
+  },
+  {
+   "id": "greenhouse:prismatic",
+   "name": "Prismatic",
+   "kind": "greenhouse",
+   "board": "prismatic",
+   "domain": null,
+   "tags": [
+    "Tech"
+   ]
+  },
+  {
+   "id": "ashby:quotewell",
+   "name": "QuoteWell",
+   "kind": "ashby",
+   "board": "quotewell",
+   "domain": null,
+   "tags": [
+    "Tech"
+   ]
+  },
+  {
+   "id": "ashby:railway",
+   "name": "Railway",
+   "kind": "ashby",
+   "board": "railway",
+   "domain": null,
+   "tags": [
+    "Tech"
+   ]
+  },
+  {
+   "id": "ashby:rain",
+   "name": "Rain",
+   "kind": "ashby",
+   "board": "rain",
+   "domain": null,
+   "tags": [
+    "Fintech",
+    "Crypto & web3"
+   ]
+  },
+  {
+   "id": "ashby:ramp",
+   "name": "Ramp",
+   "kind": "ashby",
+   "board": "ramp",
+   "domain": "ramp.com",
+   "tags": [
+    "Fintech"
+   ]
+  },
+  {
+   "id": "ashby:raspberry",
+   "name": "Raspberry AI",
+   "kind": "ashby",
+   "board": "raspberry",
+   "domain": null,
+   "tags": [
+    "Tech"
+   ]
+  },
+  {
+   "id": "ashby:render",
+   "name": "Render",
+   "kind": "ashby",
+   "board": "render",
+   "domain": "render.com",
+   "tags": [
+    "Developer tools"
+   ]
+  },
+  {
+   "id": "ashby:runway-ml",
+   "name": "Runway",
+   "kind": "ashby",
+   "board": "runway-ml",
+   "domain": "runwayml.com",
+   "tags": [
+    "Tech"
+   ]
+  },
+  {
+   "id": "ashby:sanity",
+   "name": "Sanity",
+   "kind": "ashby",
+   "board": "sanity",
+   "domain": null,
+   "tags": [
+    "Tech"
+   ]
+  },
+  {
+   "id": "ashby:sardine",
+   "name": "Sardine",
+   "kind": "ashby",
+   "board": "sardine",
+   "domain": null,
+   "tags": [
+    "Fintech"
+   ]
+  },
+  {
+   "id": "greenhouse:scaleai",
+   "name": "Scale AI",
+   "kind": "greenhouse",
+   "board": "scaleai",
+   "domain": "scale.com",
+   "tags": [
+    "AI"
+   ]
+  },
+  {
+   "id": "greenhouse:securitize",
+   "name": "Securitize",
+   "kind": "greenhouse",
+   "board": "securitize",
+   "domain": null,
+   "tags": [
+    "Crypto & web3",
+    "Fintech"
+   ]
+  },
+  {
+   "id": "workable:seeq",
+   "name": "Seeq",
+   "kind": "workable",
+   "board": "seeq",
+   "domain": null,
+   "tags": [
+    "Tech"
+   ]
+  },
+  {
+   "id": "ashby:sentilink",
+   "name": "SentiLink",
+   "kind": "ashby",
+   "board": "sentilink",
+   "domain": null,
+   "tags": [
+    "Tech"
+   ]
+  },
+  {
+   "id": "ashby:sierra",
+   "name": "Sierra",
+   "kind": "ashby",
+   "board": "sierra",
+   "domain": null,
+   "tags": [
+    "AI"
+   ]
+  },
+  {
+   "id": "greenhouse:stripe",
+   "name": "Stripe",
+   "kind": "greenhouse",
+   "board": "stripe",
+   "domain": "stripe.com",
+   "tags": [
+    "Fintech",
+    "Crypto & web3",
+    "Developer tools"
+   ]
+  },
+  {
+   "id": "ashby:supabase",
+   "name": "Supabase",
+   "kind": "ashby",
+   "board": "supabase",
+   "domain": null,
+   "tags": [
+    "Tech"
+   ]
+  },
+  {
+   "id": "ashby:super.com",
+   "name": "Super.com",
+   "kind": "ashby",
+   "board": "super.com",
+   "domain": null,
+   "tags": [
+    "Tech"
+   ]
+  },
+  {
+   "id": "ashby:trm-labs",
+   "name": "TRM Labs",
+   "kind": "ashby",
+   "board": "trm-labs",
+   "domain": null,
+   "tags": [
+    "Tech"
+   ]
+  },
+  {
+   "id": "greenhouse:tailscale",
+   "name": "Tailscale",
+   "kind": "greenhouse",
+   "board": "tailscale",
+   "domain": null,
+   "tags": [
+    "Developer tools"
+   ]
+  },
+  {
+   "id": "greenhouse:togetherai",
+   "name": "Together AI",
+   "kind": "greenhouse",
+   "board": "togetherai",
+   "domain": null,
+   "tags": [
+    "AI"
+   ]
+  },
+  {
+   "id": "ashby:trust-wallet",
+   "name": "Trust Wallet",
+   "kind": "ashby",
+   "board": "trust-wallet",
+   "domain": "trustwallet.com",
+   "tags": [
+    "Crypto & web3"
+   ]
+  },
+  {
+   "id": "ashby:turnkey",
+   "name": "Turnkey",
+   "kind": "ashby",
+   "board": "turnkey",
+   "domain": null,
+   "tags": [
+    "Tech"
+   ]
+  },
+  {
+   "id": "ashby:vapi",
+   "name": "Vapi",
+   "kind": "ashby",
+   "board": "vapi",
+   "domain": null,
+   "tags": [
+    "AI",
+    "Developer tools"
+   ]
+  },
+  {
+   "id": "greenhouse:vercel",
+   "name": "Vercel",
+   "kind": "greenhouse",
+   "board": "vercel",
+   "domain": "vercel.com",
+   "tags": [
+    "Tech"
+   ]
+  },
+  {
+   "id": "ashby:workos",
+   "name": "WorkOS",
+   "kind": "ashby",
+   "board": "workos",
+   "domain": "workos.com",
+   "tags": [
+    "Developer tools"
+   ]
+  },
+  {
+   "id": "ashby:alchemy",
+   "name": "alchemy",
+   "kind": "ashby",
+   "board": "alchemy",
+   "domain": null,
+   "tags": [
+    "Crypto & web3"
+   ]
+  },
+  {
+   "id": "greenhouse:aptoslabs",
+   "name": "aptoslabs",
+   "kind": "greenhouse",
+   "board": "aptoslabs",
+   "domain": null,
+   "tags": [
+    "Crypto & web3"
+   ]
+  },
+  {
+   "id": "greenhouse:bitgo",
+   "name": "bitgo",
+   "kind": "greenhouse",
+   "board": "bitgo",
+   "domain": null,
+   "tags": [
+    "Crypto & web3"
+   ]
+  },
+  {
+   "id": "ashby:blockdaemon",
+   "name": "blockdaemon",
+   "kind": "ashby",
+   "board": "blockdaemon",
+   "domain": null,
+   "tags": [
+    "Crypto & web3"
+   ]
+  },
+  {
+   "id": "ashby:browserbase",
+   "name": "browserbase",
+   "kind": "ashby",
+   "board": "browserbase",
+   "domain": null,
+   "tags": [
+    "AI"
+   ]
+  },
+  {
+   "id": "ashby:circle",
+   "name": "circle",
+   "kind": "ashby",
+   "board": "circle",
+   "domain": null,
+   "tags": [
+    "Crypto & web3"
+   ]
+  },
+  {
+   "id": "ashby:clerk",
+   "name": "clerk",
+   "kind": "ashby",
+   "board": "clerk",
+   "domain": null,
+   "tags": [
+    "AI"
+   ]
+  },
+  {
+   "id": "ashby:cognition",
+   "name": "cognition",
+   "kind": "ashby",
+   "board": "cognition",
+   "domain": null,
+   "tags": [
+    "AI"
+   ]
+  },
+  {
+   "id": "ashby:consensys",
+   "name": "consensys",
+   "kind": "ashby",
+   "board": "consensys",
+   "domain": null,
+   "tags": [
+    "Crypto & web3"
+   ]
+  },
+  {
+   "id": "ashby:cursor",
+   "name": "cursor",
+   "kind": "ashby",
+   "board": "cursor",
+   "domain": "cursor.com",
+   "tags": [
+    "AI"
+   ]
+  },
+  {
+   "id": "greenhouse:fireblocks",
+   "name": "fireblocks",
+   "kind": "greenhouse",
+   "board": "fireblocks",
+   "domain": null,
+   "tags": [
+    "Crypto & web3"
+   ]
+  },
+  {
+   "id": "ashby:gamma",
+   "name": "gamma",
+   "kind": "ashby",
+   "board": "gamma",
+   "domain": null,
+   "tags": [
+    "Creative AI"
+   ]
+  },
+  {
+   "id": "lever:gauntlet",
+   "name": "gauntlet",
+   "kind": "lever",
+   "board": "gauntlet",
+   "domain": null,
+   "tags": [
+    "Crypto & web3"
+   ]
+  },
+  {
+   "id": "greenhouse:gemini",
+   "name": "gemini",
+   "kind": "greenhouse",
+   "board": "gemini",
+   "domain": null,
+   "tags": [
+    "Crypto & web3"
+   ]
+  },
+  {
+   "id": "ashby:hedra",
+   "name": "hedra",
+   "kind": "ashby",
+   "board": "hedra",
+   "domain": null,
+   "tags": [
+    "Creative AI"
+   ]
+  },
+  {
+   "id": "greenhouse:heygen",
+   "name": "heygen",
+   "kind": "greenhouse",
+   "board": "heygen",
+   "domain": null,
+   "tags": [
+    "Creative AI"
+   ]
+  },
+  {
+   "id": "ashby:ideogram",
+   "name": "ideogram",
+   "kind": "ashby",
+   "board": "ideogram",
+   "domain": null,
+   "tags": [
+    "Creative AI"
+   ]
+  },
+  {
+   "id": "ashby:kalshi",
+   "name": "kalshi",
+   "kind": "ashby",
+   "board": "kalshi",
+   "domain": null,
+   "tags": [
+    "Crypto & web3"
+   ]
+  },
+  {
+   "id": "ashby:krea",
+   "name": "krea",
+   "kind": "ashby",
+   "board": "krea",
+   "domain": null,
+   "tags": [
+    "Creative AI"
+   ]
+  },
+  {
+   "id": "ashby:langchain",
+   "name": "langchain",
+   "kind": "ashby",
+   "board": "langchain",
+   "domain": null,
+   "tags": [
+    "AI"
+   ]
+  },
+  {
+   "id": "greenhouse:layerzerolabs",
+   "name": "layerzerolabs",
+   "kind": "greenhouse",
+   "board": "layerzerolabs",
+   "domain": null,
+   "tags": [
+    "Crypto & web3"
+   ]
+  },
+  {
+   "id": "ashby:linear",
+   "name": "linear",
+   "kind": "ashby",
+   "board": "linear",
+   "domain": null,
+   "tags": [
+    "AI"
+   ]
+  },
+  {
+   "id": "ashby:lovable",
+   "name": "lovable",
+   "kind": "ashby",
+   "board": "lovable",
+   "domain": null,
+   "tags": [
+    "AI"
+   ]
+  },
+  {
+   "id": "ashby:magiceden",
+   "name": "magiceden",
+   "kind": "ashby",
+   "board": "magiceden",
+   "domain": null,
+   "tags": [
+    "Crypto & web3"
+   ]
+  },
+  {
+   "id": "ashby:midjourney",
+   "name": "midjourney",
+   "kind": "ashby",
+   "board": "midjourney",
+   "domain": null,
+   "tags": [
+    "Creative AI"
+   ]
+  },
+  {
+   "id": "ashby:mintlify",
+   "name": "mintlify",
+   "kind": "ashby",
+   "board": "mintlify",
+   "domain": null,
+   "tags": [
+    "AI"
+   ]
+  },
+  {
+   "id": "ashby:modal",
+   "name": "modal",
+   "kind": "ashby",
+   "board": "modal",
+   "domain": null,
+   "tags": [
+    "AI"
+   ]
+  },
+  {
+   "id": "lever:moonpay",
+   "name": "moonpay",
+   "kind": "lever",
+   "board": "moonpay",
+   "domain": "moonpay.com",
+   "tags": [
+    "Crypto & web3"
+   ]
+  },
+  {
+   "id": "ashby:mystenlabs",
+   "name": "mystenlabs",
+   "kind": "ashby",
+   "board": "mystenlabs",
+   "domain": null,
+   "tags": [
+    "Crypto & web3"
+   ]
+  },
+  {
+   "id": "ashby:neon",
+   "name": "neon",
+   "kind": "ashby",
+   "board": "neon",
+   "domain": null,
+   "tags": [
+    "AI"
+   ]
+  },
+  {
+   "id": "ashby:notion",
+   "name": "notion",
+   "kind": "ashby",
+   "board": "notion",
+   "domain": null,
+   "tags": [
+    "AI"
+   ]
+  },
+  {
+   "id": "greenhouse:ondofinance",
+   "name": "ondofinance",
+   "kind": "greenhouse",
+   "board": "ondofinance",
+   "domain": null,
+   "tags": [
+    "Crypto & web3"
+   ]
+  },
+  {
+   "id": "ashby:openai",
+   "name": "openai",
+   "kind": "ashby",
+   "board": "openai",
+   "domain": null,
+   "tags": [
+    "Creative AI"
+   ]
+  },
+  {
+   "id": "ashby:paradigm",
+   "name": "paradigm",
+   "kind": "ashby",
+   "board": "paradigm",
+   "domain": null,
+   "tags": [
+    "Crypto & web3"
+   ]
+  },
+  {
+   "id": "ashby:paxos",
+   "name": "paxos",
+   "kind": "ashby",
+   "board": "paxos",
+   "domain": "paxos.com",
+   "tags": [
+    "Crypto & web3"
+   ]
+  },
+  {
+   "id": "ashby:perplexity",
+   "name": "perplexity",
+   "kind": "ashby",
+   "board": "perplexity",
+   "domain": null,
+   "tags": [
+    "AI"
+   ]
+  },
+  {
+   "id": "ashby:pika",
+   "name": "pika",
+   "kind": "ashby",
+   "board": "pika",
+   "domain": null,
+   "tags": [
+    "Creative AI"
+   ]
+  },
+  {
+   "id": "ashby:polygon-labs",
+   "name": "polygon-labs",
+   "kind": "ashby",
+   "board": "polygon-labs",
+   "domain": null,
+   "tags": [
+    "Crypto & web3"
+   ]
+  },
+  {
+   "id": "ashby:polymarket",
+   "name": "polymarket",
+   "kind": "ashby",
+   "board": "polymarket",
+   "domain": null,
+   "tags": [
+    "Crypto & web3"
+   ]
+  },
+  {
+   "id": "ashby:posthog",
+   "name": "posthog",
+   "kind": "ashby",
+   "board": "posthog",
+   "domain": null,
+   "tags": [
+    "AI"
+   ]
+  },
+  {
+   "id": "ashby:replit",
+   "name": "replit",
+   "kind": "ashby",
+   "board": "replit",
+   "domain": "replit.com",
+   "tags": [
+    "AI"
+   ]
+  },
+  {
+   "id": "ashby:resend",
+   "name": "resend",
+   "kind": "ashby",
+   "board": "resend",
+   "domain": null,
+   "tags": [
+    "AI"
+   ]
+  },
+  {
+   "id": "greenhouse:ripple",
+   "name": "ripple",
+   "kind": "greenhouse",
+   "board": "ripple",
+   "domain": "ripple.com",
+   "tags": [
+    "Crypto & web3"
+   ]
+  },
+  {
+   "id": "greenhouse:robinhood",
+   "name": "robinhood",
+   "kind": "greenhouse",
+   "board": "robinhood",
+   "domain": "robinhood.com",
+   "tags": [
+    "Crypto & web3"
+   ]
+  },
+  {
+   "id": "greenhouse:stabilityai",
+   "name": "stabilityai",
+   "kind": "greenhouse",
+   "board": "stabilityai",
+   "domain": null,
+   "tags": [
+    "Creative AI"
+   ]
+  },
+  {
+   "id": "greenhouse:stackblitz",
+   "name": "stackblitz",
+   "kind": "greenhouse",
+   "board": "stackblitz",
+   "domain": null,
+   "tags": [
+    "AI"
+   ]
+  },
+  {
+   "id": "ashby:suno",
+   "name": "suno",
+   "kind": "ashby",
+   "board": "suno",
+   "domain": null,
+   "tags": [
+    "Creative AI"
+   ]
+  },
+  {
+   "id": "ashby:synthesia",
+   "name": "synthesia",
+   "kind": "ashby",
+   "board": "synthesia",
+   "domain": "synthesia.io",
+   "tags": [
+    "Creative AI"
+   ]
+  },
+  {
+   "id": "ashby:temporal",
+   "name": "temporal",
+   "kind": "ashby",
+   "board": "temporal",
+   "domain": null,
+   "tags": [
+    "AI"
+   ]
+  },
+  {
+   "id": "ashby:warp",
+   "name": "warp",
+   "kind": "ashby",
+   "board": "warp",
+   "domain": null,
+   "tags": [
+    "AI"
+   ]
+  },
+  {
+   "id": "ashby:zed",
+   "name": "zed",
+   "kind": "ashby",
+   "board": "zed",
+   "domain": null,
+   "tags": [
+    "AI"
+   ]
+  }
+ ]
+}
