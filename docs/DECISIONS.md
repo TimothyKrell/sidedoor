@@ -199,3 +199,10 @@ current when making a non-obvious call. Open questions for the maintainer live i
   why) are your AI's estimate of the chance of an interview, which also weighs level, competition,
   freshness, other applications at the company and warm paths. A rank or an estimate isn't
   activity on the application, so neither touches `lastActivityAt`.
+
+## AI usage limits
+
+- **Out of usage pauses the work; it doesn't fail it.** When the user's AI says it hit a session or
+  usage limit, the task goes back in the queue for the reset time it names (or half an hour), without
+  spending an attempt, and the queue and triage stop claiming work until then. Otherwise one limit
+  fails everything queued behind it in a couple of minutes, as happened with a 170-task batch.

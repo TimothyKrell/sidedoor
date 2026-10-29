@@ -12,6 +12,7 @@ import { setStage } from '../services/applications'
 import { enqueueTask, prepInProgress } from '../services/tasks'
 import { getMeta, getSettings, setMeta } from '../settings'
 import { readyProviders } from '../ai'
+import { aiLimitedUntil } from '../ai/limits'
 
 /**
  * Background work, in the server process: the scout polls job boards, triage scores new postings,
@@ -63,7 +64,7 @@ const taskLoop = Effect.gen(function* () {
   db.update(schema.tasks).set({ status: 'queued', startedAt: null }).where(ours).run()
   yield* Effect.gen(function* () {
     const s = getSettings().worker
-    if (s.paused) return
+    if (s.paused || aiLimitedUntil()) return
     while ((yield* Ref.get(running)) < s.concurrency) {
       const task = claimNextTask()
       if (!task) break

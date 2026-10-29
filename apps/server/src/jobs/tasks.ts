@@ -13,6 +13,7 @@ import { enqueueTask } from '../services/tasks'
 import { getMeta, getSettings, setMeta } from '../settings'
 import { htmlToText, truncate } from '../text'
 import { mcpFor, runJob } from '../ai'
+import { aiLimitedUntil, setAiLimitedUntil, usageLimitUntil } from '../ai/limits'
 import { context, render, userName } from '../prompts'
 import { runFillForm } from './fill-form'
 import { grokBotKinds } from './handoff'
@@ -81,7 +82,7 @@ export const runTriage = async () => {
   // Swap aggregator listings for the company's own posting first, so triage reads the full JD.
   const resolved = await resolveAggregatorPostings().catch((e) => (console.error('[resolve] failed', e), null))
   if (resolved && resolved.resolved + resolved.duplicate > 0) console.log(`[resolve] ${JSON.stringify(resolved)}`)
-  if (!s.triage.enabled) return { triaged: 0 }
+  if (!s.triage.enabled || aiLimitedUntil()) return { triaged: 0 }
   const pending = db
     .select()
     .from(schema.postings)
@@ -118,6 +119,8 @@ ${truncate(r.jd, 7000) || '(none captured)'}
       const r = await runJob({ job: 'triage', prompt, schema: TriageOut, maxTurns: 3, timeoutMs: 10 * 60_000 })
       return { batch, results: r.data.results }
     } catch (e) {
+      const limited = usageLimitUntil(e instanceof Error ? e.message : String(e))
+      if (limited) setAiLimitedUntil(limited)
       console.error('[triage] batch failed', e)
       counts.error++
       return { batch, results: [] }
@@ -639,6 +642,15 @@ export const executeTask = async (task: schema.Task) => {
       .run()
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
+    // Out of AI usage: the task waits for the reset (without spending an attempt), and so does the queue.
+    const limited = usageLimitUntil(msg)
+    if (limited) {
+      const first = !aiLimitedUntil()
+      setAiLimitedUntil(limited)
+      db.update(schema.tasks).set({ status: 'queued', runAfter: limited.toISOString(), startedAt: null, attempts: Math.max(0, task.attempts - 1), output: `Waiting for your AI's usage limit to reset (${limited.toISOString()})` }).where(eq(schema.tasks.id, task.id)).run()
+      if (first) logActivity('system', 'Your AI is out of usage; AI work waits until it resets', { detail: msg.slice(0, 300), link: '/tasks' })
+      return
+    }
     const log = e && typeof e === 'object' && 'log' in e && Array.isArray(e.log) ? (e.log as string[]).join('\n\n').slice(-60_000) : null
     db.update(schema.tasks).set({ status: 'failed', error: msg.slice(0, 4000), log, finishedAt: nowIso() }).where(eq(schema.tasks.id, task.id)).run()
     logActivity('system', `Task failed: ${task.title}`, { detail: msg.slice(0, 300), link: '/tasks' })
