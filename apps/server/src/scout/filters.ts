@@ -8,7 +8,11 @@ const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 const STOP = new Set(['a', 'an', 'the', 'of', 'and', 'or', 'for', 'to', 'in', 'at', 'senior', 'sr', 'junior', 'jr', 'lead', 'staff', 'principal'])
 
-/** "Senior Product Designer" → /\bproduct\b.{0,25}\bdesigner\b/: the role's core words in order, seniority left to triage. */
+/**
+ * "Senior Product Designer" → /\bproduct\b.{0,25}\bdesigner\b/: the role's core words in order,
+ * seniority left to triage. Two-word roles match either order, since postings write "Engineering
+ * Manager" and "Manager, Software Engineering" for the same job.
+ */
 export const roleRegex = (role: string) => {
   const words = role
     .toLowerCase()
@@ -16,10 +20,11 @@ export const roleRegex = (role: string) => {
     .split(/[\s/-]+/)
     .filter((w) => w && !STOP.has(w))
   if (!words.length) return null
-  return words.map((w) => `\\b${esc(w)}`).join('.{0,25}')
+  const inOrder = (ws: string[]) => ws.map((w) => `\\b${esc(w)}`).join('.{0,25}')
+  return words.length === 2 ? `${inOrder(words)}|${inOrder([...words].reverse())}` : inOrder(words)
 }
 
-const JUNIOR = '\\bintern(ship)?\\b|new grad|\\bjunior\\b|\\bjr\\.?\\b|apprentice|entry[- ]level'
+const JUNIOR = '\\bintern(ship)?\\b|new grad|\\bjunior\\b|\\bjr\\.?\\b|apprentice|entry[- ]level|early career'
 
 export const buildTitleFilters = (roles: string[], seniority: string[]) => {
   const include = [...new Set(roles.map(roleRegex).filter((r): r is string => !!r))]
@@ -29,8 +34,8 @@ export const buildTitleFilters = (roles: string[], seniority: string[]) => {
 
 /** Common ways postings name a country or region. Keys are ISO-3166 alpha-2 (plus a few regions). */
 export const PLACE_ALIASES: Record<string, string[]> = {
-  US: ['united states', 'usa', 'u\\.s\\.a?\\.?', '\\bus\\b', 'america', 'north america', 'americas'],
-  CA: ['canada', 'toronto', 'vancouver', 'montreal', 'north america', 'americas'],
+  US: ['united states', 'usa', 'u\\.s\\.a?\\.?', '\\bus\\b', 'america', 'north america', 'americas', '\\bn?amer\\b'],
+  CA: ['canada', 'toronto', 'vancouver', 'montreal', 'north america', 'americas', '\\bn?amer\\b'],
   MX: ['mexico', 'latam', 'latin america', 'americas'],
   BR: ['brazil', 'brasil', 'latam', 'latin america', 'americas'],
   AR: ['argentina', 'latam', 'latin america', 'americas'],

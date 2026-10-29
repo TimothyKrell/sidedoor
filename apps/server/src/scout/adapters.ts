@@ -33,11 +33,12 @@ const retryTransient = Schedule.exponential(Duration.millis(500)).pipe(
   Schedule.while(({ input }) => input.status === null || input.status >= 500 || input.status === 429),
 )
 
-export const fetchText = (url: string, timeoutMs = 25_000) =>
+export const fetchText = (url: string, timeoutMs = 25_000, init: { method?: string; body?: string } = {}) =>
   Effect.tryPromise({
     try: async () => {
       const res = await fetch(url, {
-        headers: { 'User-Agent': UA, Accept: 'application/json, application/rss+xml, */*' },
+        ...init,
+        headers: { 'User-Agent': UA, Accept: 'application/json, application/rss+xml, */*', ...(init.body ? { 'Content-Type': 'application/json' } : {}) },
         signal: AbortSignal.timeout(timeoutMs),
       })
       if (!res.ok) throw new FetchError(url, res.status, `HTTP ${res.status}`)
@@ -46,12 +47,12 @@ export const fetchText = (url: string, timeoutMs = 25_000) =>
     catch: (e) => (e instanceof FetchError ? e : new FetchError(url, null, e instanceof Error ? e.message : String(e))),
   }).pipe(Effect.retry(retryTransient))
 
-export const fetchJson = (url: string) =>
-  fetchText(url).pipe(
-    Effect.flatMap((t) =>
-      Effect.try({ try: (): unknown => JSON.parse(t), catch: () => new FetchError(url, null, 'invalid JSON') }),
-    ),
-  )
+const parseJson = (url: string) => (t: string) =>
+  Effect.try({ try: (): unknown => JSON.parse(t), catch: () => new FetchError(url, null, 'invalid JSON') })
+
+export const fetchJson = (url: string) => fetchText(url).pipe(Effect.flatMap(parseJson(url)))
+
+const postJson = (url: string, body: unknown) => fetchText(url, 25_000, { method: 'POST', body: JSON.stringify(body) }).pipe(Effect.flatMap(parseJson(url)))
 
 // ---- tiny accessors for untrusted JSON -------------------------------------------------------
 
@@ -161,25 +162,212 @@ const workable = (board: string) =>
     ),
   )
 
+/**
+ * Read a paged list one page at a time (never in parallel), newest first, up to `maxPages`. Big
+ * employers list thousands of jobs; the newest few hundred are what a poll needs.
+ */
+const paged = <A>(maxPages: number, page: (n: number) => Effect.Effect<{ items: A[]; total: number | null }, FetchError>) =>
+  Effect.gen(function* () {
+    const out: A[] = []
+    // The first page's total counts; Workday reports 0 on later pages.
+    let total: number | null = null
+    for (let n = 0; n < maxPages; n++) {
+      const p = yield* page(n)
+      if (n === 0) total = p.total
+      out.push(...p.items)
+      if (p.items.length === 0 || (total !== null && out.length >= total)) break
+    }
+    return out
+  })
+
+const srLocation = (l: Obj) => {
+  const loc = [str(l.city), str(l.region), str(l.country)?.toUpperCase()].filter(Boolean).join(', ')
+  return l.remote === true ? `${loc} | Remote` : l.hybrid === true ? `${loc} | Hybrid` : loc
+}
+
+const SR_PAGE = 100
 const smartrecruiters = (board: string) =>
-  fetchJson(`https://api.smartrecruiters.com/v1/companies/${board}/postings?limit=100`).pipe(
+  paged(3, (n) =>
+    fetchJson(`https://api.smartrecruiters.com/v1/companies/${board}/postings?limit=${SR_PAGE}&offset=${n * SR_PAGE}`).pipe(
+      Effect.map((d) => ({
+        total: Predicate.isNumber(obj(d).totalFound) ? (obj(d).totalFound as number) : null,
+        items: arr(obj(d).content)
+          .map(obj)
+          .map((j): RawJob => {
+            const id = str(j.id) ?? ''
+            return {
+              extId: id,
+              title: str(j.name) ?? '',
+              company: str(obj(j.company).name),
+              location: srLocation(obj(j.location)),
+              url: `https://jobs.smartrecruiters.com/${board}/${id}`,
+              postedAt: str(j.releasedDate),
+              // The list has no description; `smartrecruitersDetail` reads it for postings worth triaging.
+              jd: '',
+            }
+          }),
+      })),
+    ),
+  )
+
+const smartrecruitersDetail = (board: string, job: RawJob) =>
+  fetchJson(`https://api.smartrecruiters.com/v1/companies/${board}/postings/${encodeURIComponent(job.extId)}`).pipe(
+    Effect.map((raw): Partial<RawJob> => {
+      const d = obj(raw)
+      const sections = obj(obj(d.jobAd).sections)
+      const jd = ['companyDescription', 'jobDescription', 'qualifications', 'additionalInformation']
+        .map((k) => {
+          const s = obj(sections[k])
+          const text = htmlToText(str(s.text) ?? '')
+          return text ? `${str(s.title) ?? ''}\n${text}`.trim() : ''
+        })
+        .filter(Boolean)
+        .join('\n\n')
+      return { jd, url: str(d.postingUrl) ?? job.url, applyUrl: str(d.applyUrl) ?? str(d.postingUrl) ?? job.url, location: srLocation(obj(d.location)) || job.location }
+    }),
+  )
+
+// Workday: `tenant.wdN/site`, e.g. paypal.wd1/jobs for https://paypal.wd1.myworkdayjobs.com/jobs.
+const workdayParts = (board: string) => {
+  const m = board.match(/^([A-Za-z0-9_-]+)\.(wd\d+)\/([A-Za-z0-9_-]+)$/)
+  if (!m) return null
+  const [, tenant, wd, site] = m as unknown as [string, string, string, string]
+  const host = `https://${tenant}.${wd}.myworkdayjobs.com`
+  return { api: `${host}/wday/cxs/${tenant}/${site}`, site: `${host}/${site}` }
+}
+
+/** "Posted Today", "Posted Yesterday", "Posted 3 Days Ago", "Posted 30+ Days Ago". */
+export const workdayPostedAt = (s: string | undefined, now = Date.now()) => {
+  if (!s) return undefined
+  const days = /today/i.test(s) ? 0 : /yesterday/i.test(s) ? 1 : Number(s.match(/(\d+)\+?\s*days?/i)?.[1] ?? NaN)
+  if (Number.isNaN(days)) return undefined
+  // "30+" means at least 31.
+  return new Date(now - (days + (/\d\+/.test(s) ? 1 : 0)) * 86400_000).toISOString().slice(0, 10)
+}
+
+const WORKDAY_PAGE = 20
+const workday = (board: string) => {
+  const w = workdayParts(board)
+  if (!w) return Effect.fail(new FetchError(board, null, 'Workday board should look like tenant.wd5/site'))
+  return paged(10, (n) =>
+    postJson(`${w.api}/jobs`, { appliedFacets: {}, limit: WORKDAY_PAGE, offset: n * WORKDAY_PAGE, searchText: '' }).pipe(
+      Effect.map((d) => ({
+        total: Predicate.isNumber(obj(d).total) ? (obj(d).total as number) : null,
+        items: arr(obj(d).jobPostings)
+          .map(obj)
+          .filter((j) => str(j.externalPath))
+          .map((j): RawJob => {
+            const path = str(j.externalPath)!
+            const loc = str(j.locationsText) ?? ''
+            return {
+              extId: path.split('/').pop() ?? path,
+              title: str(j.title) ?? '',
+              // "3 Locations" says nothing; the detail read fills in where.
+              location: /^\d+ locations?$/i.test(loc.trim()) ? '' : loc,
+              url: `${w.site}${path}`,
+              applyUrl: `${w.site}${path}/apply`,
+              postedAt: workdayPostedAt(str(j.postedOn)),
+              // The list has no description; `workdayDetail` reads it for postings worth triaging.
+              jd: '',
+            }
+          }),
+      })),
+    ),
+  )
+}
+
+const workdayDetail = (board: string, job: RawJob) => {
+  const w = workdayParts(board)
+  const path = w && job.url?.startsWith(w.site) ? job.url.slice(w.site.length) : null
+  if (!w || !path) return Effect.fail(new FetchError(board, null, 'not a Workday job'))
+  return fetchJson(`${w.api}${path}`).pipe(
+    Effect.map((raw): Partial<RawJob> => {
+      const i = obj(obj(raw).jobPostingInfo)
+      const locs = [str(i.location), ...arr(i.additionalLocations).map(str), str(i.remoteType)]
+      return { jd: htmlToText(str(i.jobDescription) ?? ''), location: joinLocs(locs) || job.location, postedAt: str(i.startDate) ?? job.postedAt }
+    }),
+  )
+}
+
+const recruiteeDate = (s: string | undefined) => (s ? s.replace(' ', 'T').replace(/\s*UTC$/, 'Z') : undefined)
+
+const recruitee = (board: string) =>
+  fetchJson(`https://${board}.recruitee.com/api/offers/`).pipe(
     Effect.map((d) =>
-      arr(obj(d).content)
+      arr(obj(d).offers)
         .map(obj)
+        .filter((j) => (str(j.status) ?? 'published') === 'published')
         .map((j): RawJob => {
-          const l = obj(j.location)
-          const loc = [str(l.city), str(l.region), str(l.country)].filter(Boolean).join(', ')
-          const id = str(j.id) ?? ''
+          const locs = [str(j.location), ...arr(j.locations).map((l) => str(obj(l).name))]
+          if (j.remote === true) locs.push('Remote')
+          if (j.hybrid === true) locs.push('Hybrid')
+          const sal = obj(j.salary)
           return {
-            extId: id,
-            title: str(j.name) ?? '',
-            location: l.remote === true ? `${loc} | Remote` : loc,
-            url: `https://jobs.smartrecruiters.com/${board}/${id}`,
-            postedAt: str(j.releasedDate),
-            jd: '',
+            extId: str(j.id) ?? str(j.slug) ?? '',
+            title: str(j.title) ?? '',
+            company: str(j.company_name),
+            location: joinLocs(locs),
+            url: str(j.careers_url),
+            applyUrl: str(j.careers_apply_url) ?? str(j.careers_url),
+            postedAt: recruiteeDate(str(j.published_at) ?? str(j.created_at)),
+            jd: [htmlToText(str(j.description) ?? ''), htmlToText(str(j.requirements) ?? '')].filter(Boolean).join('\n\n'),
+            comp: Predicate.isNumber(sal.min) ? `${str(sal.currency) ?? ''} ${sal.min}-${str(sal.max) ?? ''} ${str(sal.period) ?? ''}`.trim() : undefined,
           }
         }),
     ),
+  )
+
+/** Gem's job board API has Greenhouse's shape. */
+const gem = (board: string) =>
+  fetchJson(`https://api.gem.com/job_board/v0/${encodeURIComponent(board)}/job_posts/`).pipe(
+    Effect.map((d) =>
+      arr(d)
+        .map(obj)
+        .map((j): RawJob => {
+          const type = str(j.location_type)
+          const locs = [str(obj(j.location).name), ...arr(j.offices).map((o) => str(obj(obj(o).location).name) ?? str(obj(o).name)), type === 'remote' ? 'Remote' : type === 'hybrid' ? 'Hybrid' : undefined]
+          return {
+            extId: str(j.id) ?? '',
+            title: str(j.title) ?? '',
+            location: joinLocs(locs),
+            url: str(j.absolute_url),
+            applyUrl: str(j.absolute_url),
+            postedAt: str(j.first_published_at) ?? str(j.updated_at),
+            jd: str(j.content_plain) ?? htmlToText(str(j.content) ?? ''),
+          }
+        }),
+    ),
+  )
+
+const RIPPLING = 'https://api.rippling.com/platform/api/ats/v1/board'
+const rippling = (board: string) =>
+  fetchJson(`${RIPPLING}/${encodeURIComponent(board)}/jobs`).pipe(
+    Effect.map((d) =>
+      arr(d)
+        .map(obj)
+        .map((j): RawJob => ({
+          extId: str(j.uuid) ?? '',
+          title: (str(j.name) ?? '').trim(),
+          location: str(obj(j.workLocation).label) ?? '',
+          url: str(j.url),
+          applyUrl: str(j.url),
+          // The list has no description or date; `ripplingDetail` reads them for postings worth triaging.
+          jd: '',
+        })),
+    ),
+  )
+
+const ripplingDetail = (board: string, job: RawJob) =>
+  fetchJson(`${RIPPLING}/${encodeURIComponent(board)}/jobs/${encodeURIComponent(job.extId)}`).pipe(
+    Effect.map((raw): Partial<RawJob> => {
+      const d = obj(raw)
+      const desc = obj(d.description)
+      return {
+        jd: [htmlToText(str(desc.role) ?? ''), htmlToText(str(desc.company) ?? '')].filter(Boolean).join('\n\n'),
+        location: joinLocs(arr(d.workLocations).map(str)) || job.location,
+        postedAt: str(d.createdOn),
+      }
+    }),
   )
 
 const remoteok = (board: string) =>
@@ -223,24 +411,57 @@ export const parseRss = (xml: string) =>
     return { title: t, link, postedAt: parsed && !Number.isNaN(parsed.getTime()) ? parsed.toISOString() : undefined, region: region ? htmlToText(region) : undefined, company: company ? htmlToText(company) : undefined, description: tag(it, 'description') ?? '' }
   })
 
+const remoteLoc = (where: string | undefined) => `${where ?? ''} | Remote`.replace(/^ \| /, '')
+
+/**
+ * Job boards that publish JSON instead of RSS: Remotive and Jobicy (`jobs`), Working Nomads (a list,
+ * or an Elasticsearch `hits` result), and JSON Feed (`items`). Everything they list is remote.
+ */
+export const parseJsonFeed = (d: unknown): RawJob[] => {
+  const o = obj(d)
+  const hits = arr(obj(o.hits).hits).map((h) => obj(h)._source)
+  const items = Array.isArray(d) ? d : hits.length ? hits : arr(o.jobs).length ? arr(o.jobs) : arr(o.items)
+  return items.map(obj).map((j): RawJob => {
+    const url = str(j.url) ?? str(j.absolute_url) ?? str(j.link) ?? str(j.apply_url) ?? ''
+    const salMin = j.salaryMin ?? j.annualSalaryMin
+    const salMax = j.salaryMax ?? j.annualSalaryMax
+    return {
+      extId: str(j.id) ?? url,
+      title: htmlToText(str(j.title) ?? str(j.jobTitle) ?? str(j.position) ?? ''),
+      company: str(j.company_name) ?? str(j.companyName) ?? (Predicate.isString(j.company) ? j.company : str(obj(j.company).name)),
+      location: remoteLoc(str(j.candidate_required_location) ?? str(j.jobGeo) ?? str(j.location) ?? (arr(j.locations).map(str).filter(Boolean).join(', ') || undefined)),
+      url,
+      applyUrl: str(j.apply_url) ?? url,
+      postedAt: str(j.publication_date) ?? str(j.pubDate) ?? str(j.pub_date) ?? str(j.date_published),
+      jd: htmlToText(str(j.description) ?? str(j.jobDescription) ?? str(j.content_html) ?? str(j.content_text) ?? ''),
+      comp: str(j.salary) || (salMin !== undefined && salMin !== null ? `${str(j.salaryCurrency) ?? ''} ${str(salMin)}-${str(salMax) ?? ''}`.trim() : undefined),
+    }
+  })
+}
+
 const rss = (feed: string) =>
   fetchText(feed).pipe(
-    Effect.map((xml) =>
-      parseRss(xml).map((it): RawJob => {
+    Effect.flatMap((body) => {
+      const text = body.trimStart()
+      if (text.startsWith('{') || text.startsWith('[')) return parseJson(feed)(text).pipe(Effect.map(parseJsonFeed))
+      const items = parseRss(text).map((it): RawJob => {
         // WeWorkRemotely style "Company: Title"
         const [company, title] = it.company ? [it.company, it.title] : it.title.includes(': ') ? [it.title.split(': ')[0], it.title.split(': ').slice(1).join(': ')] : [undefined, it.title]
         return {
           extId: it.link || it.title,
           title: title ?? it.title,
           company,
-          location: `${it.region ?? ''} | Remote`.replace(/^ \| /, ''),
+          location: remoteLoc(it.region),
           url: it.link,
           applyUrl: it.link,
           postedAt: it.postedAt,
           jd: htmlToText(it.description),
         }
-      }),
-    ),
+      })
+      // A page that isn't a feed at all would otherwise look like a quiet feed forever.
+      if (!items.length && !/<(rss|feed|channel)[\s>]/i.test(text.slice(0, 2000))) return Effect.fail(new FetchError(feed, null, 'not an RSS or JSON job feed'))
+      return Effect.succeed(items)
+    }),
   )
 
 /**
@@ -279,27 +500,63 @@ const hn = (_board: string) =>
       })
   })
 
-export const ADAPTERS = { greenhouse, lever, ashby, workable, smartrecruiters, remoteok, rss, hn } as const
+export const ADAPTERS = { greenhouse, lever, ashby, workable, smartrecruiters, workday, recruitee, gem, rippling, remoteok, rss, hn } as const
 export type AdapterKind = keyof typeof ADAPTERS
 export const AGGREGATOR_KINDS: ReadonlySet<string> = new Set(['remoteok', 'rss', 'hn'])
 export const isAdapterKind = (k: string): k is AdapterKind => k in ADAPTERS
 
-const URL_PATTERNS: Array<[AdapterKind, RegExp]> = [
+/**
+ * Boards whose list has no descriptions: the scout reads the full posting only for jobs that pass
+ * the filters, so triage sees the real description without fetching every job on the board.
+ */
+export const DETAILS: Partial<Record<AdapterKind, (board: string, job: RawJob) => Effect.Effect<Partial<RawJob>, FetchError>>> = {
+  smartrecruiters: smartrecruitersDetail,
+  workday: workdayDetail,
+  rippling: ripplingDetail,
+}
+
+/**
+ * The least time between polls, whatever the source's tier. Workday reads up to ten pages, the HN
+ * thread is one large download that changes slowly, and Remotive asks for at most four reads a day.
+ */
+export const minPollMinutes = (kind: string, board: string) =>
+  kind === 'workday' || kind === 'hn' ? 60 : kind === 'rss' && /remotive\.com/i.test(board) ? 360 : 0
+
+const URL_PATTERNS: Array<[AdapterKind, RegExp, ((m: RegExpMatchArray) => string)?]> = [
   ['greenhouse', /(?:boards|job-boards)(?:\.eu)?\.greenhouse\.io\/(?:embed\/job_board\?for=)?([A-Za-z0-9_-]+)/],
   ['lever', /jobs\.lever\.co\/([A-Za-z0-9._-]+)/],
   ['ashby', /jobs\.ashbyhq\.com\/([^/?#]+)/],
   ['workable', /apply\.workable\.com\/([A-Za-z0-9_-]+)/],
   ['smartrecruiters', /(?:jobs|careers)\.smartrecruiters\.com\/([A-Za-z0-9_-]+)/],
+  ['workday', /([A-Za-z0-9_-]+)\.(wd\d+)\.myworkdayjobs\.com\/(?:wday\/cxs\/[A-Za-z0-9_-]+\/)?(?:[a-z]{2}-[A-Z]{2}\/)?([A-Za-z0-9_-]+)/, (m) => `${m[1]}.${m[2]}/${m[3]}`],
+  ['recruitee', /([A-Za-z0-9-]+)\.recruitee\.com/],
+  ['gem', /(?:jobs\.gem\.com|api\.gem\.com\/job_board\/v0)\/([A-Za-z0-9_-]+)/],
+  ['rippling', /ats\.rippling\.com\/(?:[a-z]{2}-[A-Z]{2}\/)?([A-Za-z0-9_-]+)\/jobs/],
 ]
 
 /** Recognize an ATS board from any job/careers URL. */
 export const detectAts = (url: string | null | undefined): { kind: AdapterKind; board: string } | null => {
-  for (const [kind, re] of URL_PATTERNS) {
+  for (const [kind, re, build] of URL_PATTERNS) {
     const m = (url ?? '').match(re)
-    if (m?.[1] && m[1] !== 'jobs' && m[1] !== 'embed') return { kind, board: decodeURIComponent(m[1]) }
+    if (m?.[1] && m[1] !== 'jobs' && m[1] !== 'embed' && m[1] !== 'www' && m[1] !== 'api') return { kind, board: build ? build(m) : decodeURIComponent(m[1]) }
   }
   return null
 }
+
+/** ATS links in a careers page's HTML, for finding the board behind it. */
+export const ATS_LINK = /https?:\/\/(?:(?:boards|job-boards)(?:\.eu)?\.greenhouse\.io|jobs\.(?:lever\.co|ashbyhq\.com|smartrecruiters\.com|gem\.com)|apply\.workable\.com|careers\.smartrecruiters\.com|[A-Za-z0-9_-]+\.wd\d+\.myworkdayjobs\.com|[A-Za-z0-9-]+\.recruitee\.com|ats\.rippling\.com)\/?[^"'\s<>]*/g
+
+/** A job feed the scout can read: the HN hiring thread, RemoteOK, or an RSS/JSON feed URL. */
+export const detectFeed = (url: string | null | undefined): { kind: AdapterKind; board: string } | null => {
+  const u = (url ?? '').trim()
+  if (/news\.ycombinator\.com\/.*whoishiring|hn\.algolia\.com.*whoishiring/i.test(u)) return { kind: 'hn', board: 'whoishiring' }
+  if (/^https?:\/\/(www\.)?remoteok\.(com|io)\/?(\?|$)/i.test(u)) return { kind: 'remoteok', board: 'engineer' }
+  if (/^https?:\/\//i.test(u) && /rss|feed|atom|\.xml|\.json|\/api\//i.test(u)) return { kind: 'rss', board: u }
+  return null
+}
+
+/** Any board or feed the scout can poll, recognized from its URL. */
+export const detectSource = (url: string | null | undefined) => detectAts(url) ?? detectFeed(url)
 
 /** Try the common ATSs for a guessed board token (e.g. a company slug). */
 export const probeBoard = (token: string) =>

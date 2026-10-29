@@ -4,7 +4,7 @@ import { ensureCompany } from '../companies'
 import { db, schema } from '../db/client'
 import { newId, nowIso, slugify, toIsoDate } from '../ids'
 import { relinkApplication } from '../services/applications'
-import { getSettings } from '../settings'
+import { getMeta, getSettings, setMeta } from '../settings'
 import { parseComp } from '../text'
 import { ADAPTERS, AGGREGATOR_KINDS, type AdapterKind, detectAts, isAdapterKind, probeBoard, type RawJob } from './adapters'
 import { compileFilters, locationPasses } from './scan'
@@ -15,7 +15,7 @@ import { compileFilters, locationPasses } from './scan'
  * company's board, match the title, and swap in the real posting: its URL, apply link and full JD.
  */
 
-const BOARD_KINDS = ['ashby', 'greenhouse', 'lever', 'workable', 'smartrecruiters'] as const
+const BOARD_KINDS = ['ashby', 'greenhouse', 'lever', 'workable', 'smartrecruiters', 'workday', 'recruitee', 'gem', 'rippling'] as const
 const RECHECK_DAYS = 14
 
 export const normTitle = (t: string) =>
@@ -152,14 +152,33 @@ const findDirect = async (p: schema.Posting, company: schema.Company): Promise<F
   return null
 }
 
-/** The company board as a candidate source, so it shows on Sources ready to switch on. */
+/**
+ * The company board as a watched source. A board found this way has just listed a role that got
+ * past the user's filters, so it's worth polling directly (and sooner than the feed reposts it).
+ * A board the user already paused or rejected stays that way.
+ */
 const ensureBoardSource = (b: Board, company: schema.Company, via: string) => {
   if (b.sourceId) return b.sourceId
   db.insert(schema.sources)
-    .values({ id: newId('src_'), name: company.name, kind: b.kind, board: b.board, url: null, companyId: company.id, status: 'candidate', why: `Found via ${via}`, origin: 'aggregator' })
+    .values({ id: newId('src_'), name: company.name, kind: b.kind, board: b.board, url: null, companyId: company.id, status: 'active', why: `Found via ${via}`, origin: 'aggregator' })
     .onConflictDoNothing()
     .run()
   return db.select({ id: schema.sources.id }).from(schema.sources).where(and(eq(schema.sources.kind, b.kind), eq(schema.sources.board, b.board))).get()!.id
+}
+
+/**
+ * Boards found through aggregators used to wait as candidates for the user to switch on. Switch on
+ * the ones still waiting, once; whatever the user sets afterwards stands.
+ */
+export const activateFoundBoards = () => {
+  if (getMeta('foundBoardsActivated')) return 0
+  const n = db
+    .update(schema.sources)
+    .set({ status: 'active' })
+    .where(and(eq(schema.sources.status, 'candidate'), eq(schema.sources.origin, 'aggregator'), inArray(schema.sources.kind, [...BOARD_KINDS])))
+    .run().changes
+  setMeta('foundBoardsActivated', nowIso())
+  return n
 }
 
 const hostOf = (url: string | null) => {

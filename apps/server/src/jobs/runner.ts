@@ -6,6 +6,7 @@ import { claimNextTask, executeTask, runTriage } from './tasks'
 import { db, schema } from '../db/client'
 import { nowIso, today } from '../ids'
 import { notify } from '../notify'
+import { activateFoundBoards } from '../scout/resolve'
 import { scan } from '../scout/scan'
 import { setStage } from '../services/applications'
 import { enqueueTask, prepInProgress } from '../services/tasks'
@@ -171,6 +172,10 @@ const main = Effect.gen(function* () {
   log('[jobs] starting')
   logActivity('system', 'Sidedoor started')
   yield* Effect.sync(reconcile).pipe((e) => guarded('reconcile', e))
+  yield* Effect.sync(() => {
+    const n = activateFoundBoards()
+    if (n) logActivity('scout', `Now watching ${n} company board${n === 1 ? '' : 's'} found through job feeds`, { link: '/sources' })
+  }).pipe((e) => guarded('sources', e))
   const scout = yield* scoutTick.pipe((e) => guarded('scout', e), Effect.repeat(Schedule.spaced(Duration.seconds(20))), Effect.forkChild)
   const triage = yield* triageTick.pipe((e) => guarded('triage', e), Effect.repeat(Schedule.spaced(Duration.seconds(15))), Effect.forkChild)
   const tasks = yield* taskLoop.pipe(Effect.forkChild)

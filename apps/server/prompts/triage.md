@@ -31,6 +31,15 @@ Return JSON {"results": [...]} with one object per posting:
 - company: the company's proper name (fix lowercase board tokens like "paxos" -> "Paxos")
 - company_domain: the company's website domain if you know it confidently, else null
 
+# Industries
+Industries or lanes in "What they want" are where they'd most like to work, not a fence, unless
+they say an industry is required or list one as a dealbreaker. A role that matches their target
+roles and level at a solid company in another industry (well funded, growing, good product, real
+remote practice) is a real option: score it on the role, their evidence and the company, and let
+the domain cost a few points rather than rule it out. If their scoring guide saves the top band for
+certain industries, other industries top out just below it; they don't drop out of contention.
+Don't count a domain they haven't worked in as a gap unless the posting requires that experience.
+
 # Location
 Use where they live and where they can work (above). Check the Location line *and* the
 description; "Remote" alone doesn't mean remote from where they live.

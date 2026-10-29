@@ -508,18 +508,17 @@ export const router = {
     return { bounced: b.bounced, next, current: null, resendDraftId: b.resendDraftId }
   }),
   addSource: proc(z.object({ url: z.string().min(2), companyName: z.string().optional(), hot: z.boolean().optional() }), async (d) => {
-    const { detectAts, probeBoard } = await import('../scout/adapters')
+    const { AGGREGATOR_KINDS, detectSource, probeBoard } = await import('../scout/adapters')
     const { ensureCompany } = await import('../companies')
     const { db, schema } = await dbm()
     const { newId } = await import('../ids')
-    let det: { kind: string; board: string } | null = detectAts(d.url)
-    if (!det && /rss|feed|\.xml/i.test(d.url)) det = { kind: 'rss', board: d.url }
+    let det: { kind: string; board: string } | null = detectSource(d.url)
     if (!det && !/[/.]/.test(d.url)) {
       const r = await Effect.runPromise(probeBoard(d.url.trim()))
       if (r) det = { kind: r.kind, board: r.board }
     }
-    if (!det) throw new Error('Could not find a Greenhouse, Lever, Ashby, Workable or SmartRecruiters board or an RSS feed in that. Paste the board URL, or just the company’s board name.')
-    const company = d.companyName ? ensureCompany(d.companyName, { atsKind: det.kind, atsBoard: det.board }) : det.kind !== 'rss' ? ensureCompany(det.board, { atsKind: det.kind, atsBoard: det.board }) : null
+    if (!det) throw new Error('Could not find a Greenhouse, Lever, Ashby, Workable, SmartRecruiters, Workday, Recruitee, Gem or Rippling board, or a job feed, in that. Paste the board URL, or just the company’s board name.')
+    const company = d.companyName ? ensureCompany(d.companyName, { atsKind: det.kind, atsBoard: det.board }) : !AGGREGATOR_KINDS.has(det.kind) ? ensureCompany(det.board.split(/[./]/)[0] ?? det.board, { atsKind: det.kind, atsBoard: det.board }) : null
     db.insert(schema.sources)
       .values({ id: newId('src_'), name: company?.name ?? det.board, kind: det.kind, board: det.board, url: d.url, companyId: company?.id ?? null, status: 'active', tier: d.hot ? 'hot' : 'normal', origin: 'manual' })
       .onConflictDoUpdate({ target: [schema.sources.kind, schema.sources.board], set: { status: 'active', ...(d.hot ? { tier: 'hot' as const } : {}) } })
