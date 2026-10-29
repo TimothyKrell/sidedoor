@@ -63,7 +63,7 @@ describe('title matching', () => {
 })
 
 describe('resolving aggregator listings', () => {
-  test('swaps in the company posting, keeps the aggregator link, and offers the board as a source', async () => {
+  test('swaps in the company posting, keeps the aggregator link, and watches the board', async () => {
     const id = listing('Director, Software Engineering (AI Workflows & Ecosystem)', '153621-director')
     const a = createApplication({ companyName: 'Crewly', role: 'Director', jobUrl: posting(id).url, applyUrl: posting(id).applyUrl })
     db.update(schema.postings).set({ applicationId: a.id }).where(eq(schema.postings.id, id)).run()
@@ -78,7 +78,7 @@ describe('resolving aggregator listings', () => {
     expect(p.compText).toBe('$200K – $250K')
     expect(p.key).toBe('ashby:crewly:a2')
     const src = db.select().from(schema.sources).where(eq(schema.sources.id, p.sourceId!)).get()!
-    expect(src).toMatchObject({ kind: 'ashby', board: 'crewly', status: 'candidate' })
+    expect(src).toMatchObject({ kind: 'ashby', board: 'crewly', status: 'active', origin: 'aggregator' })
     expect(getApplication(a.id)).toMatchObject({ jobUrl: 'https://jobs.ashbyhq.com/crewly/a2', applyUrl: 'https://jobs.ashbyhq.com/crewly/a2/application' })
   })
 

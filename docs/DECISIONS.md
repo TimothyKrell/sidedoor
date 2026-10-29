@@ -123,6 +123,36 @@ current when making a non-obvious call. Open questions for the maintainer live i
 - **Default writing guide is original.** The personal writing rules were distilled from a paid
   course, so they aren't shipped; the importer brings them over for their owner.
 
+## Scout
+
+- **Filters get a second look.** A posting the filters drop is stored without its description and
+  was never looked at again, so loosening a filter only helped future postings. Now each scan runs
+  the current filters again over the board's still-listed postings that the filters dropped and
+  nobody touched; the ones that pass now go to triage with the description from that read. It's a
+  regex per listed posting, cheap next to the fetch.
+- **Two age limits.** A company's own board lists only what's open, and senior roles stay up for
+  months. On one user's data, the 30-day limit was dropping about as many plausible open roles on
+  company boards as the title filter's gaps. Company boards get `boardMaxAgeDays` (180); feeds keep
+  `maxAgeDays` (30), since aggregators keep listings after they fill.
+- **Boards found through feeds are watched.** Resolving an aggregator listing finds the company's
+  own board. That board just listed a role that passed the user's filters, so it's polled from then
+  on, instead of waiting as a candidate the user rarely switches on (85 had piled up). It's switched
+  on once for boards already waiting; a board the user pauses or rejects stays that way.
+- **Descriptions on demand.** Workday, SmartRecruiters and Rippling list jobs without descriptions.
+  The scout reads the full posting only for jobs that pass the filters (at most 60 per board per
+  scan, three at a time; the rest wait for the next poll). That full posting is filtered again,
+  since it can say more about where the job is.
+- **Paced sources.** Workday reads up to ten pages of 20, one at a time, so it's polled at most
+  hourly. So is the HN thread, one large download that changes slowly. Remotive asks for at most
+  four reads a day, so it's polled every six hours. These floors hold even for "scan now".
+- **JSON feeds are feeds.** Remotive, Jobicy's API, Working Nomads and JSON Feed are read by the rss
+  kind. A URL that's neither RSS nor a JSON job feed is an error on Sources, not a feed that is
+  quietly always empty; two such sources had sat active with no jobs.
+- **Industries are preferences.** Triage, discovery and the funding radar treat the user's
+  industries as where they'd most like to work, not a requirement, unless they mark one required
+  or a dealbreaker. A strong role at a solid company elsewhere scores a little lower, not out.
+  Discovery looks for as many companies outside the industries as inside, and for more per run.
+
 ## Migration from the personal install
 
 - `sidedoor import-legacy <old checkout> [--resume-dir ~/Code/resume]` copies (never moves)

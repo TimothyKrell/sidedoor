@@ -16,7 +16,7 @@ are due?" from your terminal.
 
 | | |
 |---|---|
-| **Scout** | Polls company job boards (Greenhouse, Lever, Ashby, Workable, SmartRecruiters) and job feeds every few minutes. Dream companies are polled more often. |
+| **Scout** | Polls company job boards (Greenhouse, Lever, Ashby, Workable, SmartRecruiters, Workday, Recruitee, Gem, Rippling) and job feeds (RSS and JSON, the HN hiring thread) every few minutes. Dream companies are polled more often. |
 | **Triage** | Your AI scores every new posting 0-100 against what you want, with reasons, gaps, and whether you can work from where you live. Strong fits notify you right away. |
 | **Prepare** | For a role you want: a tailored copy of your resume, every form answer, and a cover letter when the form asks for one. Facts come only from your own Experience document. You approve or request changes. |
 | **Fill it for me** | Opens the application form in its own window and fills every field from the approved package, uploading your resume. It stops before submit; you review and click it. |

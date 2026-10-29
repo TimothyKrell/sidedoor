@@ -6,7 +6,7 @@ import { domainOf, ensureCompany } from '../companies'
 import { db, schema } from '../db/client'
 import { newId, nowIso } from '../ids'
 import { notifyPromise } from '../notify'
-import { detectAts, fetchJson, fetchText, parseRss, probeBoard } from '../scout/adapters'
+import { ATS_LINK, detectAts, detectSource, fetchJson, fetchText, isAdapterKind, parseRss, probeBoard } from '../scout/adapters'
 import { resolveAggregatorPostings } from '../scout/resolve'
 import { getApplication, setStage, trackPosting, updateApplication } from '../services/applications'
 import { enqueueTask } from '../services/tasks'
@@ -396,8 +396,7 @@ export const attachBoard = async (company: schema.Company, careersUrl: string | 
     // Careers pages usually link or embed their ATS.
     const page = await Effect.runPromise(fetchText(careersUrl).pipe(Effect.option))
     if (page._tag === 'Some') {
-      const m = page.value.match(/https?:\/\/(?:boards|job-boards)\.greenhouse\.io\/[^"'\s<]+|https?:\/\/jobs\.(?:lever\.co|ashbyhq\.com)\/[^"'\s<]+|https?:\/\/apply\.workable\.com\/[^"'\s<]+/)
-      found = detectAts(m?.[0])
+      found = (page.value.match(ATS_LINK) ?? []).map(detectAts).find((d) => d !== null) ?? null
     }
   }
   if (!found) {
@@ -524,11 +523,22 @@ const runDiscover = async (_task: schema.Task): Promise<TaskOutcome> => {
   const s = getSettings()
   const known = db.select().from(schema.sources).all().map((x) => `- ${x.name} (${x.kind}:${x.board}, ${x.status})`).join('\n')
   const tracked = [...new Set(db.select({ n: schema.applications.companyName }).from(schema.applications).all().map((r) => r.n))].join(', ')
-  const prompt = render('discover', { KNOWN_SITES: known, TRACKED_COMPANIES: tracked, CRITERIA: context.criteria() })
+  // Where the best-scoring postings came from, so discovery can look for more companies like them.
+  const strong = db
+    .select({ name: schema.postings.companyName, n: sql<number>`count(*)`, best: sql<number>`max(${schema.postings.fitScore})` })
+    .from(schema.postings)
+    .where(and(sql`${schema.postings.fitScore} >= ${s.triage.maybeFitScore}`, sql`${schema.postings.companyName} is not null`))
+    .groupBy(schema.postings.companyName)
+    .orderBy(desc(sql`max(${schema.postings.fitScore})`))
+    .limit(40)
+    .all()
+    .map((r) => `${r.name} (best ${r.best})`)
+    .join(', ')
+  const prompt = render('discover', { KNOWN_SITES: known, TRACKED_COMPANIES: tracked, STRONG_COMPANIES: strong || '(none scored yet)', CRITERIA: context.criteria() })
   const r = await runJob({ job: 'discover', prompt, web: true, mcp: mcpFor('lookup'), schema: DiscoverOut, maxTurns: 60, timeoutMs: 30 * 60_000 })
   let added = 0
   for (const c of r.data.sources) {
-    const det = detectAts(c.url ?? '')
+    const det = detectAts(c.url) ?? detectAts(c.board) ?? (c.kind === 'rss' || c.kind === 'hn' || c.kind === 'remoteok' ? null : detectSource(c.url))
     let kind = det?.kind ?? c.kind
     let board = det?.board ?? c.board
     const company = c.company ? ensureCompany(c.company, { domain: domainOf(c.url) }) : null
@@ -537,7 +547,8 @@ const runDiscover = async (_task: schema.Task): Promise<TaskOutcome> => {
       if (k) added++
       continue
     }
-    if (!kind || !board) {
+    // Anything the scout has no reader for is kept on Sources for the user, not polled.
+    if (!kind || !board || !isAdapterKind(kind)) {
       kind = 'manual'
       board = c.url ?? c.name
     }

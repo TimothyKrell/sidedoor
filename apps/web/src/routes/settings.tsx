@@ -281,8 +281,11 @@ function SearchSection() {
         <Row label="Everything else every">
           <NumberInput value={scout.v.normalIntervalMin} min={2} onChange={(normalIntervalMin) => scout.set({ normalIntervalMin })} suffix="min" />
         </Row>
-        <Row label="Ignore postings older than">
+        <Row label="Ignore job-board listings older than" hint="Feeds like We Work Remotely keep listings after they fill. 0 = no limit.">
           <NumberInput value={scout.v.maxAgeDays} onChange={(maxAgeDays) => scout.set({ maxAgeDays })} suffix="days" />
+        </Row>
+        <Row label="Ignore company postings older than" hint="A company's own board lists only open roles, and senior roles stay up for months. 0 = no limit.">
+          <NumberInput value={scout.v.boardMaxAgeDays} onChange={(boardMaxAgeDays) => scout.set({ boardMaxAgeDays })} suffix="days" />
         </Row>
         <Row label="Scout is on">
           <Switch checked={scout.v.enabled} onCheckedChange={(enabled) => scout.set({ enabled })} />

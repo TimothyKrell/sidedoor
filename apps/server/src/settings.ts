@@ -73,7 +73,13 @@ export const AppSettings = z.object({
       /** Minutes between polls of "hot" sources (dream companies). */
       hotIntervalMin: z.number().min(1).default(5),
       normalIntervalMin: z.number().min(2).default(20),
+      /** Job feeds (aggregators): skip listings older than this. 0 = no limit. */
       maxAgeDays: z.number().default(30),
+      /**
+       * Company boards: a board lists only open roles, and senior roles stay up for months, so a
+       * much longer limit. 0 = no limit.
+       */
+      boardMaxAgeDays: z.number().default(180),
       /** Title regexes. Generated from search.roles; editable under Advanced. */
       titleInclude: z.array(z.string()).default([]),
       titleExclude: z.array(z.string()).default([]),

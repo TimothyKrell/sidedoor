@@ -138,6 +138,26 @@
    "tags": [
     "Crypto & web3"
    ]
+  },
+  {
+   "id": "rss:workingnomads-dev",
+   "name": "Working Nomads \u00b7 Development",
+   "kind": "rss",
+   "board": "https://www.workingnomads.com/jobsapi/_search?q=category_name:Development&size=100&sort=pub_date:desc",
+   "tags": [
+    "Remote",
+    "Engineering"
+   ]
+  },
+  {
+   "id": "rss:remotive-dev",
+   "name": "Remotive \u00b7 Software development",
+   "kind": "rss",
+   "board": "https://remotive.com/api/remote-jobs?category=software-dev",
+   "tags": [
+    "Remote",
+    "Engineering"
+   ]
   }
  ],
  "companies": [
@@ -1552,6 +1572,87 @@
    "domain": null,
    "tags": [
     "AI"
+   ]
+  },
+  {
+   "id": "workday:paypal",
+   "name": "PayPal",
+   "kind": "workday",
+   "board": "paypal.wd1/jobs",
+   "domain": "paypal.com",
+   "tags": [
+    "Fintech"
+   ]
+  },
+  {
+   "id": "workday:capitalone",
+   "name": "Capital One",
+   "kind": "workday",
+   "board": "capitalone.wd12/Capital_One",
+   "domain": "capitalone.com",
+   "tags": [
+    "Fintech"
+   ]
+  },
+  {
+   "id": "workday:mastercard",
+   "name": "Mastercard",
+   "kind": "workday",
+   "board": "mastercard.wd1/CorporateCareers",
+   "domain": "mastercard.com",
+   "tags": [
+    "Fintech"
+   ]
+  },
+  {
+   "id": "workday:fidelity",
+   "name": "Fidelity Investments",
+   "kind": "workday",
+   "board": "fmr.wd1/FidelityCareers",
+   "domain": "fidelity.com",
+   "tags": [
+    "Fintech"
+   ]
+  },
+  {
+   "id": "workday:adobe",
+   "name": "Adobe",
+   "kind": "workday",
+   "board": "adobe.wd5/external_experienced",
+   "domain": "adobe.com",
+   "tags": [
+    "Tech",
+    "Creative AI"
+   ]
+  },
+  {
+   "id": "workday:salesforce",
+   "name": "Salesforce",
+   "kind": "workday",
+   "board": "salesforce.wd12/External_Career_Site",
+   "domain": "salesforce.com",
+   "tags": [
+    "Tech"
+   ]
+  },
+  {
+   "id": "workday:nvidia",
+   "name": "NVIDIA",
+   "kind": "workday",
+   "board": "nvidia.wd5/NVIDIAExternalCareerSite",
+   "domain": "nvidia.com",
+   "tags": [
+    "AI"
+   ]
+  },
+  {
+   "id": "workday:workday",
+   "name": "Workday",
+   "kind": "workday",
+   "board": "workday.wd5/Workday",
+   "domain": "workday.com",
+   "tags": [
+    "Tech"
    ]
   }
  ]

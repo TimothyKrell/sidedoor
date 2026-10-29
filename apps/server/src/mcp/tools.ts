@@ -7,7 +7,7 @@ import { db, schema } from '../db/client'
 import { newId, nowIso, today } from '../ids'
 import { notifyPromise } from '../notify'
 import { Effect } from 'effect'
-import { ADAPTERS, detectAts, fetchText, probeBoard, type RawJob } from '../scout/adapters'
+import { ADAPTERS, DETAILS, detectAts, detectFeed, fetchText, isAdapterKind, probeBoard, type RawJob } from '../scout/adapters'
 import { companyBoard, normTitle } from '../scout/resolve'
 import {
   createApplication,
@@ -525,12 +525,12 @@ export const appTools = [
 
   tool(
     'add_source',
-    "Add a job board for the scout to poll. Give any careers/ATS URL (Greenhouse, Lever, Ashby, Workable, SmartRecruiters are auto-detected) or an RSS feed URL. A company's own careers page works too: Sidedoor looks for the ATS board it links to, then probes the usual ATSs under companyName.",
+    "Add a job board for the scout to poll. Give any careers/ATS URL (Greenhouse, Lever, Ashby, Workable, SmartRecruiters, Workday (…myworkdayjobs.com/<site>), Recruitee, Gem and Rippling are auto-detected), an RSS or JSON job feed URL, or the Hacker News \"Who is hiring\" thread. A company's own careers page works too: Sidedoor looks for the ATS board it links to, then probes the usual ATSs under companyName.",
     { url: z.string(), name: z.string().optional(), companyName: z.string().optional(), hot: z.boolean().optional().describe('poll every few minutes') },
     safe(async (a) => {
-      const isFeed = /rss|feed|\.xml/i.test(a.url)
-      const det = detectAts(a.url) ?? (isFeed ? null : await boardBehind(a.url, a.companyName))
-      const kind = det?.kind ?? (isFeed ? 'rss' : null)
+      const feed = detectAts(a.url) ? null : detectFeed(a.url)
+      const det = detectAts(a.url) ?? feed ?? (await boardBehind(a.url, a.companyName))
+      const kind = det?.kind ?? null
       const guessed = !!det && 'guessed' in det && det.guessed
       if (!kind) {
         // A custom careers page: keep it on Sources as a candidate so it isn't lost, but the scout can't poll it.
@@ -816,7 +816,7 @@ export const appTools = [
 
   tool(
     'board_jobs',
-    "List open jobs straight from a company's own ATS board API (Ashby, Greenhouse, Lever, Workable, SmartRecruiters): title, location, job and apply links, posted date, pay. Give a board or job URL, or a company name (uses the board Sidedoor knows, else probes the usual ATSs by name, so check `board` is really theirs). Filter with `title` (all words must appear). includeJd adds each match's description. Use this to find a company's real listing for an aggregator repost, check remote/location, or see what else they have open, instead of paging api.ashbyhq.com or boards-api.greenhouse.io through WebFetch.",
+    "List open jobs straight from a company's own ATS board API (Ashby, Greenhouse, Lever, Workable, SmartRecruiters, Workday, Recruitee, Gem, Rippling; Workday lists its newest 200): title, location, job and apply links, posted date, pay. Give a board or job URL, or a company name (uses the board Sidedoor knows, else probes the usual ATSs by name, so check `board` is really theirs). Filter with `title` (all words must appear). includeJd adds each match's description. Use this to find a company's real listing for an aggregator repost, check remote/location, or see what else they have open, instead of paging api.ashbyhq.com or boards-api.greenhouse.io through WebFetch.",
     {
       url: z.string().optional(),
       company: z.string().optional(),
@@ -835,14 +835,22 @@ export const appTools = [
         found = await companyBoard(known ?? ({ id: '', name: a.company.trim(), slug, domain: null, atsKind: null, atsBoard: null } as schema.Company))
       }
       else throw new Error('Give a board/job URL or a company name')
-      if (!found) throw new Error(`No Ashby/Greenhouse/Lever/Workable board found for ${a.company}. Try read_page on their careers page, then pass the board URL it links to.`)
+      if (!found) throw new Error(`No Ashby/Greenhouse/Lever/Workable board found for ${a.company}. Try read_page on their careers page, then pass the board URL it links to (Workday, SmartRecruiters, Recruitee, Gem and Rippling URLs work too).`)
       const words = a.title ? normTitle(a.title).split(' ').filter(Boolean) : []
       const jobs = found.jobs.filter((j) => words.every((w) => normTitle(j.title).split(' ').includes(w)))
+      const shown = jobs.slice(0, a.limit ?? 40)
+      // Some boards list no descriptions (Workday, SmartRecruiters, Rippling): read the first few matches.
+      const detail = isAdapterKind(found.kind) ? DETAILS[found.kind] : undefined
+      if (a.includeJd && detail) {
+        const board = found.board
+        const read = await Effect.runPromise(Effect.forEach(shown.slice(0, 10), (j) => detail(board, j).pipe(Effect.orElseSucceed(() => ({}))), { concurrency: 3 }))
+        read.forEach((d, i) => Object.assign(shown[i]!, Object.fromEntries(Object.entries(d).filter(([, v]) => v !== undefined && v !== ''))))
+      }
       return {
         board: `${found.kind}:${found.board}`,
         total: found.jobs.length,
         matches: jobs.length,
-        jobs: jobs.slice(0, a.limit ?? 40).map((j) => ({
+        jobs: shown.map((j) => ({
           title: j.title,
           location: j.location,
           url: j.url,
