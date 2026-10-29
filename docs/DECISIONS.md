@@ -202,6 +202,10 @@ current when making a non-obvious call. Open questions for the maintainer live i
 
 ## AI usage limits
 
+- **Filling a form goes first, even when paused.** The user starts it and watches it happen in the
+  window on their desktop, so it doesn't wait behind a backlog of research and tailoring, and pausing
+  the AI work (to save usage) doesn't hold it. A paused queue runs only those.
+
 - **Out of usage pauses the work; it doesn't fail it.** When the user's AI says it hit a session or
   usage limit, the task goes back in the queue for the reset time it names (or half an hour), without
   spending an attempt, and the queue and triage stop claiming work until then. Otherwise one limit

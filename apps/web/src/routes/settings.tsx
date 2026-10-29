@@ -422,7 +422,7 @@ function AiSection() {
         <Row label="AI jobs at once" hint="Keeps your subscription usage sane.">
           <NumberInput value={worker.v.concurrency} min={1} max={6} onChange={(concurrency) => worker.set({ concurrency })} />
         </Row>
-        <Row label="Pause all AI work">
+        <Row label="Pause all AI work" hint="Forms you ask it to fill still get filled.">
           <Switch checked={worker.v.paused} onCheckedChange={(paused) => worker.set({ paused })} />
         </Row>
       </Card>

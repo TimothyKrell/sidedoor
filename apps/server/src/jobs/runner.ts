@@ -64,9 +64,9 @@ const taskLoop = Effect.gen(function* () {
   db.update(schema.tasks).set({ status: 'queued', startedAt: null }).where(ours).run()
   yield* Effect.gen(function* () {
     const s = getSettings().worker
-    if (s.paused || aiLimitedUntil()) return
+    if (aiLimitedUntil()) return
     while ((yield* Ref.get(running)) < s.concurrency) {
-      const task = claimNextTask()
+      const task = claimNextTask({ interactiveOnly: s.paused })
       if (!task) break
       log(`[task] start ${task.kind}: ${task.title}`)
       yield* Ref.update(running, (n) => n + 1)

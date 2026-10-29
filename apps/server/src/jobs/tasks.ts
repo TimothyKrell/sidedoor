@@ -612,15 +612,26 @@ export const RUNNERS: Partial<Record<schema.TaskKind, (t: schema.Task) => Promis
 }
 
 /** Claim the next runnable task (highest priority, oldest). Tasks sent to Grok Bot wait for it instead. */
-export const claimNextTask = () =>
+// Work the user is watching happen: filling a form in the window on their desktop. It goes ahead of
+// the backlog, and still runs while the rest of the AI work is paused.
+export const INTERACTIVE_KINDS: schema.TaskKind[] = ['submit-assist']
+
+export const claimNextTask = (o: { interactiveOnly?: boolean } = {}) =>
   db.transaction((tx) => {
     const now = nowIso()
     const away = grokBotKinds()
     const next = tx
       .select()
       .from(schema.tasks)
-      .where(and(eq(schema.tasks.status, 'queued'), sql`(${schema.tasks.runAfter} is null or ${schema.tasks.runAfter} <= ${now})`, ...(away.length ? [notInArray(schema.tasks.kind, away)] : [])))
-      .orderBy(desc(schema.tasks.priority), asc(schema.tasks.createdAt))
+      .where(
+        and(
+          eq(schema.tasks.status, 'queued'),
+          sql`(${schema.tasks.runAfter} is null or ${schema.tasks.runAfter} <= ${now})`,
+          ...(away.length ? [notInArray(schema.tasks.kind, away)] : []),
+          ...(o.interactiveOnly ? [inArray(schema.tasks.kind, INTERACTIVE_KINDS)] : []),
+        ),
+      )
+      .orderBy(desc(inArray(schema.tasks.kind, INTERACTIVE_KINDS)), desc(schema.tasks.priority), asc(schema.tasks.createdAt))
       .get()
     if (!next) return null
     tx.update(schema.tasks).set({ status: 'running', startedAt: now, attempts: next.attempts + 1 }).where(eq(schema.tasks.id, next.id)).run()
