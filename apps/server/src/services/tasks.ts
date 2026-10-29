@@ -14,6 +14,9 @@ export interface EnqueueOptions {
   dedupe?: boolean
 }
 
+/** Work the user needs now: it goes ahead of the backlog and still runs while AI work is paused. */
+export const URGENT_PRIORITY = 50
+
 export const enqueueTask = (kind: schema.TaskKind, title: string, o: EnqueueOptions = {}) => {
   if (o.dedupe !== false) {
     const conds = [eq(schema.tasks.kind, kind), inArray(schema.tasks.status, ['queued', 'running'])]
@@ -22,6 +25,11 @@ export const enqueueTask = (kind: schema.TaskKind, title: string, o: EnqueueOpti
     if (o.postingId) conds.push(eq(schema.tasks.postingId, o.postingId))
     if (o.applicationId || o.personId || o.postingId || kind === 'funding' || kind === 'discover' || kind === 'resume-notes') {
       const existing = db.select().from(schema.tasks).where(and(...conds)).get()
+      // Asking again with more urgency moves the waiting one up instead of queueing a second.
+      if (existing && existing.status === 'queued' && (o.priority ?? 0) > existing.priority) {
+        db.update(schema.tasks).set({ priority: o.priority! }).where(eq(schema.tasks.id, existing.id)).run()
+        return { ...existing, priority: o.priority! }
+      }
       if (existing) return existing
     }
   }

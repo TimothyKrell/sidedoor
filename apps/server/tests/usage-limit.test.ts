@@ -4,7 +4,8 @@ import { aiLimitedUntil, usageLimitUntil } from '../src/ai/limits'
 import { db, schema } from '../src/db/client'
 import { claimNextTask, executeTask, RUNNERS } from '../src/jobs/tasks'
 import { setMeta } from '../src/settings'
-import { enqueueTask } from '../src/services/tasks'
+import { enqueueTask, URGENT_PRIORITY } from '../src/services/tasks'
+import { createApplication } from '../src/services/applications'
 
 const CLAUDE = "Claude Code returned an error result: You've hit your session limit · resets 10:10pm (America/New_York)"
 
@@ -47,4 +48,12 @@ test('filling a form goes ahead of the backlog, and is the only work a paused qu
   expect(claimNextTask({ interactiveOnly: true })?.id).toBe(fill.id)
   expect(claimNextTask({ interactiveOnly: true })).toBeNull()
   expect(claimNextTask()?.id).toBe(backlog.id)
+})
+
+test('urgent work runs while paused; asking again urgently moves a waiting task up', () => {
+  const app = createApplication({ companyName: 'Initech', role: 'Engineering Manager', stage: 'interested' })
+  const waiting = enqueueTask('prep', 'Prepare package: Initech', { applicationId: app.id, priority: 10 })
+  expect(claimNextTask({ interactiveOnly: true })).toBeNull()
+  expect(enqueueTask('prep', 'Prepare package: Initech', { applicationId: app.id, priority: URGENT_PRIORITY }).id).toBe(waiting.id)
+  expect(claimNextTask({ interactiveOnly: true })?.id).toBe(waiting.id)
 })

@@ -204,7 +204,8 @@ current when making a non-obvious call. Open questions for the maintainer live i
 
 - **Filling a form goes first, even when paused.** The user starts it and watches it happen in the
   window on their desktop, so it doesn't wait behind a backlog of research and tailoring, and pausing
-  the AI work (to save usage) doesn't hold it. A paused queue runs only those.
+  the AI work (to save usage) doesn't hold it. A paused queue runs only those, and work started as
+  urgent (start_task's `urgent`, for a role the user needs to submit now), which also goes first.
 
 - **Out of usage pauses the work; it doesn't fail it.** When the user's AI says it hit a session or
   usage limit, the task goes back in the queue for the reset time it names (or half an hour), without

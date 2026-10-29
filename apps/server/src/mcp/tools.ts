@@ -39,7 +39,7 @@ import {
   updatePerson,
   upsertPerson,
 } from '../services/people'
-import { cancelTask, enqueueTask, retryTask } from '../services/tasks'
+import { cancelTask, enqueueTask, retryTask, URGENT_PRIORITY } from '../services/tasks'
 import { setMeta } from '../settings'
 import { parseComp, truncate } from '../text'
 import { paths } from '../config'
@@ -569,6 +569,7 @@ export const appTools = [
       applicationId: z.string().optional(),
       personId: z.string().optional(),
       instructions: z.string().optional(),
+      urgent: z.boolean().optional().describe('The user needs this now: it runs ahead of the queue, even while AI work is paused. Only when the user asks.'),
     },
     safe((a) => {
       const app = a.applicationId ? getApplication(a.applicationId) : undefined
@@ -576,7 +577,7 @@ export const appTools = [
       const t = enqueueTask(a.kind, `${a.kind === 'submit-assist' ? 'Fill form' : `${a.kind[0]!.toUpperCase()}${a.kind.slice(1)}`}: ${label}`, {
         applicationId: a.applicationId ?? null,
         personId: a.personId ?? null,
-        priority: 10,
+        priority: a.urgent ? URGENT_PRIORITY : 10,
         input: a.instructions ? { instructions: a.instructions } : {},
       })
       return { taskId: t.id, status: t.status }

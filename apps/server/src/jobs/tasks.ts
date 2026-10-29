@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, notInArray, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, gte, inArray, isNull, notInArray, or, sql } from 'drizzle-orm'
 import { Effect } from 'effect'
 import { z } from 'zod'
 import { logActivity } from '../activity'
@@ -9,7 +9,7 @@ import { notifyPromise } from '../notify'
 import { ATS_LINK, detectAts, detectSource, fetchJson, fetchText, isAdapterKind, parseRss, probeBoard } from '../scout/adapters'
 import { resolveAggregatorPostings } from '../scout/resolve'
 import { getApplication, setStage, trackPosting, updateApplication } from '../services/applications'
-import { enqueueTask } from '../services/tasks'
+import { enqueueTask, URGENT_PRIORITY } from '../services/tasks'
 import { getMeta, getSettings, setMeta } from '../settings'
 import { htmlToText, truncate } from '../text'
 import { mcpFor, runJob } from '../ai'
@@ -612,9 +612,10 @@ export const RUNNERS: Partial<Record<schema.TaskKind, (t: schema.Task) => Promis
 }
 
 /** Claim the next runnable task (highest priority, oldest). Tasks sent to Grok Bot wait for it instead. */
-// Work the user is watching happen: filling a form in the window on their desktop. It goes ahead of
-// the backlog, and still runs while the rest of the AI work is paused.
+// Work the user is watching happen (filling a form in the window on their desktop) or has marked
+// urgent goes ahead of the backlog, and still runs while the rest of the AI work is paused.
 export const INTERACTIVE_KINDS: schema.TaskKind[] = ['submit-assist']
+const userWaiting = () => or(inArray(schema.tasks.kind, INTERACTIVE_KINDS), gte(schema.tasks.priority, URGENT_PRIORITY))!
 
 export const claimNextTask = (o: { interactiveOnly?: boolean } = {}) =>
   db.transaction((tx) => {
@@ -628,7 +629,7 @@ export const claimNextTask = (o: { interactiveOnly?: boolean } = {}) =>
           eq(schema.tasks.status, 'queued'),
           sql`(${schema.tasks.runAfter} is null or ${schema.tasks.runAfter} <= ${now})`,
           ...(away.length ? [notInArray(schema.tasks.kind, away)] : []),
-          ...(o.interactiveOnly ? [inArray(schema.tasks.kind, INTERACTIVE_KINDS)] : []),
+          ...(o.interactiveOnly ? [userWaiting()] : []),
         ),
       )
       .orderBy(desc(inArray(schema.tasks.kind, INTERACTIVE_KINDS)), desc(schema.tasks.priority), asc(schema.tasks.createdAt))

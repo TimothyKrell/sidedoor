@@ -416,14 +416,14 @@ export const router = {
     },
   ),
   startTask: proc(
-    z.object({ kind: z.enum(['research', 'prep', 'outreach', 'discover', 'funding', 'custom', 'submit-assist', 'match', 'x-scout']), applicationId: z.string().optional(), personId: z.string().optional(), instructions: z.string().optional(), title: z.string().optional() }),
+    z.object({ kind: z.enum(['research', 'prep', 'outreach', 'discover', 'funding', 'custom', 'submit-assist', 'match', 'x-scout']), applicationId: z.string().optional(), personId: z.string().optional(), instructions: z.string().optional(), title: z.string().optional(), urgent: z.boolean().optional() }),
     async (d) => {
       const t = await tasks()
       const m = await apps()
       const a = d.applicationId ? m.getApplication(d.applicationId) : undefined
       const label = d.title ?? (a ? `${a.companyName} – ${a.role}` : (d.instructions?.slice(0, 70) ?? d.kind))
       const verb = { 'submit-assist': 'Fill form', match: 'Check resume match', 'x-scout': 'Research on X' }[d.kind as string] ?? `${d.kind[0]!.toUpperCase()}${d.kind.slice(1)}`
-      const task = t.enqueueTask(d.kind, `${verb}: ${label}`, { applicationId: d.applicationId ?? null, personId: d.personId ?? null, priority: 10, input: d.instructions ? { instructions: d.instructions } : {} })
+      const task = t.enqueueTask(d.kind, `${verb}: ${label}`, { applicationId: d.applicationId ?? null, personId: d.personId ?? null, priority: d.urgent ? t.URGENT_PRIORITY : 10, input: d.instructions ? { instructions: d.instructions } : {} })
       return { id: task.id }
     },
   ),
