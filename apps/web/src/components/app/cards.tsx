@@ -108,6 +108,11 @@ export interface AppLike {
   listing?: { postedAt: string | null; firstSeenAt: string; compText: string | null; compMin: number | null; compMax: number | null } | null
   /** AI prep under way for it (queued or running). */
   prep?: { revision: boolean; running: boolean } | null
+  /** Your order within its stage (1 = first), if you or your AI ranked it. */
+  rank?: number | null
+  /** Your AI's estimate of the chance it gets you an interview (0-100), and why. */
+  shot?: number | null
+  shotWhy?: string | null
 }
 
 /** What the AI is doing with an application, in a word or two. */
@@ -123,7 +128,10 @@ export function AppRow({ a, showStage = true, showListing = false }: { a: AppLik
       <CompanyAvatar name={a.companyName} className="size-8 text-xs" />
       <div className="min-w-0 flex-1">
         {/* Company and role on their own lines: one company's roles often differ only at the end. */}
-        <div className="truncate text-sm font-medium">{a.companyName}</div>
+        <div className="truncate text-sm font-medium">
+          {a.rank != null && <span className="mr-1.5 font-mono text-xs text-muted-foreground tabular-nums">#{a.rank}</span>}
+          {a.companyName}
+        </div>
         <div className="line-clamp-2 text-sm text-muted-foreground">{a.role}</div>
         {a.prep ? (
           <div className="mt-0.5 flex items-center gap-1.5 text-xs text-info">
@@ -134,8 +142,13 @@ export function AppRow({ a, showStage = true, showListing = false }: { a: AppLik
           a.nextAction && <div className="mt-0.5 truncate text-xs text-muted-foreground">{a.nextAction}</div>
         )}
         {/* One wrapping meta row, so dates never sit on top of each other in narrow columns. */}
-        {(hasListing || a.nextActionDate) && (
+        {(hasListing || a.nextActionDate || a.shot != null) && (
           <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-xs">
+            {a.shot != null && (
+              <span title={a.shotWhy ?? undefined} className="text-muted-foreground">
+                Odds <span className="font-medium text-foreground tabular-nums">{a.shot}%</span>
+              </span>
+            )}
             <Due date={a.nextActionDate} />
             {hasListing && <Salary {...comp} />}
             {hasListing && a.listing && <Freshness postedAt={a.listing.postedAt} firstSeenAt={a.listing.firstSeenAt} />}

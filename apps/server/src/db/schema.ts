@@ -183,6 +183,11 @@ export const applications = sqliteTable(
     reviewNotes: text('review_notes'),
     notesMd: text('notes_md'),
     closedReason: text('closed_reason'),
+    /** Your order within its stage, best shot first (lower comes first). Unranked ones follow. */
+    rank: real('rank'),
+    /** Your AI's estimate (0-100) of the chance this application gets you an interview, and why. */
+    shot: integer('shot'),
+    shotWhy: text('shot_why'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

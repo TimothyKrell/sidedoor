@@ -13,8 +13,11 @@ import {
   createApplication,
   getApplication,
   mergeApplications,
+  rankApplications,
+  setShot,
   setStage,
   STAGE_LABEL,
+  unrankApplications,
   trackPosting,
   updateApplication,
 } from '../services/applications'
@@ -93,6 +96,8 @@ const appBrief = (a: schema.Application) => ({
   nextActionDate: a.nextActionDate,
   appliedAt: a.appliedAt,
   url: a.jobUrl,
+  rank: a.rank,
+  shot: a.shot,
 })
 
 /** Every other application at the same company, so a second application to one employer is never an accident. */
@@ -323,6 +328,8 @@ export const appTools = [
       jobUrl: z.string().optional().describe("the posting's URL; use the company's own ATS listing, not an aggregator repost"),
       applyUrl: z.string().optional(),
       notes: z.string().optional().describe('replaces all notes; prefer appendNote'),
+      shot: z.number().min(0).max(100).nullable().optional().describe('your estimate (0-100) of the chance this application gets them an interview; null clears it'),
+      shotWhy: z.string().optional().describe('one sentence on why, shown with the estimate'),
     },
     safe((a) => {
       const cur = getApplication(a.id)
@@ -348,6 +355,7 @@ export const appTools = [
         const base = patch.notesMd ?? cur.notesMd
         patch.notesMd = `${base ? `${base}\n` : ''}- **${today()}:** ${a.appendNote}`
       }
+      if (a.shot !== undefined || a.shotWhy !== undefined) setShot(a.id, a.shot === undefined ? cur.shot : a.shot, a.shotWhy ?? cur.shotWhy)
       const next = Object.keys(patch).length ? updateApplication(a.id, patch) : getApplication(a.id)
       return { ...appBrief(next!), applyUrl: next!.applyUrl, location: next!.location, comp: next!.compText }
     }),
@@ -771,6 +779,19 @@ export const appTools = [
     safe(({ id }) => {
       reopenDraft(id)
       return db.select().from(schema.drafts).where(eq(schema.drafts.id, id)).get()
+    }),
+  ),
+
+  tool(
+    'rank_applications',
+    "Put applications in priority order, best shot first, the way the user drags cards on the pipeline board. The ids given get ranks 1..n in that order; other ranked applications in the same stages move after them. Rank within a stage (e.g. all of Ready for review). Set each one's `shot` with update_application first so the user sees why. `clear` takes the given ids out of the ranking instead.",
+    { ids: z.array(z.string()).min(1).describe('application ids, best first'), clear: z.boolean().optional() },
+    safe((a) => {
+      if (a.clear) {
+        unrankApplications(a.ids)
+        return { cleared: a.ids.length }
+      }
+      return { ranked: rankApplications(a.ids) }
     }),
   ),
 

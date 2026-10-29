@@ -74,6 +74,12 @@ function ApplicationPage() {
             {data.posting?.closedAt && <Badge variant="destructive">Listing closed {fmtDate(data.posting.closedAt)}</Badge>}
           </div>
           {data.posting && <LocationNote fit={data.posting.locationFit} note={data.posting.locationNote} />}
+          {a.shot != null && (
+            <div className="mt-1.5 text-xs text-muted-foreground">
+              Your AI puts your odds of an interview at <span className="font-medium text-foreground tabular-nums">{a.shot}%</span>
+              {a.shotWhy && <>: {a.shotWhy}</>}
+            </div>
+          )}
         </div>
         {(a.jobUrl || a.applyUrl) && (
           <Button asChild size="sm" variant="outline" className="shrink-0 self-start">

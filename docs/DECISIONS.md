@@ -156,3 +156,16 @@ current when making a non-obvious call. Open questions for the maintainer live i
 - **Dev data is a quiet copy of the real data** (`pnpm dev:data`): scout, automatic AI jobs and
   notifications off, so a preview never does real work twice.
 
+
+## Ranking the pipeline
+
+- **A rank orders one stage's column, nothing more.** You drag cards (or use the arrows in
+  Reorder) and the column you touched becomes ranked in that order; your AI does the same with
+  `rank_applications`. Moving an application to another stage drops its rank, since a place in
+  Ready for review says nothing about where it belongs among Applied. Unranked cards follow the
+  ranked ones in the old automatic order (AI work under way, high priority, odds, fit).
+- **Odds are separate from fit and match.** Fit is triage's read of the posting against what you
+  want; the match is the resume against the requirements; odds (`shot`, 0-100, with a one-line
+  why) are your AI's estimate of the chance of an interview, which also weighs level, competition,
+  freshness, other applications at the company and warm paths. A rank or an estimate isn't
+  activity on the application, so neither touches `lastActivityAt`.

@@ -394,6 +394,14 @@ export const router = {
       return { ok: true }
     },
   ),
+  rankApplications: proc(z.object({ ids: z.array(z.string()) }), async ({ ids }) => {
+    ;(await apps()).rankApplications(ids)
+    return { ok: true }
+  }),
+  unrankApplications: proc(z.object({ ids: z.array(z.string()) }), async ({ ids }) => {
+    ;(await apps()).unrankApplications(ids)
+    return { ok: true }
+  }),
   createApplication: proc(
     z.object({ companyName: z.string().min(1), role: z.string().min(1), jobUrl: z.string().optional(), source: z.string().optional(), research: z.boolean().optional(), prep: z.boolean().optional() }),
     async (d) => {

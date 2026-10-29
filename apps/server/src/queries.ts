@@ -61,6 +61,9 @@ const appCols = {
   jobUrl: A.jobUrl,
   applyUrl: A.applyUrl,
   resumeId: A.resumeId,
+  rank: A.rank,
+  shot: A.shot,
+  shotWhy: A.shotWhy,
   createdAt: A.createdAt,
 }
 
@@ -99,7 +102,10 @@ export const getToday = () => {
       return Number.isNaN(posted) || Date.now() - posted < 5 * 86400_000
     })
     .slice(0, 12)
-  const review = db.select(appCols).from(A).where(and(inArray(A.stage, ['review', 'approved']), inArray(A.status, ['potential', 'active', 'on-hold']))).orderBy(desc(A.fitScore)).all()
+  const review = db.select(appCols).from(A).where(and(inArray(A.stage, ['review', 'approved']), inArray(A.status, ['potential', 'active', 'on-hold'])))
+    // Your order first (the pipeline's), then your AI's odds, then fit.
+    .orderBy(sql`${A.rank} is null`, A.rank, sql`${A.shot} is null`, desc(A.shot), desc(A.fitScore))
+    .all()
   const prep = prepInProgress()
   const preparing = prep.size ? db.select(appCols).from(A).where(inArray(A.id, [...prep.keys()])).all().map((a) => ({ ...a, prep: prep.get(a.id)! })) : []
   const dueApps = db

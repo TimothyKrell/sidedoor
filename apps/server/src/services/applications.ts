@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { and, eq, inArray, isNotNull, notInArray } from 'drizzle-orm'
 import type { ResumeMatch } from '@sidedoor/shared/match'
 import { logActivity } from '../activity'
 import { db, schema } from '../db/client'
@@ -86,7 +86,8 @@ export const setStage = atomic((id: string, stage: schema.ApplicationStage, o: {
   const a = getApplication(id)
   if (!a) throw new Error(`No application ${id}`)
   const s = getSettings()
-  const patch: AppPatch = { stage }
+  // A rank orders one stage's column; it means nothing in the next one.
+  const patch: AppPatch = stage === a.stage ? { stage } : { stage, rank: null }
   switch (stage) {
     case 'applied':
       patch.status = 'active'
@@ -134,6 +135,36 @@ export const setStage = atomic((id: string, stage: schema.ApplicationStage, o: {
     link: `/applications/${id}`,
   })
   return next
+})
+
+/**
+ * Put applications in order, best first. The ones named get ranks 1..n in that order; any other
+ * ranked application in the same stages moves after them, keeping its order. Like the score below,
+ * a ranking is a judgment about the application, not activity on it, so lastActivityAt stays.
+ */
+export const rankApplications = atomic((ids: string[]) => {
+  const A = schema.applications
+  const rows = ids.length ? db.select({ id: A.id, stage: A.stage }).from(A).where(inArray(A.id, ids)).all() : []
+  const missing = ids.filter((id) => !rows.some((r) => r.id === id))
+  if (missing.length) throw new Error(`No application ${missing.join(', ')}`)
+  const stages = [...new Set(rows.map((r) => r.stage))]
+  const rest = stages.length
+    ? db.select({ id: A.id, rank: A.rank }).from(A).where(and(inArray(A.stage, stages), isNotNull(A.rank), notInArray(A.id, ids))).all().sort((x, y) => (x.rank ?? 0) - (y.rank ?? 0))
+    : []
+  const order = [...new Set(ids)].concat(rest.map((r) => r.id))
+  order.forEach((id, i) => db.update(A).set({ rank: i + 1, updatedAt: nowIso() }).where(eq(A.id, id)).run())
+  return order.length
+})
+
+/** Take applications out of the ranking; they sort with the unranked ones again. */
+export const unrankApplications = atomic((ids: string[]) => {
+  if (ids.length) db.update(schema.applications).set({ rank: null, updatedAt: nowIso() }).where(inArray(schema.applications.id, ids)).run()
+})
+
+/** Your AI's estimate of the chance an application gets you an interview. */
+export const setShot = atomic((id: string, shot: number | null, why: string | null) => {
+  db.update(schema.applications).set({ shot: shot == null ? null : Math.max(0, Math.min(100, Math.round(shot))), shotWhy: why, updatedAt: nowIso() }).where(eq(schema.applications.id, id)).run()
+  return getApplication(id)
 })
 
 /** Send a package back to the AI with the user's notes. */
