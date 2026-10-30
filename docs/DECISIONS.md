@@ -246,3 +246,29 @@ current when making a non-obvious call. Open questions for the maintainer live i
   Without that, every skipped role showed as failed and said "Preparing failed… try again", as
   happened to a third of a max-match batch. A prep that saves nothing without saying it stopped still
   fails, and the failure now keeps what the AI said and its log.
+
+## Your rules
+
+- **Hard rules are checked in code, not by the AI.** Remote-only, a total comp floor and target
+  band, and citizenship / export-control / clearance asks are settings (Settings → Search → Your
+  rules, or `update_rules`), checked by `packages/shared/src/rules.ts` against the posting's
+  location, pay fields and description. Triage and prep had the same information and still
+  prepared 13 of 49 roles that broke these rules, so a prompt isn't enough. The result is stored
+  on the application (`rules_json`) with the posting's own words for every finding.
+- **Fail, flag, pass; unknown never fails.** Only clear evidence fails: a hybrid or office
+  schedule this role requires, "within N miles of", relocation, "not remote", or a listing marked
+  only Hybrid / On-site; pay whose top is under the floor. Ambiguity flags: a listing that offers
+  both remote and hybrid, hybrid talk in a listing that says remote, a city with no word on remote,
+  "starting at" pay, pay at exactly the floor, or a base just under it (within
+  `equityAllowancePct`, 15% by default) when the posting offers equity or a bonus. Pay in
+  another currency, or none, is unknown. Several ranges (by location or level) count by the most
+  generous, so only roles clearly under the floor fail. Citizenship and clearance asks flag by
+  default; the user can make them block. Equal-opportunity lines and visa sponsorship don't count.
+- **Checked when tracked, before prep and twice before submit.** A fail nobody overrode isn't
+  prepared (the task finishes with the reasons, not as a failure) and `requestSubmit` refuses it.
+  The fill that submits checks once more with the form's own questions, since citizenship and
+  clearance asks often appear only on the form, and holds back the submit click. A dry run may
+  still fill. Flags go to the prep AI and show on the application.
+- **An override covers the rules that failed when it was given.** "Go ahead anyway" (the
+  application page or `override_rules`) records who and why; if a different rule fails later (the
+  form asks for a clearance the user blocks), it's stopped again.

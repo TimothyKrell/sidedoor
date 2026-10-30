@@ -7,6 +7,7 @@ import { CompanyAvatar, CopyButton, Due, Empty, FitBadge, Freshness, LocationNot
 import { DraftCard, PersonRow } from '~/components/app/cards'
 import { useChat, usePageContext } from '~/components/app/chat'
 import { MatchList, MatchStrip, MatchSummary } from '~/components/app/match'
+import { RulesCard } from '~/components/app/rules'
 import { WritingReview } from '~/components/app/writing'
 import { FollowupPicker, InteractionForm, PersonDialog } from '~/components/app/forms'
 import { Badge } from '~/components/ui/badge'
@@ -103,6 +104,8 @@ function ApplicationPage() {
           ))}
         </div>
       )}
+
+      {(['interested', 'review', 'approved'] as Stage[]).includes(a.stage) && <RulesCard id={a.id} check={a.rulesJson} />}
 
       <NextStep d={data} />
 

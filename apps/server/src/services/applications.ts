@@ -1,11 +1,13 @@
 import { and, desc, eq, inArray, isNotNull, notInArray } from 'drizzle-orm'
 import type { ResumeMatch } from '@sidedoor/shared/match'
+import { blockingFindings } from '@sidedoor/shared/rules'
 import { logActivity } from '../activity'
 import { db, schema } from '../db/client'
 import { atomic } from '../db/tx'
 import { addDays, newId, nowIso, today } from '../ids'
 import { getSettings } from '../settings'
 import { appendDoc } from './documents'
+import { checkApplicationRules } from './rules'
 import { enqueueTask } from './tasks'
 
 export type AppPatch = Partial<Omit<typeof schema.applications.$inferInsert, 'id' | 'createdAt'>>
@@ -58,6 +60,8 @@ export const trackPosting = atomic((postingId: string, o: { prep?: boolean; rese
     .run()
   db.update(schema.postings).set({ applicationId: id, userStatus: 'tracked' }).where(eq(schema.postings.id, p.id)).run()
   const label = `${p.companyName ?? 'Unknown company'} – ${p.title}`
+  // Check the user's rules now, so a role that breaks them shows it before anyone preps it.
+  checkApplicationRules(id)
   if (prep) enqueueTask('prep', `Prepare package: ${label}`, { applicationId: id })
   if (o.research ?? s.research.auto) enqueueTask('research', `Research & people: ${label}`, { applicationId: id })
   logActivity('application', `Tracking ${label}`, { link: `/applications/${id}` })
@@ -176,7 +180,7 @@ const UNSENT: schema.ApplicationStage[] = ['interested', 'review', 'approved']
  * submits it (jobs/fill-form.ts). A fill already waiting for it becomes the one that submits.
  * A dry run fills and reports the questions without approving or submitting anything.
  */
-export const requestSubmit = atomic((id: string, o: { dryRun?: boolean } = {}) => {
+export const requestSubmit = atomic((id: string, o: { dryRun?: boolean; skipRuleCheck?: boolean } = {}) => {
   const a = getApplication(id)
   if (!a) throw new Error(`No application ${id}`)
   if (a.appliedAt || !UNSENT.includes(a.stage)) throw new Error(`${a.companyName} – ${a.role} is ${STAGE_LABEL[a.stage]}${a.appliedAt ? `, applied ${a.appliedAt.slice(0, 10)}` : ''}: nothing to submit.`)
@@ -188,6 +192,14 @@ export const requestSubmit = atomic((id: string, o: { dryRun?: boolean } = {}) =
   const open = db.select().from(T).where(and(eq(T.kind, 'submit-assist'), eq(T.applicationId, id), inArray(T.status, ['queued', 'running']))).get()
   if (open?.status === 'running' && open.input.submit !== true) throw new Error('A fill for the user to review is running for this one now. Ask again once it is done.')
   const dryRun = o.dryRun === true
+  // The user's rules: a fail nobody overrode stops a submit. A dry run never submits, so it may go ahead.
+  if (!dryRun && !o.skipRuleCheck) {
+    const block = blockingFindings(checkApplicationRules(id))
+    if (block.length)
+      throw new Error(
+        `Not submitting ${a.companyName} – ${a.role}: it breaks the user's rules. ${block.map((f) => `${f.reason}${f.quote ? ` ("${f.quote}")` : ''}`).join('; ')}. Ask the user; only if they want it anyway, call override_rules, then submit again.`,
+      )
+  }
   if (!dryRun && a.stage !== 'approved') setStage(id, 'approved', { note: 'Approved by Grok Bot to submit' })
   const input = { submit: true, by: 'grokbot', dryRun }
   let task: schema.Task
@@ -227,7 +239,8 @@ export const answerFormQuestions = atomic((id: string, answers: FormAnswer[]) =>
   logActivity('application', `Answered ${given.length} form question${given.length === 1 ? '' : 's'}: ${a.companyName} – ${a.role}`, { link: `/applications/${id}` })
   const T = schema.tasks
   const last = db.select().from(T).where(and(eq(T.kind, 'submit-assist'), eq(T.applicationId, id))).orderBy(desc(T.createdAt)).get()
-  return requestSubmit(id, { dryRun: last?.input.dryRun === true })
+  // The fill checks the rules again before it clicks submit; failing here would lose the answers.
+  return requestSubmit(id, { dryRun: last?.input.dryRun === true, skipRuleCheck: true })
 })
 
 /** Send a package back to the AI with the user's notes. */

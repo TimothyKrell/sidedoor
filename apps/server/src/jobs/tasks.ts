@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, gte, inArray, isNull, notInArray, or, sql } from 'drizzle-orm'
 import { Effect } from 'effect'
 import { z } from 'zod'
+import { blockingFindings } from '@sidedoor/shared/rules'
 import { logActivity } from '../activity'
 import { domainOf, ensureCompany } from '../companies'
 import { db, schema } from '../db/client'
@@ -9,6 +10,7 @@ import { notifyPromise } from '../notify'
 import { ATS_LINK, detectAts, detectSource, fetchJson, fetchText, isAdapterKind, parseRss, probeBoard } from '../scout/adapters'
 import { resolveAggregatorPostings } from '../scout/resolve'
 import { getApplication, setStage, trackPosting, updateApplication } from '../services/applications'
+import { checkApplicationRules } from '../services/rules'
 import { enqueueTask, URGENT_PRIORITY } from '../services/tasks'
 import { getMeta, getSettings, setMeta } from '../settings'
 import { htmlToText, truncate } from '../text'
@@ -245,11 +247,21 @@ const runPrep = async (task: schema.Task): Promise<TaskOutcome> => {
     return { output: `Deferred: ${inReview} packages already awaiting review.`, deferUntil: new Date(Date.now() + 3600_000).toISOString() }
   }
   const p = a.postingId ? db.select().from(schema.postings).where(eq(schema.postings.id, a.postingId)).get() : undefined
+  const qs = await greenhouseQuestions(p?.key)
+  // The user's rules, before any work: a fail nobody overrode isn't prepared; a flag goes to the AI.
+  const rules = checkApplicationRules(a.id, { questions: (qs ?? []).flatMap((q) => (q.label ? [q.label] : [])) })
+  const block = blockingFindings(rules)
+  if (block.length) {
+    const why = block.map((f) => f.reason).join('; ')
+    updateApplication(a.id, { nextAction: `Not prepared: breaks your rules (${truncate(why, 160)}). Go ahead anyway to prepare it.` })
+    return { output: `Not prepared: it breaks your rules. ${block.map((f) => `${f.reason}${f.quote ? ` ("${truncate(f.quote, 200)}")` : ''}`).join('; ')}` }
+  }
+  const flagged = rules?.findings.filter((f) => f.outcome === 'flag' || (f.outcome === 'fail' && rules.override)) ?? []
+  const rulesNote = flagged.length ? `\nRule check (the user's hard rules; say in the package how this role stands on each): ${flagged.map((f) => `${f.reason}${f.quote ? ` ("${truncate(f.quote, 200)}")` : ''}`).join('; ')}${rules?.override ? ' — the user chose to go ahead anyway' : ''}` : ''
   // The tailored copy starts as the main resume; the review shows the tailoring as changes.
   const resume = tailoredFor(a.id)
-  const qs = await greenhouseQuestions(p?.key)
   const locationDoubt = p?.locationFit === 'no' || p?.locationFit === 'unclear' ? `\nLocation ${p.locationFit === 'no' ? 'NOT eligible' : 'unclear'}: ${p.locationNote ?? p.location ?? ''}` : ''
-  const triage = p?.summary ? `${p.summary}\nReasons: ${(p.reasons ?? []).join('; ')}\nGaps: ${(p.gaps ?? []).join('; ')}${locationDoubt}` : '(none)'
+  const triage = p?.summary ? `${p.summary}\nReasons: ${(p.reasons ?? []).join('; ')}\nGaps: ${(p.gaps ?? []).join('; ')}${locationDoubt}${rulesNote}` : rulesNote.trim() || '(none)'
   const prompt = render('prep', {
     APP_ID: a.id,
     LEAD_NAME: `${a.companyName} – ${a.role}`,

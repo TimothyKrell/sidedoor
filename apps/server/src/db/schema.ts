@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm'
 import { index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
 import type { ResumeMatch } from '@sidedoor/shared/match'
+import type { RuleCheck } from '@sidedoor/shared/rules'
 import type { ResumeContent, ResumeNote, ThemeOptions } from '@sidedoor/shared/resume'
 
 const id = () => text('id').primaryKey()
@@ -180,6 +181,8 @@ export const applications = sqliteTable(
     editorJson: json<PackageEdit>('editor_json'),
     /** Requirements from the posting matched against the tailored resume (src/server/match.ts). */
     matchJson: json<ResumeMatch>('match_json'),
+    /** The user's hard rules (remote, pay floor, citizenship, clearance) checked against the posting (services/rules.ts). */
+    rulesJson: json<RuleCheck>('rules_json'),
     reviewNotes: text('review_notes'),
     notesMd: text('notes_md'),
     closedReason: text('closed_reason'),

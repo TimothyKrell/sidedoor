@@ -40,12 +40,14 @@ import {
   upsertPerson,
 } from '../services/people'
 import { cancelTask, enqueueTask, retryTask, URGENT_PRIORITY } from '../services/tasks'
-import { getSettings, setMeta } from '../settings'
+import { getSettings, saveSettings, setMeta } from '../settings'
 import { pageOf, parseComp, truncate } from '../text'
 import { paths } from '../config'
 import { appendFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { STRONG_WEIGHT, strongHits } from '@sidedoor/shared/tells'
+import { rulesSummary } from '@sidedoor/shared/rules'
+import { checkApplicationRules, checkOpenApplications, clearRulesOverride, overrideRules } from '../services/rules'
 import { checkTells, loadTellRules } from '../writing/tells'
 import { appendStory } from '../writing/stories'
 import { profileTools } from './profile-tools'
@@ -98,6 +100,9 @@ const appBrief = (a: schema.Application) => ({
   url: a.jobUrl,
   rank: a.rank,
   shot: a.shot,
+  /** The user's hard rules against the posting: "pass", or "flag: …" / "fail: …" with the reasons. */
+  rules: a.rulesJson ? `${rulesSummary(a.rulesJson)}${a.rulesJson.override ? ' (overridden: go ahead)' : ''}` : null,
+  payBand: a.rulesJson?.band ?? null,
 })
 
 /** Every other application at the same company, so a second application to one employer is never an accident. */
@@ -222,11 +227,12 @@ export const appTools = [
 
   tool(
     'list_applications',
-    'List applications (roles the user is pursuing). Filter by stage or text.',
-    { stage: stageEnum.optional(), query: z.string().optional(), includeClosed: z.boolean().optional() },
+    "List applications (roles the user is pursuing). Filter by stage or text, or by how they stand on the user's rules (rules: 'fail' or 'flag'; run check_rules first for a fresh reading).",
+    { stage: stageEnum.optional(), query: z.string().optional(), includeClosed: z.boolean().optional(), rules: z.enum(['pass', 'flag', 'fail']).optional() },
     safe((a) => {
       const c = []
       if (a.stage) c.push(eq(schema.applications.stage, a.stage))
+      if (a.rules) c.push(sql`json_extract(${schema.applications.rulesJson}, '$.result') = ${a.rules}`)
       if (!a.includeClosed) c.push(inArray(schema.applications.status, ['potential', 'active', 'on-hold']))
       if (a.query) c.push(or(like(schema.applications.companyName, `%${a.query}%`), like(schema.applications.role, `%${a.query}%`))!)
       return db.select().from(schema.applications).where(and(...c)).orderBy(desc(schema.applications.lastActivityAt)).limit(80).all().map(appBrief)
@@ -260,6 +266,8 @@ export const appTools = [
         packageTotalChars: pkg.totalChars,
         /** Not null: there's more package; call again with packageOffset set to this. */
         packageNextOffset: pkg.nextOffset,
+        /** The user's rules against the posting: result, each finding with the posting's words, pay read, and any override. */
+        ruleCheck: a.rulesJson,
         people: people.map((p) => ({ ...personBrief(p), role: links.find((l) => l.personId === p.id)?.role })),
         interactions: db.select().from(schema.interactions).where(eq(schema.interactions.applicationId, id)).orderBy(desc(schema.interactions.at)).limit(30).all(),
         drafts: db.select().from(schema.drafts).where(eq(schema.drafts.applicationId, id)).all(),
@@ -802,6 +810,45 @@ export const appTools = [
   ),
 
   tool(
+    'check_rules',
+    "Check applications against the user's hard rules (fully remote, total comp floor and target band, citizenship / export-control and clearance asks; set in Settings or with update_rules). With applicationId: re-check that one and return the result, each finding with the posting's own words. Without: re-check every application not yet submitted and list the ones that fail or are flagged. A fail stops prep and submit until the user overrides it (override_rules); a flag doesn't block, but say it to the user. Unknown pay is not a fail.",
+    { applicationId: z.string().optional() },
+    safe(({ applicationId }) => {
+      if (!applicationId) return checkOpenApplications()
+      const c = checkApplicationRules(applicationId)
+      return c ?? 'Rule checks are turned off (Settings → Search → Your rules).'
+    }),
+  ),
+
+  tool(
+    'override_rules',
+    "Go ahead with an application that fails the user's rules: prep and submit stop refusing it. Only when the user has said to, in so many words; put what they said in note. Covers the rules failing now; a different one failing later blocks again. clear: take the override back.",
+    { applicationId: z.string(), note: z.string().optional().describe("the user's words"), clear: z.boolean().optional() },
+    safe(({ applicationId, note, clear }) => (clear ? clearRulesOverride(applicationId) : overrideRules(applicationId, { by: 'agent', note }))),
+  ),
+
+  tool(
+    'update_rules',
+    "Read or change the user's hard rules, the way they can in Settings. Only what the user told you; call with nothing to read them. Pay is yearly total comp in their search currency.",
+    {
+      enabled: z.boolean().optional(),
+      remoteOnly: z.boolean().optional().describe('fully remote only: hybrid, on-site, relocation and "within N miles of" fail'),
+      compFloor: z.number().nullable().optional().describe('roles clearly under this fail'),
+      targetMin: z.number().nullable().optional(),
+      targetMax: z.number().nullable().optional(),
+      equityAllowancePct: z.number().min(0).max(100).optional().describe('how far equity/bonus may lift a posted base toward the floor, % of base (default 15)'),
+      citizenship: z.enum(['flag', 'fail', 'ignore']).optional(),
+      clearance: z.enum(['flag', 'fail', 'ignore']).optional(),
+    },
+    safe((patch) => {
+      const s = getSettings()
+      const given = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined))
+      if (!Object.keys(given).length) return { ...s.rules, currency: s.search.currency }
+      return { ...saveSettings({ ...s, rules: { ...s.rules, ...given } }).rules, currency: s.search.currency }
+    }),
+  ),
+
+  tool(
     'merge_applications',
     "Two applications are the same role (e.g. one from an aggregator, one from the company's board). Folds duplicateId into keepId: people, touchpoints, drafts, research, tasks and postings move over, missing fields fill in, notes are appended, and the duplicate is closed as 'Duplicate of <keepId>'. Keep the one with more work on it.",
     { keepId: z.string(), duplicateId: z.string() },
@@ -1015,7 +1062,7 @@ export const grokBotTools = [
 export const grokBotSubmitTools = [
   tool(
     'submit_application',
-    "Submit an application for the user. Approves it if it isn't approved yet, then Sidedoor opens the form in its browser window on the user's computer, fills it from the approved package, and submits it once every required question has an answer. One form at a time; it takes a few minutes each. Returns at once: follow it with submission_status. Needs a saved package (prep first) and an apply URL. dryRun: fill and report the questions only; it never clicks submit and leaves the stage alone (status 'ready' means a real run would submit it).",
+    "Submit an application for the user. Approves it if it isn't approved yet, then Sidedoor opens the form in its browser window on the user's computer, fills it from the approved package, and submits it once every required question has an answer. One form at a time; it takes a few minutes each. Returns at once: follow it with submission_status. Needs a saved package (prep first) and an apply URL. dryRun: fill and report the questions only; it never clicks submit and leaves the stage alone (status 'ready' means a real run would submit it). Refuses one that fails the user's rules (check_rules) unless they overrode it (override_rules), and checks again, with the form's own questions, before it clicks submit.",
     { applicationId: z.string(), dryRun: z.boolean().optional() },
     safe(async ({ applicationId, dryRun }) => {
       const t = (await import('../services/applications')).requestSubmit(applicationId, { dryRun: dryRun === true })

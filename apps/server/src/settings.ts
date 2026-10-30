@@ -67,6 +67,27 @@ export const AppSettings = z.object({
       dealbreakers: z.array(z.string()).default([]),
     })
     .prefault({}),
+  /**
+   * Hard rules, checked in code before prep and before submit (services/rules.ts). A fail stops
+   * prep and submit unless overridden; a flag shows on the application and lets prep go ahead.
+   */
+  rules: z
+    .object({
+      enabled: z.boolean().default(true),
+      /** Fully remote only: hybrid, on-site, relocation and "within N miles of" fail. */
+      remoteOnly: z.boolean().default(false),
+      /** Yearly total comp floor, in search.currency. Only roles clearly under it fail. */
+      compFloor: z.number().nullable().default(null),
+      /** Target total comp band. Higher is higher priority. */
+      targetMin: z.number().nullable().default(null),
+      targetMax: z.number().nullable().default(null),
+      /** How far equity and bonus may lift a posted base toward the floor, in percent of the base. */
+      equityAllowancePct: z.number().min(0).max(100).default(15),
+      /** U.S. citizenship / permanent residency / export-control "U.S. person" asks. */
+      citizenship: z.enum(['flag', 'fail', 'ignore']).default('flag'),
+      clearance: z.enum(['flag', 'fail', 'ignore']).default('flag'),
+    })
+    .prefault({}),
   scout: z
     .object({
       enabled: z.boolean().default(true),
