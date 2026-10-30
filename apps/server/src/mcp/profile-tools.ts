@@ -1,7 +1,7 @@
 import { resumeAsText } from '@sidedoor/shared/resume'
 import { z } from 'zod'
 import { logActivity } from '../activity'
-import { DOCS, type DocKey, appendDoc, getDoc, setDoc } from '../services/documents'
+import { DOCS, type DocEdit, type DocKey, MAX_UNCONFIRMED_REMOVAL, editDoc, getDoc, listRevisions, revertRevision } from '../services/documents'
 import { outlineOf, pageOf } from '../text'
 import { tool } from './define'
 
@@ -20,6 +20,9 @@ const ro = { annotations: { readOnlyHint: true } }
 
 const docKey = z.enum(Object.keys(DOCS) as [DocKey, ...DocKey[]])
 const resumes = () => import('../services/resumes')
+
+const reason = z.string().min(1).describe("why, in a few words (e.g. 'user: familiar with OpenTelemetry, has not used it'); kept with the revision")
+const confirmLargeDeletion = z.boolean().optional().describe('allow removing a large part of the document; only when the user asked for it')
 
 const lineHtml = z.string().describe('the line as inline HTML: plain text, optionally <strong>, <em>, <a href>. Compound lines: skills "<strong>Label:</strong> items", roles "Title · Dates"')
 
@@ -56,12 +59,81 @@ export const profileTools = [
 
   tool(
     'update_profile_doc',
-    "Change a profile document. mode 'append' adds a section at the end (use it to record a fact the user just confirmed in Experience); mode 'replace' rewrites the whole document (only when the user asked you to rewrite or reorganize it, and keep everything they wrote). Never add a fact the user hasn't told you.",
-    { key: docKey, mode: z.enum(['append', 'replace']), text: z.string() },
-    safe(({ key, mode, text }) => {
-      const d = mode === 'append' ? appendDoc(key, text) : setDoc(key, text)
-      logActivity('system', `An agent ${mode === 'append' ? 'added to' : 'rewrote'} ${DOCS[key].title}`, { link: `/profile/${key}` })
+    "Add to or rewrite a profile document. mode 'append' adds a new section at the end (for a fact the user just confirmed that Experience doesn't cover yet); mode 'replace' rewrites the whole document (only when the user asked you to rewrite or reorganize it, and keep everything they wrote). To correct or remove something already in the document, use edit_profile_doc instead of appending a contradiction. Never add a fact the user hasn't told you.",
+    {
+      key: docKey,
+      mode: z.enum(['append', 'replace']),
+      text: z.string(),
+      reason: reason.optional(),
+      confirmLargeDeletion,
+    },
+    safe(({ key, mode, text, reason, confirmLargeDeletion }) => {
+      const d = editDoc(key, mode === 'append' ? { op: 'append', text } : { op: 'replace_all', text }, { by: 'agent', ...(reason ? { reason } : {}), confirmLargeDeletion })
+      logActivity('system', `An agent ${mode === 'append' ? 'added to' : 'rewrote'} ${DOCS[key].title}`, { link: `/profile/${key}`, ...(reason ? { detail: reason } : {}) })
       return { saved: true, chars: d.body.length }
+    }),
+  ),
+
+  tool(
+    'edit_profile_doc',
+    `Correct part of a profile document in place, so it never says two different things. Use it when a line is stale or wrong (the user corrected it, or it contradicts what they just told you): fix that line instead of appending a newer section. Operations:
+- 'replace_text': find must be exact text from the document (copy it from get_profile_doc, spacing and punctuation included) and appear exactly once, otherwise nothing changes and the error says why; include more surrounding text to make it unique. replace is the new text; an empty replace deletes it (a whole line goes with its line break).
+- 'replace_section': replaces everything under heading (e.g. "## Skills" or "Skills") up to the next heading of the same or higher level, subsections included, with text. If text starts with a heading line, that becomes the new heading; otherwise the heading stays.
+- 'delete_section': removes the heading and its section.
+- 'insert_under_heading': adds text at the end of that heading's section (position 'start' for right under the heading).
+Every edit keeps a revision (list_profile_doc_revisions, revert_profile_doc). An edit that would remove more than ${MAX_UNCONFIRMED_REMOVAL * 100}% of the document is refused unless confirmLargeDeletion is true: only set it when the user asked for that removal. Never add a fact the user hasn't told you.`,
+    {
+      key: docKey,
+      op: z.enum(['replace_text', 'replace_section', 'delete_section', 'insert_under_heading']),
+      find: z.string().optional().describe("replace_text: the exact text to change, matching once"),
+      replace: z.string().optional().describe("replace_text: what it becomes ('' deletes it)"),
+      heading: z.string().optional().describe('replace_section / delete_section / insert_under_heading: the heading line, e.g. "## Skills"'),
+      text: z.string().optional().describe('replace_section / insert_under_heading: the new markdown'),
+      position: z.enum(['start', 'end']).optional().describe("insert_under_heading: 'end' of the section (default) or 'start'"),
+      reason,
+      confirmLargeDeletion,
+    },
+    safe(({ key, op, find, replace, heading, text, position, reason, confirmLargeDeletion }) => {
+      const need = <T,>(v: T | undefined, name: string): T => {
+        if (v === undefined) throw new Error(`${op} needs ${name}.`)
+        return v
+      }
+      const e: DocEdit =
+        op === 'replace_text'
+          ? { op, find: need(find, 'find'), replace: need(replace, 'replace') }
+          : op === 'delete_section'
+            ? { op, heading: need(heading, 'heading') }
+            : op === 'replace_section'
+              ? { op, heading: need(heading, 'heading'), text: need(text, 'text') }
+              : { op, heading: need(heading, 'heading'), text: need(text, 'text'), ...(position ? { position } : {}) }
+      const before = getDoc(key).body.length
+      const d = editDoc(key, e, { by: 'agent', reason, confirmLargeDeletion })
+      logActivity('system', `An agent edited ${DOCS[key].title}`, { link: `/profile/${key}`, detail: reason })
+      return { saved: true, chars: d.body.length, delta: d.body.length - before }
+    }),
+  ),
+
+  tool(
+    'list_profile_doc_revisions',
+    'The history of a profile document, newest first: who changed it (user, agent or app), when, why, and the text each change removed and added (long text is cut short). Use a revision id with revert_profile_doc.',
+    { key: docKey, limit: z.number().int().min(1).max(100).optional().describe('default 20') },
+    safe(({ key, limit }) => ({ key, revisions: listRevisions(key, limit ?? 20) })),
+    ro,
+  ),
+
+  tool(
+    'revert_profile_doc',
+    "Undo one revision of a profile document: puts back exactly the text it had before that change (the revert is itself a revision, so it can be undone too). If the document changed again after that revision, revert the later ones first, or pass overwriteLaterEdits to go back to that point and lose them. Only when the user asks, or to undo your own mistaken edit.",
+    {
+      revisionId: z.string(),
+      reason: reason.optional(),
+      overwriteLaterEdits: z.boolean().optional(),
+      confirmLargeDeletion,
+    },
+    safe(({ revisionId, reason, overwriteLaterEdits, confirmLargeDeletion }) => {
+      const d = revertRevision(revisionId, { by: 'agent', ...(reason ? { reason } : {}), overwriteLaterEdits, confirmLargeDeletion })
+      logActivity('system', `An agent reverted a change to ${DOCS[d.key].title}`, { link: `/profile/${d.key}`, ...(reason ? { detail: reason } : {}) })
+      return { reverted: revisionId, key: d.key, chars: d.body.length, isTemplate: d.isDefault }
     }),
   ),
 

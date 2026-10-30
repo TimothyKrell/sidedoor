@@ -405,6 +405,24 @@ export const documents = sqliteTable('documents', {
 })
 
 /**
+ * Every change to a profile document, with the text before and after, so any edit (the user's or
+ * an agent's) can be reviewed and reverted. before or after is null when the document was (or went back to) its template.
+ */
+export const documentRevisions = sqliteTable(
+  'document_revisions',
+  {
+    id: id(),
+    docKey: text('doc_key').notNull(),
+    before: text('before'),
+    after: text('after'),
+    by: text('by', { enum: ['user', 'agent', 'app'] }).notNull(),
+    reason: text('reason'),
+    at: text('at').notNull(),
+  },
+  (t) => [index('document_revisions_doc').on(t.docKey, t.at)],
+)
+
+/**
  * Resumes. Content is structured (see packages/shared/src/resume) and rendered by a theme; every
  * line has a stable id, which the editor, notes, the review of agent edits and the match check use.
  */
@@ -466,4 +484,5 @@ export type Activity = typeof activity.$inferSelect
 export type ChatThread = typeof chatThreads.$inferSelect
 export type ChatMessage = typeof chatMessages.$inferSelect
 export type Document = typeof documents.$inferSelect
+export type DocumentRevision = typeof documentRevisions.$inferSelect
 export type Resume = typeof resumes.$inferSelect

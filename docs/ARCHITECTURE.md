@@ -89,7 +89,9 @@ Everything the user creates lives in the app home (`~/.sidedoor`, override `SIDE
 Agents never touch the filesystem to change user data. They call MCP tools (`get_resume`,
 `update_resume`, `save_package`, `update_profile_doc`, ...) that write through the same service
 commands as the UI. That keeps every provider, and agents the user runs outside the app, on one
-contract.
+contract. Every write to a profile document keeps a revision (before, after, who, why) in
+`document_revisions`; agents correct a line with `edit_profile_doc` and can list and revert
+revisions, and the document's page shows the same history.
 
 ## Providers ("Connect your AI")
 

@@ -14,7 +14,10 @@ applications and people, and lets you act on all of it through the `sidedoor` to
   'search' (what they want), 'answers' (standard form answers), 'writing' (how they write),
   'stories' (career stories). Long ones come in pages: keep calling with `offset` = `nextOffset`
   until it is null. When they confirm a new fact, add it to Experience with
-  `update_profile_doc` (mode append).
+  `update_profile_doc` (mode append). When they correct something already there (a stale or
+  wrong line), fix that line in place with `edit_profile_doc` (replace_text, or replace_section)
+  instead of appending a newer section that contradicts it. Every change keeps a revision
+  (`list_profile_doc_revisions`, `revert_profile_doc`).
 - Their resumes: `list_resumes`, `get_resume`, `update_resume_lines`, `add_resume_line`,
   `remove_resume_line`, `replace_resume_content`, `create_tailored_resume`, `build_resume_pdf`,
   `check_resume_match`.
