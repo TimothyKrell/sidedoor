@@ -98,7 +98,13 @@ export function createCdpRelay(target: CdpRelayTarget, write: (message: string) 
       }
       if (!isCommand(c)) return
       const cmd = c
-      const result = cmd.sessionId === undefined || sessions.get(cmd.sessionId) === 'browser' ? browserCommand(cmd) : pageCommand(cmd)
+      // A target that throws (its window just closed) answers with an error; a throw here would be uncaught.
+      let result: Promise<unknown>
+      try {
+        result = cmd.sessionId === undefined || sessions.get(cmd.sessionId) === 'browser' ? browserCommand(cmd) : pageCommand(cmd)
+      } catch (e) {
+        result = Promise.reject(e)
+      }
       const route = cmd.sessionId === undefined ? {} : { sessionId: cmd.sessionId }
       void result.then(
         (value) => {

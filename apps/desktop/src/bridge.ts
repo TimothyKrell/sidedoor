@@ -10,6 +10,7 @@ import { join } from 'node:path'
 import { BrowserWindow, Notification, session, type WebContents } from 'electron'
 import { WebSocketServer } from 'ws'
 import { createCdpRelay } from './cdp-relay'
+import { abortOnHangUp, FormOpenError, inEveryFrame, openFormWindow } from './form-open'
 import { iconPath } from './paths'
 
 /**
@@ -20,6 +21,8 @@ import { iconPath } from './paths'
  *   POST /tabs/:id/finish   lift the guard and show the review banner
  *   POST /tabs/:id/unguard  lift the guard and keep driving it (Grok Bot submitting, when allowed)
  *   POST /tabs/:id/close    close the window (submitted, or to be filled again)
+ *   POST /tabs/reset        call off opens in progress and drop the forms session's connections (before a retry)
+ *   POST /ping              is the bridge answering
  *   WS   /cdp/:id           CDP for that window (Playwright in the server drives it)
  *   POST /notify            native notification
  */
@@ -34,6 +37,8 @@ interface FormTab {
   id: string
   win: BrowserWindow
   guardId: string | null
+  /** CDP connections to this window, closed with it. */
+  sockets: Set<{ close: () => void }>
 }
 
 const FORMS_PARTITION = 'persist:sidedoor-forms'
@@ -120,7 +125,8 @@ const harden = (partition: string) => {
   return ses
 }
 
-export const startBridge = async (o: { onNotifyClick: (path: string | undefined) => void }): Promise<Bridge> => {
+export const startBridge = async (o: { onNotifyClick: (path: string | undefined) => void; log?: (line: string) => void }): Promise<Bridge> => {
+  const log = o.log ?? ((line: string) => console.error(line))
   const token = randomBytes(24).toString('base64url')
   harden(FORMS_PARTITION)
   harden('sidedoor-read')
@@ -139,6 +145,8 @@ export const startBridge = async (o: { onNotifyClick: (path: string | undefined)
   publicOnly(session.fromPartition('sidedoor-read'), { skip: (d) => d.resourceType === 'image' || d.resourceType === 'media' || d.resourceType === 'font' })
   await viaProxy(session.fromPartition('sidedoor-read'))
   const tabs = new Map<string, FormTab>()
+  /** Opens in progress, to call off when the server stops waiting or resets. */
+  const opening = new Set<AbortController>()
   const authed = (req: IncomingMessage) => {
     const h = req.headers.authorization ?? ''
     const t = h.startsWith('Bearer ') ? h.slice(7) : (new URL(req.url ?? '/', 'http://x').searchParams.get('token') ?? '')
@@ -188,7 +196,7 @@ export const startBridge = async (o: { onNotifyClick: (path: string | undefined)
     }
   }
 
-  const openTab = async (url: string, guard: string) => {
+  const openTab = async (url: string, guard: string, signal: AbortSignal) => {
     if (!isWeb(url)) throw new Error('Only web pages can be opened')
     const id = randomBytes(8).toString('hex')
     // Background window: filling never steals focus. ATS sign-ins persist in its partition.
@@ -207,34 +215,50 @@ export const startBridge = async (o: { onNotifyClick: (path: string | undefined)
     wc.setWebRTCIPHandlingPolicy('disable_non_proxied_udp')
     // Forms that open a popup (SSO, "apply with LinkedIn") continue in this window, web pages only.
     wc.setWindowOpenHandler(({ url: u }) => {
-      if (isWeb(u)) void win.loadURL(u)
+      if (isWeb(u) && !win.isDestroyed()) win.loadURL(u).catch(() => {})
       return { action: 'deny' }
     })
     wc.on('will-navigate', (e, u) => !isWeb(u) && e.preventDefault())
     wc.on('will-redirect', (e, u) => !isWeb(u) && e.preventDefault())
-    // Load first: CDP's Page domain doesn't answer for a window that never loaded, and a second
-    // navigation after a blank one can be dropped. Nothing submits before the agent connects.
-    await Promise.race([win.loadURL(url), sleep(45_000)]).catch(() => {})
-    wc.debugger.attach('1.3')
-    const enabled = await Promise.race([wc.debugger.sendCommand('Page.enable').then(() => true), sleep(15_000).then(() => false)])
-    if (!enabled) {
-      win.destroy()
-      throw new Error(`The form page didn't load: ${url}`)
-    }
-    // Every later document (next steps, frames, reloads) gets the guard before its own scripts run.
-    const r = (await wc.debugger.sendCommand('Page.addScriptToEvaluateOnNewDocument', { source: guard, runImmediately: true })) as { identifier: string }
     // Cross-origin iframes (an ATS form embedded on a careers page) run in their own process, which
     // the page's script doesn't reach. When Playwright auto-attaches to one, it starts paused; give it
     // the guard before it runs. Detaching the debugger when the fill ends removes these too.
-    wc.debugger.on('message', (_e, method: string, params: { sessionId?: string; targetInfo?: { type?: string } }) => {
-      if (method !== 'Target.attachedToTarget' || params.targetInfo?.type !== 'iframe' || !params.sessionId) return
-      void wc.debugger.sendCommand('Page.addScriptToEvaluateOnNewDocument', { source: guard, runImmediately: true }, params.sessionId).catch(() => {})
+    const onTarget = (_e: unknown, method: string, params: { sessionId?: string; targetInfo?: { type?: string } }) => {
+      if (method !== 'Target.attachedToTarget' || params.targetInfo?.type !== 'iframe' || !params.sessionId || wc.isDestroyed()) return
+      wc.debugger.sendCommand('Page.addScriptToEvaluateOnNewDocument', { source: guard, runImmediately: true }, params.sessionId).catch(() => {})
+    }
+    const tab: FormTab = { id, win, guardId: null, sockets: new Set() }
+    // However it closes (the user, the server, a failed open), nothing of it is left behind.
+    win.on('closed', () => {
+      tabs.delete(id)
+      for (const ws of tab.sockets) ws.close()
+      tab.sockets.clear()
     })
-    const tab: FormTab = { id, win, guardId: r.identifier }
+    const destroy = () => {
+      if (win.isDestroyed()) return
+      if (wc.debugger.isAttached()) wc.debugger.detach()
+      win.destroy()
+    }
+    // Load first: CDP's Page domain doesn't answer for a window that never loaded, and a second
+    // navigation after a blank one can be dropped. Nothing submits before the agent connects.
+    const r = await openFormWindow(
+      url,
+      {
+        load: (u) => win.loadURL(u),
+        attach: () => {
+          if (!wc.debugger.isAttached()) wc.debugger.attach('1.3')
+          wc.debugger.on('message', onTarget)
+        },
+        enablePage: () => wc.debugger.sendCommand('Page.enable'),
+        // Every later document (next steps, frames, reloads) gets the guard before its own scripts run.
+        addGuard: () => wc.debugger.sendCommand('Page.addScriptToEvaluateOnNewDocument', { source: guard, runImmediately: true }).then((x: { identifier: string }) => x.identifier),
+        frames: () => (win.isDestroyed() ? [] : wc.mainFrame.framesInSubtree.map((f) => ({ run: () => f.executeJavaScript(guard) }))),
+        destroy,
+      },
+      { signal, log },
+    )
+    tab.guardId = r.guardId
     tabs.set(id, tab)
-    win.on('closed', () => tabs.delete(id))
-    // And the page that's open now, in every frame.
-    for (const f of wc.mainFrame.framesInSubtree) await f.executeJavaScript(guard).catch(() => {})
     return { id, cdpEndpoint: `ws://127.0.0.1:${port}/cdp/${id}?token=${token}` }
   }
 
@@ -245,8 +269,11 @@ export const startBridge = async (o: { onNotifyClick: (path: string | undefined)
     // Remove the guard so the next page of a multi-page form lets the user submit.
     if (tab.guardId && wc.debugger.isAttached()) await wc.debugger.sendCommand('Page.removeScriptToEvaluateOnNewDocument', { identifier: tab.guardId }).catch(() => {})
     tab.guardId = null
-    for (const f of wc.mainFrame.framesInSubtree) await f.executeJavaScript('window.__sidedoorFilling = false').catch(() => {})
-    await wc.executeJavaScript(banner).catch(() => {})
+    await inEveryFrame(wc.mainFrame.framesInSubtree.map((f) => ({ run: () => f.executeJavaScript('window.__sidedoorFilling = false') })))
+    if (tab.win.isDestroyed()) return
+    await inEveryFrame([{ run: () => wc.executeJavaScript(banner) }])
+    if (tab.win.isDestroyed()) return
+    for (const ws of tab.sockets) ws.close()
     if (wc.debugger.isAttached()) wc.debugger.detach()
     tab.win.setTitle('Sidedoor · review, then submit')
   }
@@ -257,12 +284,26 @@ export const startBridge = async (o: { onNotifyClick: (path: string | undefined)
     const wc = tab.win.webContents
     if (tab.guardId && wc.debugger.isAttached()) await wc.debugger.sendCommand('Page.removeScriptToEvaluateOnNewDocument', { identifier: tab.guardId }).catch(() => {})
     tab.guardId = null
-    for (const f of wc.mainFrame.framesInSubtree) await f.executeJavaScript('window.__sidedoorFilling = false').catch(() => {})
+    await inEveryFrame(wc.mainFrame.framesInSubtree.map((f) => ({ run: () => f.executeJavaScript('window.__sidedoorFilling = false') })))
   }
 
+  /** Destroy, not close: a page's beforeunload could otherwise keep it open. */
   const closeTab = (id: string) => {
     const tab = tabs.get(id)
-    if (tab && !tab.win.isDestroyed()) tab.win.close()
+    if (!tab || tab.win.isDestroyed()) return
+    for (const ws of tab.sockets) ws.close()
+    const wc = tab.win.webContents
+    if (wc.debugger.isAttached()) wc.debugger.detach()
+    tab.win.destroy()
+  }
+
+  /** Before a retry: call off opens still going, forget closed windows, drop the forms session's connections. */
+  const resetForms = async () => {
+    for (const c of opening) c.abort()
+    for (const [id, tab] of tabs) if (tab.win.isDestroyed()) tabs.delete(id)
+    hostCache.clear()
+    await session.fromPartition(FORMS_PARTITION).closeAllConnections()
+    log('[bridge] forms session reset')
   }
 
   const server = createServer((req, res) => {
@@ -278,7 +319,29 @@ export const startBridge = async (o: { onNotifyClick: (path: string | undefined)
           return res.end(buf)
         }
         if (path === '/read') return json(res, 200, await read(String(body.url)))
-        if (path === '/tabs') return json(res, 200, await openTab(String(body.url), String(body.guard ?? '')))
+        if (path === '/ping') return json(res, 200, { ok: true })
+        if (path === '/tabs/reset') {
+          await resetForms()
+          return json(res, 200, { ok: true })
+        }
+        if (path === '/tabs') {
+          // When the server stops waiting, call the open off: no window left that nobody drives.
+          const c = abortOnHangUp(res)
+          opening.add(c)
+          try {
+            const tab = await openTab(String(body.url), String(body.guard ?? ''), c.signal)
+            if (c.signal.aborted) {
+              closeTab(tab.id)
+              return
+            }
+            return json(res, 200, tab)
+          } catch (e) {
+            if (e instanceof FormOpenError) return json(res, e.timedOut ? 504 : 503, { error: e.message, step: e.step, elapsedMs: e.elapsedMs })
+            throw e
+          } finally {
+            opening.delete(c)
+          }
+        }
         const fin = path.match(/^\/tabs\/(\w+)\/finish$/)
         if (fin) {
           await finishTab(fin[1]!, String(body.banner ?? ''))
@@ -300,7 +363,7 @@ export const startBridge = async (o: { onNotifyClick: (path: string | undefined)
         }
         json(res, 404, { error: 'not found' })
       } catch (e) {
-        console.error('[bridge]', path, e)
+        log(`[bridge] ${path} failed: ${e instanceof Error ? (e.stack ?? e.message) : String(e)}`)
         json(res, 500, { error: e instanceof Error ? e.message : String(e) })
       }
     })()
@@ -316,22 +379,30 @@ export const startBridge = async (o: { onNotifyClick: (path: string | undefined)
       return
     }
     wss.handleUpgrade(req, socket, head, (ws) => {
+      if (tab.win.isDestroyed()) return ws.close()
       const wc = tab.win.webContents
       if (!wc.debugger.isAttached()) wc.debugger.attach('1.3')
+      tab.sockets.add(ws)
+      // The window can close while Playwright still talks to it: touching a destroyed webContents
+      // throws, and in Electron's main process an uncaught throw stops the whole bridge.
+      const gone = () => Promise.reject(new Error('The form window was closed'))
       const relay = createCdpRelay(
         {
-          send: (method, params, sessionId) => wc.debugger.sendCommand(method, params, sessionId),
-          targetId: () => wc.debugger.sendCommand('Target.getTargetInfo').then((r: { targetInfo: { targetId: string } }) => r.targetInfo.targetId),
-          url: () => wc.getURL(),
-          title: () => wc.getTitle(),
-          userAgent: () => wc.getUserAgent(),
+          send: (method, params, sessionId) => (wc.isDestroyed() ? gone() : wc.debugger.sendCommand(method, params, sessionId)),
+          targetId: () => (wc.isDestroyed() ? gone() : wc.debugger.sendCommand('Target.getTargetInfo').then((r: { targetInfo: { targetId: string } }) => r.targetInfo.targetId)),
+          url: () => (wc.isDestroyed() ? '' : wc.getURL()),
+          title: () => (wc.isDestroyed() ? '' : wc.getTitle()),
+          userAgent: () => (wc.isDestroyed() ? '' : wc.getUserAgent()),
         },
         (msg) => ws.readyState === ws.OPEN && ws.send(msg),
       )
       const onMessage = (_e: unknown, method: string, params: unknown, sessionId: string) => relay.event(method, params, sessionId || undefined)
       wc.debugger.on('message', onMessage)
       ws.on('message', (data) => relay.receive(data.toString()))
-      ws.on('close', () => wc.debugger.off('message', onMessage))
+      ws.on('close', () => {
+        tab.sockets.delete(ws)
+        if (!wc.isDestroyed()) wc.debugger.off('message', onMessage)
+      })
     })
   })
 

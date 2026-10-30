@@ -128,6 +128,17 @@ current when making a non-obvious call. Open questions for the maintainer live i
   filled. They share a persistent partition so ATS sign-ins stick.
 - **The submit guard is injected through the debugger** (`Page.addScriptToEvaluateOnNewDocument`)
   and removed when the fill finishes, so the next page of a multi-page form lets the user submit.
+- **Opening a form window has a limit per step**, and the server's wait covers them all with room
+  to spare (`packages/shared/src/form-window.ts`: load 35s, Page.enable 10s, guard 5s, frames 10s;
+  server 90s). The desktop then always answers first with the step that hung, the elapsed time and
+  the URL. Before, 45s + 15s used the server's whole 60s and fills failed with a bare "aborted due
+  to timeout". When the server gives up, the desktop calls the open off and destroys the window. On
+  a timeout the server pings the desktop, resets the forms session (`/tabs/reset`) and tries once
+  more. If the desktop doesn't answer the ping, it says so instead of waiting again.
+- **An uncaught exception in the desktop's main process is logged, not shown.** Electron's default
+  is a modal error box, and while it waits for a click the bridge accepts nothing, so every fill
+  timed out. That happened on Oct 30, after a form window closed while Playwright was still talking
+  to it. The CDP relay now also treats a closed window as an error reply, not a throw.
 - **PDFs come from Electron's printer** (offscreen window, `printToPDF`), so no browser install is
   needed. Page count is read from the PDF itself (no `pdfinfo`).
 - **Tray + keep running.** T3 quits when its windows close (except on macOS). The scout is the
