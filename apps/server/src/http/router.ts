@@ -192,6 +192,7 @@ export const router = {
       funnel: `tailscale funnel --bg --https=443 --set-path=/mcp http://127.0.0.1:${config.port}/mcp`,
       // Unwrapped, so it reads and pastes as plain paragraphs.
       routine: template('grokbot-routine').replace(/(\S)\n(?!\n|\d+\. )\s*/g, '$1 ').trim(),
+      submitRoutine: template('grokbot-submit').replace(/(\S)\n(?!\n|\d+\. )\s*/g, '$1 ').trim(),
       ...grokBotStatus(),
     }
   }),
@@ -212,7 +213,7 @@ export const router = {
     return { ok: true }
   }),
   saveGrokBot: proc(
-    z.object({ publicUrl: z.string().optional(), webhookUrl: z.string().optional(), webhookKey: z.string().optional(), research: z.boolean().optional(), x: z.boolean().optional() }),
+    z.object({ publicUrl: z.string().optional(), webhookUrl: z.string().optional(), webhookKey: z.string().optional(), research: z.boolean().optional(), x: z.boolean().optional(), submit: z.boolean().optional() }),
     async ({ webhookKey, ...patch }) => {
       if (patch.publicUrl) patch.publicUrl = new URL(patch.publicUrl.trim()).origin
       if (patch.webhookUrl) {

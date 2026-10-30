@@ -14,5 +14,7 @@ current when making a non-obvious call.
 - Schema changes: edit `src/db/schema.ts`, then `pnpm --filter @sidedoor/server db:generate`;
   migrations run on boot. Live updates need the table in the triggers migration (see 0001).
 - Prompts live in `apps/server/prompts/`; never put a person's name, location or field in them.
-- Never let an agent send email or submit an application.
+- Never let an agent send email or submit an application. One exception, off by default: when the
+  user turns on "Grok Bot can submit", Grok Bot's `submit_application` has Sidedoor itself fill and
+  submit the form (`jobs/fill-form.ts`). Nothing else submits.
 - Don't run Electron on the user's display while testing: `env -u WAYLAND_DISPLAY -u DISPLAY xvfb-run -a …`.

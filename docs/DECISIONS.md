@@ -74,6 +74,32 @@ current when making a non-obvious call. Open questions for the maintainer live i
   files and pairing stay on the tailnet. Grok Bot's token can't reach `/mcp/browser` or the API,
   and turning Grok Bot off deletes it. A Bot on this computer needs none of this: it uses the
   local bridge, which is why that's the first option in Settings.
+- **Grok Bot may submit, through Sidedoor, when the user turns it on.** The never-submit rule has
+  one opt-in exception, so Grok Bot can work through a batch of applications. Sidedoor still does
+  the filling and the clicking, in its own window on this computer (saved ATS sign-ins, the same
+  upload and navigation limits); Grok Bot never gets the browser tools. The fill itself still can't
+  submit: a second, separate run does, and only after a fill that left no required question open.
+  Grok Bot may approve applications too (the user chose that over approving each package first).
+- **A submit is clicked at most once.** The submit step is told never to click twice, and the task
+  records when that step started: a task that dies mid-submit and is retried fails instead of
+  submitting again, and an application with `appliedAt` is never submitted. A duplicate application
+  is worse than a missed one.
+- **Form questions go to the user through Grok Bot, and the answers stay.** A required question the
+  package doesn't answer stops the submit; `submission_status` lists it word for word with its
+  options, Grok Bot asks, `answer_questions` appends the answers to the package (which the filler
+  pastes from) and, for answers about the user rather than the job, to Standard answers, which
+  every later fill reads. So the same salary question is asked once.
+- **A dry run first, and evidence after.** `submit_application` with `dryRun` fills to the same
+  bar and reports questions, but never clicks and leaves the stage alone, so a batch can be checked
+  before anything goes. For a submitted application Sidedoor reads the page itself after the click
+  (`browser_snapshot` through its own client: URL, title, visible text) and stores it next to the
+  confirmation the AI says it saw, so "submitted" doesn't rest on the AI's word alone.
+- **Long documents are read in pages, not cut.** AI clients cap tool results, so a 51K-character
+  Experience document returned whole lost its newest sections (the end, where confirmed facts are
+  appended). `get_profile_doc` returns 20,000-character pages ending at line breaks, with
+  `nextOffset` and a heading outline to jump by; `get_application` pages the package the same way.
+  Prompts that need Experience say to read every page. Inlining the document into prep's prompt
+  would have worked for prep only, and cost every prep the whole document.
 - **Agents use MCP, not the database file.** A Bot that can run commands here could write to
   `sidedoor.sqlite` directly, and once did, to an old copy it found. MCP reaches only the running
   app, goes through the same commands as the UI, and keeps the never-send rule in one place.

@@ -28,7 +28,8 @@ are due?" from your terminal.
 | **Writing check** | Flags phrases that make writing read as AI-generated, before anything goes out. |
 | **Chat** | Ask about anything ("Sarah from Ramp replied, call Thursday") and it updates the right records. |
 
-Nothing is ever sent or submitted without you.
+Nothing is ever sent or submitted without you. The one exception is one you turn on yourself: you
+can let Grok Bot submit applications (below).
 
 ## Install
 
@@ -73,9 +74,15 @@ local command, as Claude does; one on Grok Bot's own computer needs a public add
 Funnel works). Either way it gets its own token. You can send it company research and research on
 X, and a Grok Bot routine picks those up.
 
+You can also let Grok Bot submit your applications (Settings → AI → Grok Bot → Let it submit). Ask
+it to "submit my approved applications": Sidedoor fills each form in its own window on your
+computer and submits it once every required question has an answer. Questions the package doesn't
+cover go back to Grok Bot, which asks you; your answers about yourself (salary, start date) are
+saved to Standard answers so the next form doesn't ask.
+
 Agents can read your pipeline, edit your resume line by line (you review each change), draft
 messages, log touchpoints, look up job boards and read JavaScript-heavy job pages. They can't send
-email or submit applications.
+email or submit applications (except Grok Bot, when you let it submit).
 
 ## Your data
 

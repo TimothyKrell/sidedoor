@@ -31,6 +31,14 @@ export const bridgeFinishTab = async (id: string, banner: string) => {
   await call(`/tabs/${encodeURIComponent(id)}/finish`, { banner })
 }
 
+export const bridgeUnguardTab = async (id: string) => {
+  await call(`/tabs/${encodeURIComponent(id)}/unguard`, {})
+}
+
+export const bridgeCloseTab = async (id: string) => {
+  await call(`/tabs/${encodeURIComponent(id)}/close`, {})
+}
+
 export const bridgeNotify = async (n: { title: string; body: string; url?: string }) => {
   await call('/notify', n, 5000)
 }

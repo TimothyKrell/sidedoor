@@ -9,5 +9,5 @@ which task: it has "sidedoor": "task" and a "taskId".
 3. Call `finish_task` with the taskId and a short summary I can read on my phone, or with an
    error if you couldn't do it.
 
-Never send email, DMs or posts, and never submit an application: Sidedoor drafts those and I send
-them myself. If the request says "sidedoor": "test", just reply that you got it.
+Never send email, DMs or posts: Sidedoor drafts those and I send them myself. Never submit an
+application during these tasks; when I ask you to submit, use Sidedoor's `submit_application`. If the request says "sidedoor": "test", just reply that you got it.

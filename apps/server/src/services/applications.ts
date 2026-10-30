@@ -1,10 +1,11 @@
-import { and, eq, inArray, isNotNull, notInArray } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNotNull, notInArray } from 'drizzle-orm'
 import type { ResumeMatch } from '@sidedoor/shared/match'
 import { logActivity } from '../activity'
 import { db, schema } from '../db/client'
 import { atomic } from '../db/tx'
 import { addDays, newId, nowIso, today } from '../ids'
 import { getSettings } from '../settings'
+import { appendDoc } from './documents'
 import { enqueueTask } from './tasks'
 
 export type AppPatch = Partial<Omit<typeof schema.applications.$inferInsert, 'id' | 'createdAt'>>
@@ -165,6 +166,68 @@ export const unrankApplications = atomic((ids: string[]) => {
 export const setShot = atomic((id: string, shot: number | null, why: string | null) => {
   db.update(schema.applications).set({ shot: shot == null ? null : Math.max(0, Math.min(100, Math.round(shot))), shotWhy: why, updatedAt: nowIso() }).where(eq(schema.applications.id, id)).run()
   return getApplication(id)
+})
+
+/** Stages an application is still waiting to go in. */
+const UNSENT: schema.ApplicationStage[] = ['interested', 'review', 'approved']
+
+/**
+ * Grok Bot asks for an application to go in: approve it if it isn't yet, and queue the fill that
+ * submits it (jobs/fill-form.ts). A fill already waiting for it becomes the one that submits.
+ * A dry run fills and reports the questions without approving or submitting anything.
+ */
+export const requestSubmit = atomic((id: string, o: { dryRun?: boolean } = {}) => {
+  const a = getApplication(id)
+  if (!a) throw new Error(`No application ${id}`)
+  if (a.appliedAt || !UNSENT.includes(a.stage)) throw new Error(`${a.companyName} – ${a.role} is ${STAGE_LABEL[a.stage]}${a.appliedAt ? `, applied ${a.appliedAt.slice(0, 10)}` : ''}: nothing to submit.`)
+  if (!a.packageMd) throw new Error('No application package yet. Prepare it first (start_task prep) and submit once it is saved.')
+  const url = a.applyUrl ?? a.jobUrl
+  if (!url) throw new Error('This application has no apply URL. Set applyUrl with update_application first.')
+  if (url.startsWith('mailto:')) throw new Error('This job takes applications by email, not a form. Draft the email instead; the user sends it.')
+  const T = schema.tasks
+  const open = db.select().from(T).where(and(eq(T.kind, 'submit-assist'), eq(T.applicationId, id), inArray(T.status, ['queued', 'running']))).get()
+  if (open?.status === 'running' && open.input.submit !== true) throw new Error('A fill for the user to review is running for this one now. Ask again once it is done.')
+  const dryRun = o.dryRun === true
+  if (!dryRun && a.stage !== 'approved') setStage(id, 'approved', { note: 'Approved by Grok Bot to submit' })
+  const input = { submit: true, by: 'grokbot', dryRun }
+  let task: schema.Task
+  if (open) {
+    db.update(T).set({ input: { ...open.input, ...input } }).where(eq(T.id, open.id)).run()
+    task = { ...open, input: { ...open.input, ...input } }
+  } else task = enqueueTask('submit-assist', `${dryRun ? 'Dry run' : 'Submit'}: ${a.companyName} – ${a.role}`, { applicationId: id, priority: 10, input })
+  updateApplication(id, { nextAction: dryRun ? 'Sidedoor is filling this for Grok Bot (dry run: no submit)' : 'Sidedoor is filling and submitting this for Grok Bot' })
+  return task
+})
+
+export interface FormAnswer {
+  question: string
+  answer: string
+  /** True when it's about the user, not this job (salary, start date, relocation): saved to Standard answers too. */
+  reusable?: boolean
+}
+
+const ANSWERS_HEADING = '## Answers to the other form questions'
+
+/**
+ * The user's answers to questions a form asked that the package didn't cover. They go into the
+ * package (what the form filler pastes from), the ones that apply to any job into Standard
+ * answers, and the application is sent to be filled again: submitted, or another dry run when
+ * that's what it was last sent for.
+ */
+export const answerFormQuestions = atomic((id: string, answers: FormAnswer[]) => {
+  const a = getApplication(id)
+  if (!a) throw new Error(`No application ${id}`)
+  const given = answers.map((x) => ({ ...x, question: x.question.trim(), answer: x.answer.trim() })).filter((x) => x.question && x.answer)
+  if (!given.length) throw new Error('Give at least one question with its answer.')
+  const block = given.map((x) => `### ${x.question}\n${x.answer}`).join('\n\n')
+  const pkg = (a.packageMd ?? '').replace(/\s*$/, '')
+  updateApplication(id, { packageMd: pkg.includes(ANSWERS_HEADING) ? `${pkg}\n\n${block}\n` : `${pkg}${pkg ? '\n\n' : ''}${ANSWERS_HEADING}\n\n${block}\n` })
+  const keep = given.filter((x) => x.reusable)
+  if (keep.length) appendDoc('answers', keep.map((x) => `- **${x.question}** ${x.answer}`).join('\n'))
+  logActivity('application', `Answered ${given.length} form question${given.length === 1 ? '' : 's'}: ${a.companyName} – ${a.role}`, { link: `/applications/${id}` })
+  const T = schema.tasks
+  const last = db.select().from(T).where(and(eq(T.kind, 'submit-assist'), eq(T.applicationId, id))).orderBy(desc(T.createdAt)).get()
+  return requestSubmit(id, { dryRun: last?.input.dryRun === true })
 })
 
 /** Send a package back to the AI with the user's notes. */

@@ -189,6 +189,11 @@ export const AppSettings = z.object({
       research: z.boolean().default(false),
       /** Send research on X to Grok Bot. */
       x: z.boolean().default(false),
+      /**
+       * Let Grok Bot approve and submit applications: Sidedoor fills the form in its own window and
+       * submits it once nothing is left unanswered. Off by default; nothing else ever submits.
+       */
+      submit: z.boolean().default(false),
     })
     .prefault({}),
   app: z

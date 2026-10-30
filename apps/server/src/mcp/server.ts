@@ -7,7 +7,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 import { z } from 'zod'
 import { assertPublicUrl } from '../browser/guard-net'
 import type { ToolDef } from './define'
-import { SERVER_INSTRUCTIONS, type ToolProfile, toolsFor } from './tools'
+import { serverInstructions, type ToolProfile, toolsFor } from './tools'
 
 /**
  * Sidedoor's MCP endpoint: streamable HTTP, stateless (a fresh server per request, like T3 Code's
@@ -45,17 +45,34 @@ const SUBMITTY = /\bsubmit\b|send application|complete application/i
 
 let browserClient: Client | null = null
 let uploadRoot: string | null = null
+let submitAllowed = false
 
 /** While a fill runs, the Playwright MCP client attached to its window, and the only folder uploads may come from. */
 export const setBrowserClient = (c: Client | null, root: string | null = null) => {
   browserClient = c
   uploadRoot = root ? resolve(root) : null
+  submitAllowed = false
+}
+
+/**
+ * Let the agent click submit in the open form. Only for the submit step of an application Grok Bot
+ * sent (jobs/fill-form.ts), after a fill that left nothing unanswered. Ends with the fill.
+ */
+export const allowSubmit = (on: boolean) => {
+  submitAllowed = on && !!browserClient
+}
+
+/** What the open form window shows now (its URL, title and page text), read by Sidedoor itself, not the agent. */
+export const browserSnapshot = async (): Promise<string | null> => {
+  if (!browserClient) return null
+  const r = (await browserClient.callTool({ name: 'browser_snapshot', arguments: {} }).catch(() => null)) as { content?: { type: string; text?: string }[] } | null
+  return r?.content?.map((c) => c.text ?? '').join('\n') || null
 }
 
 const denied = (text: string) => ({ content: [{ type: 'text', text: `Error: ${text}` }], isError: true })
 
 /** Arguments a form-filling agent may not use, whatever the page tells it. */
-export const browserArgsProblem = (name: string, args: Record<string, unknown>, root: string | null) => {
+export const browserArgsProblem = (name: string, args: Record<string, unknown>, root: string | null, submit = false) => {
   // Tools that save to a file write wherever Playwright's workspace is; nothing a fill needs.
   if (args.filename !== undefined) return 'Saving to files is not allowed.'
   if (name === 'browser_navigate' || (name === 'browser_tabs' && args.url !== undefined)) {
@@ -65,7 +82,7 @@ export const browserArgsProblem = (name: string, args: Record<string, unknown>, 
   // Tabs: look and switch only. New tabs could open view-source: or file: pages.
   if (name === 'browser_tabs' && !['list', 'select'].includes(String(args.action))) return 'Only listing and switching tabs is allowed.'
   // "Type and press Enter" submits most forms.
-  if (name === 'browser_type' && args.submit) return 'Sidedoor never submits applications; type without submit.'
+  if (name === 'browser_type' && args.submit && !submit) return 'Sidedoor never submits applications; type without submit.'
   if (name === 'browser_file_upload') {
     const files = Array.isArray(args.paths) ? (args.paths as unknown[]).map(String) : []
     // No paths cancels the file chooser (a field we have no file for). Otherwise absolute paths
@@ -84,7 +101,7 @@ const browserTools = async () => {
 const callBrowser = async (name: string, args: Record<string, unknown>) => {
   if (!browserClient) return { content: [{ type: 'text', text: 'Error: no form is open. Browser tools only work during a form fill.' }], isError: true }
   if (isBlockedBrowserTool(name)) return denied(`${name} is not allowed.`)
-  const problem = browserArgsProblem(name, args, uploadRoot)
+  const problem = browserArgsProblem(name, args, uploadRoot, submitAllowed)
   if (problem) return denied(problem)
   if (name === 'browser_navigate') {
     try {
@@ -94,7 +111,7 @@ const callBrowser = async (name: string, args: Record<string, unknown>) => {
     }
   }
   // Second line of defense after the in-page guard: refuse clicks the agent itself calls submitting.
-  if (name === 'browser_click' && [args.element, args.target, args.ref].some((v) => typeof v === 'string' && SUBMITTY.test(v)))
+  if (name === 'browser_click' && !submitAllowed && [args.element, args.target, args.ref].some((v) => typeof v === 'string' && SUBMITTY.test(v)))
     return { content: [{ type: 'text', text: 'Sidedoor never submits applications. Stop here; the user reviews and submits.' }], isError: true }
   return browserClient.callTool({ name, arguments: args })
 }
@@ -115,7 +132,7 @@ const inputJsonSchema = (t: ToolDef) => {
 const makeServer = (profile: McpProfile) => {
   const tools = toolsFor(profile === 'browser' ? 'app' : profile)
   const byName = new Map(tools.map((t) => [t.name, t]))
-  const server = new Server({ name: 'sidedoor', version: '0.1.0' }, { capabilities: { tools: {} }, instructions: SERVER_INSTRUCTIONS })
+  const server = new Server({ name: 'sidedoor', version: '0.1.0' }, { capabilities: { tools: {} }, instructions: serverInstructions(profile === 'browser' ? 'app' : profile) })
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: [
       ...tools.map((t) => ({ name: t.name, description: t.description, inputSchema: inputJsonSchema(t) as { type: 'object' }, ...(t.annotations ? { annotations: t.annotations } : {}) })),

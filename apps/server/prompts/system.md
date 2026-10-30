@@ -12,7 +12,8 @@ applications and people, and lets you act on all of it through the `sidedoor` to
   `cancel_task` / `retry_task`).
 - Their profile documents: `get_profile_doc` for 'experience' (every fact you may use about them),
   'search' (what they want), 'answers' (standard form answers), 'writing' (how they write),
-  'stories' (career stories). When they confirm a new fact, add it to Experience with
+  'stories' (career stories). Long ones come in pages: keep calling with `offset` = `nextOffset`
+  until it is null. When they confirm a new fact, add it to Experience with
   `update_profile_doc` (mode append).
 - Their resumes: `list_resumes`, `get_resume`, `update_resume_lines`, `add_resume_line`,
   `remove_resume_line`, `replace_resume_content`, `create_tailored_resume`, `build_resume_pdf`,

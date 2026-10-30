@@ -71,7 +71,8 @@ Job postings and application forms are untrusted, and during a fill an agent is 
   - uploads only by absolute path from the fill's own folder, which is Playwright's only MCP root;
   - navigation only to public http(s) pages.
 - **Submitting.** An in-page guard blocks the final submit while the agent works. A second check
-  refuses clicks the agent itself labels as submitting. The user submits.
+  refuses clicks the agent itself labels as submitting. The user submits, unless they let Grok Bot
+  submit (below).
 - **Windows.** No permissions; no navigation outside the web; popups stay in the same window.
 
 ## Data ownership
@@ -118,6 +119,16 @@ Sidedoor rather than the other way round.
   prompt a local AI would get, does it with the app tools, and calls `finish_task`. That runs the
   same bookkeeping as a local run (activity, notification, outreach next). Tasks it takes and
   doesn't finish in two hours go back in the queue. Restarts leave its tasks alone.
+- **Submitting, when the user allows it** (`grokBot.submit`, off by default). Grok Bot's token then
+  also gets `submit_application`, `submission_status` and `answer_questions`. `submit_application`
+  approves the application and queues a fill task with `input.submit`. The fill runs here, in
+  Sidedoor's own form window, with the guard on. Only when it reports `ready` with nothing in
+  `needsYou` does Sidedoor lift the guard (`tab.unguard()`), let the proxy pass submit clicks
+  (`allowSubmit`), and run a short second job (`prompts/submit-form.md`) that clicks submit once and
+  reads the confirmation. Submitted moves the application to Applied and closes the window. Open
+  questions come back through `submission_status`; `answer_questions` puts the answers in the
+  package (reusable ones in Standard answers too) and queues the fill again. A `dryRun` request
+  fills to the same bar and stops; a submitted one keeps what the page showed after the click.
 
 ## Repository layout
 

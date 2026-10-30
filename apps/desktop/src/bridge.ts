@@ -18,6 +18,8 @@ import { iconPath } from './paths'
  *   POST /read              load a page with its JavaScript and return its text
  *   POST /tabs              open an application form in its own window, with the submit guard
  *   POST /tabs/:id/finish   lift the guard and show the review banner
+ *   POST /tabs/:id/unguard  lift the guard and keep driving it (Grok Bot submitting, when allowed)
+ *   POST /tabs/:id/close    close the window (submitted, or to be filled again)
  *   WS   /cdp/:id           CDP for that window (Playwright in the server drives it)
  *   POST /notify            native notification
  */
@@ -249,6 +251,20 @@ export const startBridge = async (o: { onNotifyClick: (path: string | undefined)
     tab.win.setTitle('Sidedoor · review, then submit')
   }
 
+  const unguardTab = async (id: string) => {
+    const tab = tabs.get(id)
+    if (!tab || tab.win.isDestroyed()) return
+    const wc = tab.win.webContents
+    if (tab.guardId && wc.debugger.isAttached()) await wc.debugger.sendCommand('Page.removeScriptToEvaluateOnNewDocument', { identifier: tab.guardId }).catch(() => {})
+    tab.guardId = null
+    for (const f of wc.mainFrame.framesInSubtree) await f.executeJavaScript('window.__sidedoorFilling = false').catch(() => {})
+  }
+
+  const closeTab = (id: string) => {
+    const tab = tabs.get(id)
+    if (tab && !tab.win.isDestroyed()) tab.win.close()
+  }
+
   const server = createServer((req, res) => {
     const path = new URL(req.url ?? '/', 'http://x').pathname
     if (!authed(req)) return json(res, 401, { error: 'unauthorized' })
@@ -266,6 +282,12 @@ export const startBridge = async (o: { onNotifyClick: (path: string | undefined)
         const fin = path.match(/^\/tabs\/(\w+)\/finish$/)
         if (fin) {
           await finishTab(fin[1]!, String(body.banner ?? ''))
+          return json(res, 200, { ok: true })
+        }
+        const act = path.match(/^\/tabs\/(\w+)\/(unguard|close)$/)
+        if (act) {
+          if (act[2] === 'unguard') await unguardTab(act[1]!)
+          else closeTab(act[1]!)
           return json(res, 200, { ok: true })
         }
         if (path === '/notify') {

@@ -21,6 +21,29 @@ const Step = ({ n, title, children }: { n: number; title: string; children: Reac
 
 const Hint = ({ children }: { children: ReactNode }) => <p className="text-xs text-muted-foreground">{children}</p>
 
+/** Instructions to paste into Grok Bot, with a copy button. */
+const CopyBox = ({ text, label }: { text: string; label: string }) => {
+  const [copied, setCopied] = useState(false)
+  return (
+    <div className="relative">
+      <pre className="max-h-40 overflow-auto rounded-md border bg-muted/60 p-3 pr-10 font-mono text-xs whitespace-pre-wrap">{text}</pre>
+      <Button
+        size="icon"
+        variant="ghost"
+        className="absolute top-1 right-1 size-7"
+        aria-label={label}
+        onClick={() => {
+          void navigator.clipboard.writeText(text)
+          setCopied(true)
+          setTimeout(() => setCopied(false), 1500)
+        }}
+      >
+        {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+      </Button>
+    </div>
+  )
+}
+
 /**
  * xAI's Grok Bot, as a row in "Your AI". A Bot that runs on this computer starts Sidedoor's MCP
  * bridge with Grok Bot's own token; one on Grok Bot's cloud computer reaches /mcp at a public address.
@@ -34,7 +57,6 @@ export function GrokBotRow() {
   const [webhookUrl, setWebhookUrl] = useState('')
   const [key, setKey] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
-  const [copied, setCopied] = useState(false)
   const [open, setOpen] = useState<boolean | null>(null)
   useEffect(() => {
     if (!data) return
@@ -140,22 +162,7 @@ export function GrokBotRow() {
 
           <Step n={3} title="Wake it when there’s work">
             <Hint>Ask your Bot to create a routine with these instructions and a webhook trigger, then paste the routine’s webhook URL and key here.</Hint>
-            <div className="relative">
-              <pre className="max-h-40 overflow-auto rounded-md border bg-muted/60 p-3 pr-10 font-mono text-xs whitespace-pre-wrap">{data.routine}</pre>
-              <Button
-                size="icon"
-                variant="ghost"
-                className="absolute top-1 right-1 size-7"
-                aria-label="Copy instructions"
-                onClick={() => {
-                  void navigator.clipboard.writeText(data.routine)
-                  setCopied(true)
-                  setTimeout(() => setCopied(false), 1500)
-                }}
-              >
-                {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-              </Button>
-            </div>
+            <CopyBox text={data.routine} label="Copy instructions" />
             <Input value={webhookUrl} onChange={(e) => setWebhookUrl(e.target.value)} placeholder="Webhook URL (https://…)" />
             <Input type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder={data.hasKey ? 'Key saved (paste a new one to replace it)' : 'Key'} />
             <div className="flex gap-2">
@@ -172,6 +179,25 @@ export function GrokBotRow() {
             </div>
             {data.wake && <Hint>{data.wake.ok ? `Woke it ${timeAgo(data.wake.at)}.` : `Last wake failed ${timeAgo(data.wake.at)}: ${data.wake.error}`}</Hint>}
             <Hint>Without a webhook, tasks still wait for it: ask your Bot to “check Sidedoor”.</Hint>
+          </Step>
+
+          <Step n={4} title="Let it submit applications">
+            <div className="flex items-center justify-between gap-3">
+              <span>Grok Bot can approve and submit applications</span>
+              <Switch
+                checked={data.settings.submit}
+                onCheckedChange={(submit) => void run('submit', () => rpc.saveGrokBot({ submit }), submit ? 'Grok Bot can submit applications now.' : 'Grok Bot can no longer submit.')}
+              />
+            </div>
+            <Hint>
+              Sidedoor fills each form in its own window here, from the package, and submits it only when every required question has an answer. Questions it can’t answer go to Grok Bot to ask you; answers about you are saved to Standard answers for the next form.
+            </Hint>
+            {data.settings.submit && (
+              <>
+                <Hint>Give your Bot these instructions (as a skill or saved instructions), then ask it to “submit my approved applications”.</Hint>
+                <CopyBox text={data.submitRoutine} label="Copy submit instructions" />
+              </>
+            )}
           </Step>
 
           <div className="flex justify-end gap-1 border-t pt-3">

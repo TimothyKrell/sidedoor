@@ -14,6 +14,8 @@ changes. You work only through the `sidedoor` tools and your own web search. Tod
 - Facts, the ONLY sources of claims: `get_profile_doc` 'experience', their main resume, and
   'stories' (their "Facts to confirm" items are NOT confirmed: don't use those unless they're also
   in Experience, or list them under "Needs your decision").
+- Read all of Experience: it comes in pages, so call `get_profile_doc` again with `offset` set to
+  `nextOffset` until `nextOffset` is null. The newest confirmed facts are at the end.
 - Standard answers: `get_profile_doc` 'answers'. Writing style: `get_profile_doc` 'writing' (read
   it fully before writing any prose).
 

@@ -173,5 +173,14 @@ export const localFormTab = async (url: string) => {
       // Disconnects only; the window (we launched it, not Playwright) stays open for review.
       await browser.close().catch(() => {})
     },
+    unguard: async () => {
+      // Runs after the guard's init script on every new page, so pages after this one aren't guarded either.
+      await context.addInitScript('window.__sidedoorFilling = false')
+      for (const p of context.pages()) await everyFrame(p, 'window.__sidedoorFilling = false')
+    },
+    close: async () => {
+      await page.close().catch(() => {})
+      await browser.close().catch(() => {})
+    },
   }
 }

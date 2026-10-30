@@ -40,8 +40,8 @@ import {
   upsertPerson,
 } from '../services/people'
 import { cancelTask, enqueueTask, retryTask, URGENT_PRIORITY } from '../services/tasks'
-import { setMeta } from '../settings'
-import { parseComp, truncate } from '../text'
+import { getSettings, setMeta } from '../settings'
+import { pageOf, parseComp, truncate } from '../text'
 import { paths } from '../config'
 import { appendFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -236,11 +236,12 @@ export const appTools = [
 
   tool(
     'get_application',
-    'Everything about one application: package, notes, linked people, interaction history, drafts, research, its background tasks, its last resume match check (per-requirement levels and the resume line ids behind them), and every other application at the same company (check those before suggesting they apply).',
-    { id: z.string() },
-    safe(async ({ id }) => {
+    'Everything about one application: package (in pages of 12,000 characters: when packageNextOffset isn\'t null, call again with packageOffset to read the rest), notes, linked people, interaction history, drafts, research, its background tasks, its last resume match check (per-requirement levels and the resume line ids behind them), and every other application at the same company (check those before suggesting they apply).',
+    { id: z.string(), packageOffset: z.number().int().min(0).optional().describe('read the package from here (its packageNextOffset), for packages longer than one page') },
+    safe(async ({ id, packageOffset }) => {
       const a = getApplication(id)
       if (!a) throw new Error('not found')
+      const pkg = pageOf(a.packageMd, packageOffset ?? 0, 12_000)
       const links = db.select().from(schema.applicationPeople).where(eq(schema.applicationPeople.applicationId, id)).all()
       const people = links.length ? db.select().from(schema.people).where(inArray(schema.people.id, links.map((l) => l.personId))).all() : []
       return {
@@ -254,7 +255,11 @@ export const appTools = [
         resumeId: a.resumeId,
         reviewNotes: a.reviewNotes,
         notes: truncate(a.notesMd, 6000),
-        package: truncate(a.packageMd, 12_000),
+        package: pkg.text,
+        packageOffset: pkg.offset,
+        packageTotalChars: pkg.totalChars,
+        /** Not null: there's more package; call again with packageOffset set to this. */
+        packageNextOffset: pkg.nextOffset,
         people: people.map((p) => ({ ...personBrief(p), role: links.find((l) => l.personId === p.id)?.role })),
         interactions: db.select().from(schema.interactions).where(eq(schema.interactions.applicationId, id)).orderBy(desc(schema.interactions.at)).limit(30).all(),
         drafts: db.select().from(schema.drafts).where(eq(schema.drafts.applicationId, id)).all(),
@@ -1006,6 +1011,37 @@ export const grokBotTools = [
   ),
 ]
 
+/** Submitting for Grok Bot: only its token sees these, and only while the user lets it submit (Settings → AI → Grok Bot). */
+export const grokBotSubmitTools = [
+  tool(
+    'submit_application',
+    "Submit an application for the user. Approves it if it isn't approved yet, then Sidedoor opens the form in its browser window on the user's computer, fills it from the approved package, and submits it once every required question has an answer. One form at a time; it takes a few minutes each. Returns at once: follow it with submission_status. Needs a saved package (prep first) and an apply URL. dryRun: fill and report the questions only; it never clicks submit and leaves the stage alone (status 'ready' means a real run would submit it).",
+    { applicationId: z.string(), dryRun: z.boolean().optional() },
+    safe(async ({ applicationId, dryRun }) => {
+      const t = (await import('../services/applications')).requestSubmit(applicationId, { dryRun: dryRun === true })
+      return { taskId: t.id, status: t.status, next: 'Check submission_status in a few minutes. When it lists questions, ask the user, then call answer_questions.' }
+    }),
+  ),
+  tool(
+    'submission_status',
+    "Where the applications you sent to submit_application stand, newest first: queued or filling (wait), submitted (done; it's now Applied, and evidence holds the page URL, title and text Sidedoor read after the click), ready (a dry run with nothing left to ask; submit_application without dryRun sends it), questions (the form asked things only the user can answer: ask them, word for word, with the options, then answer_questions), blocked (a captcha, sign-in or closed posting: the user has to do it in the Sidedoor window), not_submitted or failed (read the summary).",
+    { applicationId: z.string().optional() },
+    safe(async ({ applicationId }) => (await import('../jobs/fill-form')).submissions(applicationId)),
+  ),
+  tool(
+    'answer_questions',
+    "Give Sidedoor the user's answers to the questions submission_status listed, in their words (don't make answers up or improve them). They go into the application's package, and the form is filled and submitted again (or filled again as a dry run, if that's how it was last sent). Mark an answer reusable when it is about the user rather than this job (salary expectations, start date, relocation, work authorization, how they heard of jobs in general): it's saved to their Standard answers, so the next form doesn't ask.",
+    {
+      applicationId: z.string(),
+      answers: z.array(z.object({ question: z.string().describe('the question as submission_status gave it'), answer: z.string(), reusable: z.boolean().optional() })).min(1),
+    },
+    safe(async ({ applicationId, answers }) => {
+      const t = (await import('../services/applications')).answerFormQuestions(applicationId, answers)
+      return { taskId: t.id, next: 'Saved. Sidedoor fills and submits it again; check submission_status in a few minutes.' }
+    }),
+  ),
+]
+
 /** Tool sets per MCP endpoint. Story interviews may only save stories; JSON jobs may only look things up; Grok Bot adds its task queue. */
 export const TOOL_PROFILES = {
   app: null,
@@ -1017,8 +1053,14 @@ export type ToolProfile = keyof typeof TOOL_PROFILES
 
 export const toolsFor = (profile: ToolProfile) => {
   const only = TOOL_PROFILES[profile]
-  const all = [...appTools, ...profileTools, ...(profile === 'grokbot' ? grokBotTools : [])]
+  const all = [...appTools, ...profileTools, ...(profile === 'grokbot' ? [...grokBotTools, ...(getSettings().grokBot.submit ? grokBotSubmitTools : [])] : [])]
   return only ? all.filter((t) => (only as readonly string[]).includes(t.name)) : all
 }
 
 export const SERVER_INSTRUCTIONS = `Tools for Sidedoor, the user's job-search app. Pipeline stages: ${STAGES_HELP}. Facts about the user come only from their Experience document (get_profile_doc 'experience'), their resume, or what they tell you. Never send email or submit applications: draft them; the user acts.`
+
+/** What an MCP endpoint tells the agent up front. Grok Bot, when the user lets it, submits through Sidedoor. */
+export const serverInstructions = (profile: ToolProfile) =>
+  profile === 'grokbot' && getSettings().grokBot.submit
+    ? `Tools for Sidedoor, the user's job-search app. Pipeline stages: ${STAGES_HELP}. Facts about the user come only from their Experience document (get_profile_doc 'experience'), their resume, or what they tell you. The user lets you submit applications, only through submit_application: Sidedoor fills and submits the form itself. Never send email or messages: draft them; the user sends.`
+    : SERVER_INSTRUCTIONS

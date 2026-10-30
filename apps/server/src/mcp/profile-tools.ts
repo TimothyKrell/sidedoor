@@ -2,6 +2,7 @@ import { resumeAsText } from '@sidedoor/shared/resume'
 import { z } from 'zod'
 import { logActivity } from '../activity'
 import { DOCS, type DocKey, appendDoc, getDoc, setDoc } from '../services/documents'
+import { outlineOf, pageOf } from '../text'
 import { tool } from './define'
 
 const ok = (v: unknown) => ({ content: [{ type: 'text' as const, text: typeof v === 'string' ? v : JSON.stringify(v, null, 1) }] })
@@ -28,11 +29,27 @@ export const profileTools = [
     'get_profile_doc',
     `Read one of the user's profile documents: ${Object.entries(DOCS)
       .map(([k, d]) => `'${k}' (${d.hint})`)
-      .join('; ')}.`,
-    { key: docKey },
-    safe(({ key }) => {
+      .join('; ')}. Long documents come in pages of up to 20,000 characters: when nextOffset isn't null, call again with offset = nextOffset until it is, before relying on the document (the newest sections are at the end). sections lists every heading and its offset, to jump straight to one.`,
+    {
+      key: docKey,
+      offset: z.number().int().min(0).optional().describe('where to start reading, from nextOffset or a section offset (default 0)'),
+      limit: z.number().int().min(1000).max(40_000).optional().describe('characters per page (default 20000)'),
+    },
+    safe(({ key, offset, limit }) => {
       const d = getDoc(key)
-      return { key, title: DOCS[key].title, body: d.body, updatedAt: d.updatedAt, isTemplate: d.isDefault }
+      const page = pageOf(d.body, offset ?? 0, limit ?? 20_000)
+      const paged = page.offset > 0 || page.nextOffset != null
+      return {
+        key,
+        title: DOCS[key].title,
+        updatedAt: d.updatedAt,
+        isTemplate: d.isDefault,
+        offset: page.offset,
+        totalChars: page.totalChars,
+        nextOffset: page.nextOffset,
+        ...(paged ? { sections: outlineOf(d.body) } : {}),
+        body: page.text,
+      }
     }),
     ro,
   ),

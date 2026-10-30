@@ -44,7 +44,10 @@ Return the structured result:
   didn't load, closed posting).
 - `summary`: one or two plain sentences for the notification.
 - `filled`: each field you filled, with the value (shorten long text to its first ~80 chars).
-- `needsYou`: each field or step they must handle, and why.
+- `needsYou`: each field or step they must handle, and why. For a question, put its exact wording
+  in `field`, and its choices in `options` when it has a fixed set.
+
+{{SUBMIT_NOTE}}
 
 ## Application package (they reviewed and approved this)
 {{PACKAGE}}
