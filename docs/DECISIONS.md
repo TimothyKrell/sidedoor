@@ -211,3 +211,12 @@ current when making a non-obvious call. Open questions for the maintainer live i
   usage limit, the task goes back in the queue for the reset time it names (or half an hour), without
   spending an attempt, and the queue and triage stop claiming work until then. Otherwise one limit
   fails everything queued behind it in a couple of minutes, as happened with a 170-task batch.
+
+## Preparing packages
+
+- **A prep told to stop isn't a failure.** Bulk instructions can tell prep to stop early (the
+  listing closed, or it's too new for this pass). The AI says so with `stopped: true`, and if it left
+  the package alone the task finishes with its note and the application keeps its next action.
+  Without that, every skipped role showed as failed and said "Preparing failed… try again", as
+  happened to a third of a max-match batch. A prep that saves nothing without saying it stopped still
+  fails, and the failure now keeps what the AI said and its log.

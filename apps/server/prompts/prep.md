@@ -95,3 +95,7 @@ Every question in form order:
 - <bullet per claim category -> source>
 
 5. Finish with a JSON object (structured output) summarizing what you produced.
+
+If the review notes tell you to stop before preparing (for example the listing is closed, or
+too new for this pass), do what they say, don't save a package, and finish with `stopped: true`
+and a summary that says why.

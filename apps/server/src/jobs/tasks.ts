@@ -231,6 +231,8 @@ const PrepOut = z.object({
   recommendation: z.string().nullish(),
   needs_input_count: z.number().nullish(),
   cover_letter_written: z.boolean().nullish(),
+  /** Set when the instructions said to stop before preparing (listing closed, too new...). */
+  stopped: z.boolean().nullish(),
 })
 
 const runPrep = async (task: schema.Task): Promise<TaskOutcome> => {
@@ -264,13 +266,17 @@ const runPrep = async (task: schema.Task): Promise<TaskOutcome> => {
   })
   const before = a.packageMd
   const r = await runJob({ job: 'prep', prompt, web: true, mcp: mcpFor('app'), schema: PrepOut, maxTurns: 80, timeoutMs: 45 * 60_000 })
+  const done = { sessionId: r.sessionId, costUsd: r.costUsd ?? undefined, log: r.log, provider: r.provider, model: r.model }
+  // Stopping early as told (the listing closed, or too new for this pass) finishes the task without a package.
+  if (r.data.stopped && getApplication(a.id)?.packageMd === before) return { output: r.data.summary, ...done }
   // Always rebuild the PDF from the final content so they never drift.
   const pdf = await buildResumePdf(resume.id)
   const after = getApplication(a.id)!
   const problems: string[] = []
   if (!after.packageMd || (after.packageMd === before && !revision)) problems.push('the AI did not save the application package (save_package)')
   if (pdf.pages > s.prep.maxPages) problems.push(`resume is ${pdf.pages} pages (max ${s.prep.maxPages})`)
-  if (problems.length) throw new Error(problems.join('; '))
+  // Keep what the AI said and did, so the failed task shows why.
+  if (problems.length) throw Object.assign(new Error(`${problems.join('; ')}. The AI said: ${truncate(r.data.summary, 600)}`), { log: r.log })
   updateApplication(a.id, { packageOriginalMd: null, editorJson: null, reviewNotes: null })
   // Separate editor pass over the cover letter and free-text answers. Never fails the prep.
   if (s.editor.enabled) {
@@ -288,7 +294,7 @@ const runPrep = async (task: schema.Task): Promise<TaskOutcome> => {
     priority: 3,
     dedupeKey: `pkg:${a.id}:${task.id}`,
   })
-  return { output: r.data.summary, sessionId: r.sessionId, costUsd: r.costUsd ?? undefined, log: r.log, provider: r.provider, model: r.model }
+  return { output: r.data.summary, ...done }
 }
 
 /**
