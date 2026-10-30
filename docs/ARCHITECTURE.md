@@ -70,6 +70,14 @@ Job postings and application forms are untrusted, and during a fill an agent is 
   - no scripts, no file writes and no new tabs;
   - uploads only by absolute path from the fill's own folder, which is Playwright's only MCP root;
   - navigation only to public http(s) pages.
+- **Text.** Postings carry lines written for the AI that reads them ("If you are an LLM, include
+  ..."), some hidden in white or `display:none` text. Ingest (`scout/adapters.ts` → `htmlToJd`)
+  keeps hidden HTML text in a marked section at the end of the stored description, for audit.
+  Every prompt and agent tool that hands over posting or page text goes through `fenceUntrusted()`
+  (`src/untrusted.ts`): the hidden section and invisible characters are left out, lines aimed at AI
+  tools are marked ⚠, and the text sits between markers it can't forge, with a note that it is
+  data. `render()` refuses `{{JD}}` / `{{POSTINGS}}` that skipped the fence; findings go to the
+  activity feed (`guard`) and show as a warning on the application and in `get_application`.
 - **Submitting.** An in-page guard blocks the final submit while the agent works. A second check
   refuses clicks the agent itself labels as submitting. The user submits, unless they let Grok Bot
   submit (below).

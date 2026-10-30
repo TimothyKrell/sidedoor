@@ -6,6 +6,7 @@ import { db, schema } from './db/client'
 import { today } from './ids'
 import { docBody, isWritten } from './services/documents'
 import { getSettings } from './settings'
+import { FENCE_OPEN, NO_TEXT_PREFIX, UNTRUSTED_VARS } from './untrusted'
 
 const cache = new Map<string, string>()
 export const template = (name: string) => {
@@ -24,6 +25,12 @@ export const firstName = () => userName().split(/\s+/)[0] ?? userName()
 
 /** Fill a prompt template. {{TODAY}}, {{NAME}}, {{FIRST_NAME}} are always available. */
 export const render = (name: string, vars: Record<string, string | number | null | undefined> = {}) => {
+  // Posting text reaches an AI only fenced as data (untrusted.ts); a builder that forgets fails here.
+  for (const k of UNTRUSTED_VARS) {
+    const v = vars[k]
+    if (typeof v === 'string' && v.trim() && !v.includes(FENCE_OPEN) && !v.includes(NO_TEXT_PREFIX))
+      throw new Error(`Prompt "${name}": {{${k}}} carries scraped text; pass it through fenceUntrusted()`)
+  }
   let t = template(name)
   const all = { TODAY: today(), NAME: userName(), FIRST_NAME: firstName(), ...vars }
   for (const [k, v] of Object.entries(all)) t = t.replaceAll(`{{${k}}}`, v == null ? '' : String(v))
