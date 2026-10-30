@@ -7,6 +7,7 @@ import { CompanyAvatar, CopyButton, Due, Empty, FitBadge, Freshness, LocationNot
 import { DraftCard, PersonRow } from '~/components/app/cards'
 import { useChat, usePageContext } from '~/components/app/chat'
 import { MatchList, MatchStrip, MatchSummary } from '~/components/app/match'
+import { StaleFlags } from '~/components/app/stale'
 import { WritingReview } from '~/components/app/writing'
 import { FollowupPicker, InteractionForm, PersonDialog } from '~/components/app/forms'
 import { Badge } from '~/components/ui/badge'
@@ -539,6 +540,7 @@ function PackageTab({ d }: { d: Detail }) {
           <Pencil /> {editing ? 'Preview' : 'Edit'}
         </Button>
       </div>
+      {!editing && <StaleFlags applicationId={a.id} />}
       {!editing && <Decisions d={d} />}
       {!editing && <WritingCheck d={d} />}
       {editing ? (

@@ -1,6 +1,6 @@
 import { useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
 import { createFileRoute, Link, notFound } from '@tanstack/react-router'
-import { ArrowLeft, Bot, Loader2, RotateCcw } from 'lucide-react'
+import { ArrowLeft, Bot, History, Loader2, RotateCcw } from 'lucide-react'
 import { renderMarkdown } from '~/lib/markdown'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
@@ -20,6 +20,9 @@ export const Route = createFileRoute('/profile/$key')({
   },
   component: DocPage,
 })
+
+/** Documents unsent drafts are checked against when they change (server: services/stale-flags.ts). */
+const CHECKED = ['experience', 'answers'] as const
 
 const ASK: Partial<Record<Key, string>> = {
   experience: 'Interview me to fill out my Experience document: go role by role, ask what I built and the numbers behind it, and add what I confirm.',
@@ -86,6 +89,22 @@ function DocPage() {
           </Button>
         )}
         <div className="flex-1" />
+        {(CHECKED as readonly Key[]).includes(key) && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground"
+            title="Saving already does this; this checks again now"
+            onClick={() =>
+              void rpc
+                .checkStaleDrafts({ docKey: key as (typeof CHECKED)[number] })
+                .then(() => toast.success('Checking your unsent drafts against it. Anything out of date shows on the draft.'))
+                .catch((e: unknown) => toast.error(e instanceof Error ? e.message : String(e)))
+            }
+          >
+            <History /> Check unsent drafts
+          </Button>
+        )}
         {!data.isDefault && data.template && (
           <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={() => confirm('Replace this with the starting template? Your text will be lost.') && setBody(data.template)}>
             <RotateCcw /> Start from the template

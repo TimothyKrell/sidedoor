@@ -484,6 +484,15 @@ export const router = {
     if (r.error) throw new Error(`Editor pass failed: ${r.error.slice(0, 200)}`)
     return { edited: r.edited }
   }),
+  staleFlags: proc(z.object({ draftId: z.string().optional(), applicationId: z.string().optional() }), async (f) => (await import('../services/stale-flags')).listStaleFlags(f)),
+  clearStaleFlag: proc(z.object({ id: z.string(), note: z.string().optional() }), async ({ id, note }) => {
+    ;(await import('../services/stale-flags')).clearStaleFlag(id, note)
+    return { ok: true }
+  }),
+  checkStaleDrafts: proc(z.object({ docKey: z.enum(['experience', 'answers', 'stories']).optional(), full: z.boolean().optional() }), async ({ docKey, full }) => {
+    const m = await import('../services/stale-flags')
+    return { queued: m.checkStaleNow(docKey ? [docKey] : m.STALE_DOCS, { full: !!full }) }
+  }),
   editPackage: proc(id, async ({ id }) => {
     const r = await (await import('../writing/editor')).editPackage(id)
     if (r.error) throw new Error(`Editor pass failed: ${r.error.slice(0, 200)}`)

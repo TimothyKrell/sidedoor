@@ -4,6 +4,7 @@ import { resolve } from 'node:path'
 import { paths } from '../config'
 import { db, schema } from '../db/client'
 import { nowIso } from '../ids'
+import { docChanged } from './stale-flags'
 
 /**
  * The user's profile documents (markdown, owned by the app). Each starts from a template in
@@ -36,8 +37,11 @@ export const getDoc = (key: DocKey): { key: DocKey; body: string; updatedAt: str
 export const docBody = (key: DocKey) => getDoc(key).body
 
 export const setDoc = (key: DocKey, body: string) => {
+  const before = getDoc(key).body
   const at = nowIso()
   db.insert(schema.documents).values({ key, body, updatedAt: at }).onConflictDoUpdate({ target: schema.documents.key, set: { body, updatedAt: at } }).run()
+  // Unsent drafts may now say something this contradicts; check them in the background.
+  docChanged(key, before, body)
   return getDoc(key)
 }
 

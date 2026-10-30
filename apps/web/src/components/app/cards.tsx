@@ -11,6 +11,7 @@ import { xHandle } from '@sidedoor/shared/x'
 import { useAction } from '~/lib/use-action'
 import { cn } from '~/lib/utils'
 import { CompanyAvatar, CopyButton, Due, FitBadge, Freshness, LocationFlag, Salary, StageBadge, TimeAgo } from './bits'
+import { StaleFlags } from './stale'
 import { type EditorChange, useTellReport, WritingReview } from './writing'
 
 export interface PostingLike {
@@ -305,6 +306,16 @@ export function DraftCard({ d, personName, people }: { d: DraftLike; personName?
           />
           {d.editorError && <div className="mt-1 text-xs text-destructive">Editor pass failed: {d.editorError}</div>}
         </>
+      )}
+      {d.status === 'draft' && !editing && (
+        <StaleFlags
+          draftId={d.id}
+          onUse={(f) => {
+            // Opens the editor with the sentence swapped in; nothing is saved until they press Save.
+            if (f.suggestion && d.body.includes(f.sentence)) setBody(d.body.replace(f.sentence, f.suggestion))
+            setEditing(true)
+          }}
+        />
       )}
       {d.status === 'draft' && !editing && isEmail && d.emailNote && (d.toEmail || to) && (
         <div className="mt-3 flex gap-2 rounded-lg border border-hot/30 bg-hot/10 px-2.5 py-2 text-xs">

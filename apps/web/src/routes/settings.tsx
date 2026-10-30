@@ -328,6 +328,7 @@ const JOB_LABELS: Record<string, string> = {
   funding: 'Funding radar',
   x: 'Research on X',
   import: 'Importing resumes',
+  stale: 'Checking unsent drafts against your profile',
 }
 
 function AiSection() {

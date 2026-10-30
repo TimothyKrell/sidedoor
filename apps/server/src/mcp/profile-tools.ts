@@ -2,6 +2,7 @@ import { resumeAsText } from '@sidedoor/shared/resume'
 import { z } from 'zod'
 import { logActivity } from '../activity'
 import { DOCS, type DocKey, appendDoc, getDoc, setDoc } from '../services/documents'
+import { STALE_DOCS, checkStaleNow, clearStaleFlag, listStaleFlags } from '../services/stale-flags'
 import { outlineOf, pageOf } from '../text'
 import { tool } from './define'
 
@@ -63,6 +64,51 @@ export const profileTools = [
       logActivity('system', `An agent ${mode === 'append' ? 'added to' : 'rewrote'} ${DOCS[key].title}`, { link: `/profile/${key}` })
       return { saved: true, chars: d.body.length }
     }),
+  ),
+
+  tool(
+    'list_stale_drafts',
+    "Sentences in unsent outreach drafts, cover letters and application answers that a change to a profile document (Experience, Standard answers, Story bank) contradicts or makes out of date, with what the document says now and, when clear, a corrected sentence. Sidedoor checks after every change. To fix one, edit the text (update_draft, or save_package for a package) and the flag resolves by itself; if the sentence is fine as written, clear_stale_flag. Never send anything.",
+    {
+      draftId: z.string().optional(),
+      applicationId: z.string().optional(),
+      all: z.boolean().optional().describe('include cleared and resolved flags (default: only open ones)'),
+    },
+    safe(({ draftId, applicationId, all }) =>
+      listStaleFlags({ ...(draftId ? { draftId } : {}), ...(applicationId ? { applicationId } : {}), ...(all ? { all } : {}) }).map((f) => ({
+        flagId: f.id,
+        status: f.status,
+        where: f.label,
+        draftId: f.draftId,
+        applicationId: f.applicationId,
+        personId: f.personId,
+        section: f.section,
+        doc: f.docKey,
+        sentence: f.sentence,
+        nowTrue: f.fact,
+        suggestion: f.suggestion,
+        note: f.note,
+        at: f.createdAt,
+      })),
+    ),
+    ro,
+  ),
+
+  tool(
+    'clear_stale_flag',
+    'Mark a stale-draft flag as dealt with: the sentence is fine as written, or you fixed it some other way. Fixing the sentence itself resolves the flag without this.',
+    { flagId: z.string(), note: z.string().optional().describe('why, in a few words') },
+    safe(({ flagId, note }) => {
+      const f = clearStaleFlag(flagId, note)
+      return { flagId: f.id, status: f.status }
+    }),
+  ),
+
+  tool(
+    'check_stale_drafts',
+    "Check unsent drafts against profile documents now, instead of waiting for the next change. By default it reads only what changed since the last check; full: true compares against the whole document (more AI work).",
+    { docKey: z.enum(STALE_DOCS).optional().describe('omit for all of them'), full: z.boolean().optional() },
+    safe(({ docKey, full }) => ({ queued: checkStaleNow(docKey ? [docKey] : STALE_DOCS, { full: !!full }) })),
   ),
 
   tool(

@@ -26,6 +26,7 @@ export const JOB_TIERS = {
   fill: 'balanced',
   x: 'balanced',
   import: 'balanced',
+  stale: 'balanced',
 } as const
 export type JobKind = keyof typeof JOB_TIERS
 export type Tier = 'fast' | 'balanced' | 'best'

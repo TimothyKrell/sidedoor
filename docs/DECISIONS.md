@@ -246,3 +246,24 @@ current when making a non-obvious call. Open questions for the maintainer live i
   Without that, every skipped role showed as failed and said "Preparing failed… try again", as
   happened to a third of a max-match batch. A prep that saves nothing without saying it stopped still
   fails, and the failure now keeps what the AI said and its log.
+
+## Stale drafts
+
+- **A profile change checks what hasn't gone out yet.** Saving Experience, Standard answers or the
+  Story bank (from the page, an agent's `update_profile_doc`, anything through `setDoc`) queues a
+  `stale-check` task. It reads unsent outreach drafts and the cover letters, answers and rest of the
+  package of applications still in Interested, Ready for review or Approved, and flags sentences the
+  change contradicts or leaves unsupported, with what the document says now and a corrected sentence
+  when the fix is clear. Sent drafts and submitted applications are history and aren't checked.
+  Prompted by outreach that still said "haven't built on Yjs" after Experience said otherwise.
+- **Cheap by design.** The check diffs the document against the version the last check saw (kept
+  in meta `staleChecked:<doc>`), sentence by sentence, and only sends the changed sentences plus the
+  pieces that share a distinctive word with them (tool names, companies, numbers; common job-search
+  words don't count). An edit nothing unsent mentions never calls the AI. The trade-off: a
+  contradiction that shares no word with the change ("never done real-time work" vs. "built CRDT
+  editing") is missed; `check_stale_drafts` with `full: true` compares against the whole document.
+  Saves within two minutes share one check.
+- **Flags never change the text.** The AI's sentence must be found in the piece or it's dropped.
+  The user (Use suggestion opens the editor with it; Dismiss) or an agent (`list_stale_drafts`, then
+  `update_draft` / `save_package`, or `clear_stale_flag`) deals with it. A flag resolves by itself
+  once its sentence is gone, or its draft is sent or discarded, or its application is submitted.

@@ -39,6 +39,7 @@ export const qo = {
   access: () => queryOptions({ queryKey: ['settings', 'access'], queryFn: () => rpc.access() }),
   connectInfo: () => queryOptions({ queryKey: ['aiStatus', 'connectInfo'], queryFn: () => rpc.connectInfo() }),
   grokBot: () => queryOptions({ queryKey: ['grokBot'], queryFn: () => rpc.grokBot() }),
+  staleFlags: () => queryOptions({ queryKey: ['staleFlags'], queryFn: () => rpc.staleFlags({}), ...live }),
 }
 
 // The page components were written against `fooFn({ data })` server functions; these keep that
@@ -70,6 +71,7 @@ export const draftSentFn = wrap(rpc.draftSent)
 export const discardDraftFn = wrap(rpc.discardDraft)
 export const editDraftFn = wrap(rpc.editDraft)
 export const editPackageFn = wrap(rpc.editPackage)
+export const clearStaleFlagFn = wrap(rpc.clearStaleFlag)
 export const startStoryInterviewFn = wrap(rpc.startStoryInterview)
 export const findEmailFn = wrap(rpc.findEmail)
 export const emailBouncedFn = wrap(rpc.emailBounced)
