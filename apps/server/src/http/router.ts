@@ -213,7 +213,7 @@ export const router = {
     return { ok: true }
   }),
   saveGrokBot: proc(
-    z.object({ publicUrl: z.string().optional(), webhookUrl: z.string().optional(), webhookKey: z.string().optional(), research: z.boolean().optional(), x: z.boolean().optional(), submit: z.boolean().optional() }),
+    z.object({ publicUrl: z.string().optional(), webhookUrl: z.string().optional(), webhookKey: z.string().optional(), research: z.boolean().optional(), x: z.boolean().optional(), submit: z.boolean().optional(), companyLimits: z.array(z.object({ company: z.string().min(1), max: z.number().int().min(0), days: z.number().int().min(1) })).optional() }),
     async ({ webhookKey, ...patch }) => {
       if (patch.publicUrl) patch.publicUrl = new URL(patch.publicUrl.trim()).origin
       if (patch.webhookUrl) {
@@ -227,6 +227,14 @@ export const router = {
       return { ok: true }
     },
   ),
+  /** Grok Bot's latest submit batch, as its report. */
+  submitBatch: proc(none, async () => (await import('../jobs/submit-batch')).batchReport()),
+  steerSubmitBatch: proc(z.object({ id: z.string(), action: z.enum(['pause', 'resume', 'cancel']) }), async ({ id, action }) => {
+    const m = await import('../jobs/submit-batch')
+    if (action === 'cancel') m.cancelBatch(id)
+    else m.pauseBatch(id, action === 'pause')
+    return { ok: true }
+  }),
   testGrokBot: proc(none, async () => {
     await (await import('../jobs/handoff')).wakeGrokBot()
     return { ok: true }

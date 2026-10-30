@@ -2,6 +2,7 @@ import { and, desc, eq, gte, inArray, isNotNull, isNull, lte, sql } from 'drizzl
 import { Duration, Effect, Fiber, Ref, Schedule } from 'effect'
 import { logActivity } from '../activity'
 import { grokBotTick } from './handoff'
+import { advanceBatches } from './submit-batch'
 import { claimNextTask, executeTask, runTriage } from './tasks'
 import { db, schema } from '../db/client'
 import { nowIso, today } from '../ids'
@@ -182,7 +183,9 @@ const main = Effect.gen(function* () {
   const tasks = yield* taskLoop.pipe(Effect.forkChild)
   const sched = yield* scheduleTick.pipe((e) => guarded('schedule', e), Effect.repeat(Schedule.spaced(Duration.minutes(1))), Effect.forkChild)
   const grok = yield* Effect.promise(() => grokBotTick()).pipe((e) => guarded('grokbot', e), Effect.repeat(Schedule.spaced(Duration.seconds(15))), Effect.forkChild)
-  yield* Fiber.joinAll([scout, triage, tasks, sched, grok])
+  // Grok Bot's submit batches: the next form gets its turn when the one before it is done.
+  const batches = yield* Effect.promise(() => advanceBatches()).pipe((e) => guarded('batches', e), Effect.repeat(Schedule.spaced(Duration.seconds(5))), Effect.forkChild)
+  yield* Fiber.joinAll([scout, triage, tasks, sched, grok, batches])
 })
 
 /** Start the background loops. Returns a function that stops them. */

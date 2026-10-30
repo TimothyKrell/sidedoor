@@ -1040,6 +1040,58 @@ export const grokBotSubmitTools = [
       return { taskId: t.id, next: 'Saved. Sidedoor fills and submits it again; check submission_status in a few minutes.' }
     }),
   ),
+  tool(
+    'start_submit_batch',
+    "Send a list of applications through Sidedoor's form filler, one at a time, in order. mode: 'dry-run' fills each and reports its questions without submitting (each window closes after); 'fill' fills each and leaves it open for the user to check and submit; 'submit' fills and submits each (approving it) once nothing is left unanswered. Give applicationIds (sent in that order unless you set order) or a filter (default: stage approved, ordered by priority). order: priority (high first, then the user's rank), score (fit), posted (newest listing first) or given. Before each form Sidedoor checks the rules (not applied yet, a package, a tailored resume, the listing still up), the company's limit (Settings, plus limits you pass, e.g. {company: 'Acme', max: 2, days: 60}; company '*' is the default), and one role per company per batch unless allowSameCompany. A job page with no apply URL is read for its apply link; an email application is reported, not filled. One batch at a time. Returns the report; follow it with submit_batch_status.",
+    {
+      mode: z.enum(['dry-run', 'fill', 'submit']),
+      applicationIds: z.array(z.string()).optional(),
+      filter: z
+        .object({
+          stages: z.array(stageEnum).optional().describe('default ["approved"]'),
+          minScore: z.number().int().min(0).max(100).optional(),
+          max: z.number().int().min(1).optional().describe('at most this many, after ordering'),
+        })
+        .optional(),
+      order: z.enum(['given', 'priority', 'score', 'posted']).optional(),
+      allowSameCompany: z.boolean().optional(),
+      allowBaseResume: z.boolean().optional().describe('send the base resume when an application has no tailored one (default: stop and say so)'),
+      limits: z.array(z.object({ company: z.string(), max: z.number().int().min(0), days: z.number().int().min(1) })).optional(),
+    },
+    safe(async (o) => {
+      const m = await import('../jobs/submit-batch')
+      const b = m.startBatch(o)
+      void m.advanceBatches().catch((e: unknown) => console.error('[batch] advance failed', e))
+      return m.batchReport(b.id)
+    }),
+  ),
+  tool(
+    'submit_batch_status',
+    "A batch's report (the latest one unless you give batchId): its status (running, paused, done, cancelled), counts, and per application: pending, queued or filling (wait), submitted (with evidence: the page Sidedoor read after the click), ready (dry run, nothing left to ask), filled (open for the user), questions (ask the user word for word, then answer_questions), blocked with blockedBy (login or captcha: the user does it in the Sidedoor window; limit: the company's limit or another role at it in this batch; rule: not ready to send, see summary; email: apply by email instead), not_submitted or failed (read the summary).",
+    { batchId: z.string().optional() },
+    safe(async ({ batchId }) => (await import('../jobs/submit-batch')).batchReport(batchId) ?? 'No batches yet.'),
+    ro,
+  ),
+  tool(
+    'pause_submit_batch',
+    'Pause a batch (paused: true) or resume it (false). Pausing holds back the form waiting its turn; a form already filling finishes.',
+    { batchId: z.string(), paused: z.boolean() },
+    safe(async ({ batchId, paused }) => {
+      const m = await import('../jobs/submit-batch')
+      m.pauseBatch(batchId, paused)
+      return m.batchReport(batchId)
+    }),
+  ),
+  tool(
+    'cancel_submit_batch',
+    'Cancel a batch: no further form opens. A form filling right now finishes and, in a submit batch, may still go in (once).',
+    { batchId: z.string() },
+    safe(async ({ batchId }) => {
+      const m = await import('../jobs/submit-batch')
+      m.cancelBatch(batchId)
+      return m.batchReport(batchId)
+    }),
+  ),
 ]
 
 /** Tool sets per MCP endpoint. Story interviews may only save stories; JSON jobs may only look things up; Grok Bot adds its task queue. */

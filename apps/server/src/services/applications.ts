@@ -176,7 +176,7 @@ const UNSENT: schema.ApplicationStage[] = ['interested', 'review', 'approved']
  * submits it (jobs/fill-form.ts). A fill already waiting for it becomes the one that submits.
  * A dry run fills and reports the questions without approving or submitting anything.
  */
-export const requestSubmit = atomic((id: string, o: { dryRun?: boolean } = {}) => {
+export const requestSubmit = atomic((id: string, o: { dryRun?: boolean; /** The batch sending it (jobs/submit-batch.ts). */ batchId?: string; /** Close the window after a dry run's report. */ closeWhenDone?: boolean } = {}) => {
   const a = getApplication(id)
   if (!a) throw new Error(`No application ${id}`)
   if (a.appliedAt || !UNSENT.includes(a.stage)) throw new Error(`${a.companyName} – ${a.role} is ${STAGE_LABEL[a.stage]}${a.appliedAt ? `, applied ${a.appliedAt.slice(0, 10)}` : ''}: nothing to submit.`)
@@ -189,7 +189,7 @@ export const requestSubmit = atomic((id: string, o: { dryRun?: boolean } = {}) =
   if (open?.status === 'running' && open.input.submit !== true) throw new Error('A fill for the user to review is running for this one now. Ask again once it is done.')
   const dryRun = o.dryRun === true
   if (!dryRun && a.stage !== 'approved') setStage(id, 'approved', { note: 'Approved by Grok Bot to submit' })
-  const input = { submit: true, by: 'grokbot', dryRun }
+  const input = { submit: true, by: 'grokbot', dryRun, ...(o.batchId ? { batchId: o.batchId } : {}), ...(o.closeWhenDone ? { closeWhenDone: true } : {}) }
   let task: schema.Task
   if (open) {
     db.update(T).set({ input: { ...open.input, ...input } }).where(eq(T.id, open.id)).run()
@@ -227,7 +227,7 @@ export const answerFormQuestions = atomic((id: string, answers: FormAnswer[]) =>
   logActivity('application', `Answered ${given.length} form question${given.length === 1 ? '' : 's'}: ${a.companyName} – ${a.role}`, { link: `/applications/${id}` })
   const T = schema.tasks
   const last = db.select().from(T).where(and(eq(T.kind, 'submit-assist'), eq(T.applicationId, id))).orderBy(desc(T.createdAt)).get()
-  return requestSubmit(id, { dryRun: last?.input.dryRun === true })
+  return requestSubmit(id, { dryRun: last?.input.dryRun === true, closeWhenDone: last?.input.closeWhenDone === true })
 })
 
 /** Send a package back to the AI with the user's notes. */

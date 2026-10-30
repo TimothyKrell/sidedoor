@@ -194,6 +194,11 @@ export const AppSettings = z.object({
        * submits it once nothing is left unanswered. Off by default; nothing else ever submits.
        */
       submit: z.boolean().default(false),
+      /**
+       * How many applications a batch may send one company in a window, counted from when they
+       * went in (appliedAt). company '*' is the limit for every company without its own.
+       */
+      companyLimits: z.array(z.object({ company: z.string(), max: z.number().int().min(0), days: z.number().int().min(1) })).default([]),
     })
     .prefault({}),
   app: z

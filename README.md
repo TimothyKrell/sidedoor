@@ -78,7 +78,9 @@ You can also let Grok Bot submit your applications (Settings → AI → Grok Bot
 it to "submit my approved applications": Sidedoor fills each form in its own window on your
 computer and submits it once every required question has an answer. Questions the package doesn't
 cover go back to Grok Bot, which asks you; your answers about yourself (salary, start date) are
-saved to Standard answers so the next form doesn't ask.
+saved to Standard answers so the next form doesn't ask. It can send a whole batch too, one form
+at a time: a dry run first, then for real. Set per-company limits there (e.g. "Acme 3/60") and a
+batch skips a company you've already applied to enough; you can pause or cancel it from Settings.
 
 Agents can read your pipeline, edit your resume line by line (you review each change), draft
 messages, log touchpoints, look up job boards and read JavaScript-heavy job pages. They can't send
