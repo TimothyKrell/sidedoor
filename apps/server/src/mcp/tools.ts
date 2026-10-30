@@ -41,7 +41,7 @@ import {
 } from '../services/people'
 import { cancelTask, enqueueTask, retryTask, URGENT_PRIORITY } from '../services/tasks'
 import { getSettings, setMeta } from '../settings'
-import { pageOf, parseComp, truncate } from '../text'
+import { clip, pageOf, parseComp, truncate } from '../text'
 import { paths } from '../config'
 import { appendFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -52,6 +52,14 @@ import { profileTools } from './profile-tools'
 
 export const ok = (v: unknown) => ({ content: [{ type: 'text' as const, text: typeof v === 'string' ? v : JSON.stringify(v, null, 1) }] })
 export const fail = (msg: string) => ({ content: [{ type: 'text' as const, text: `Error: ${msg}` }], isError: true })
+
+/** A long text field: the part from `offset`, saying where it was cut and how to read on (`more` + an offset). */
+const pagedField = (text: string | null | undefined, offset: number | undefined, limit: number, more: string) => {
+  if (text == null) return text
+  const p = pageOf(text, offset ?? 0, limit)
+  const cut = p.offset > 0 ? `[Characters ${p.offset.toLocaleString('en-US')} onward of ${p.totalChars.toLocaleString('en-US')}.]\n` : ''
+  return `${cut}${p.text}${p.nextOffset != null ? `\n\n[Truncated at ${p.nextOffset.toLocaleString('en-US')} of ${p.totalChars.toLocaleString('en-US')} characters. Read on: ${more} ${p.nextOffset}]` : ''}`
+}
 
 export const safe =
   <A,>(fn: (args: A) => unknown) =>
@@ -193,12 +201,13 @@ export const appTools = [
 
   tool(
     'get_posting',
-    'Full detail for one posting, including the job description and triage reasoning.',
-    { id: z.string() },
-    safe(({ id }) => {
+    "Full detail for one posting, including the job description and triage reasoning. Long descriptions come in pages of 14,000 characters: when jdNextOffset isn't null, call again with jdOffset to read the rest.",
+    { id: z.string(), jdOffset: z.number().int().min(0).optional().describe('read the description from here (its jdNextOffset)') },
+    safe(({ id, jdOffset }) => {
       const p = db.select().from(schema.postings).where(eq(schema.postings.id, id)).get()
       if (!p) throw new Error('not found')
-      return { ...postingBrief(p), applyUrl: p.applyUrl, reasons: p.reasons, gaps: p.gaps, lane: p.lane, jd: truncate(p.jd, 14_000) }
+      const jd = pageOf(p.jd, jdOffset ?? 0, 14_000)
+      return { ...postingBrief(p), applyUrl: p.applyUrl, reasons: p.reasons, gaps: p.gaps, lane: p.lane, jd: jd.text, jdOffset: jd.offset, jdTotalChars: jd.totalChars, jdNextOffset: jd.nextOffset }
     }),
     ro,
   ),
@@ -236,9 +245,15 @@ export const appTools = [
 
   tool(
     'get_application',
-    'Everything about one application: package (in pages of 12,000 characters: when packageNextOffset isn\'t null, call again with packageOffset to read the rest), notes, linked people, interaction history, drafts, research, its background tasks, its last resume match check (per-requirement levels and the resume line ids behind them), and every other application at the same company (check those before suggesting they apply).',
-    { id: z.string(), packageOffset: z.number().int().min(0).optional().describe('read the package from here (its packageNextOffset), for packages longer than one page') },
-    safe(async ({ id, packageOffset }) => {
+    'Everything about one application: package (in pages of 12,000 characters: when packageNextOffset isn\'t null, call again with packageOffset to read the rest), notes, linked people, interaction history, drafts, research, its background tasks, its last resume match check (per-requirement levels and the resume line ids behind them), and every other application at the same company (check those before suggesting they apply). Long notes and research briefs say where they were cut: read on with notesOffset, or researchId with researchOffset.',
+    {
+      id: z.string(),
+      packageOffset: z.number().int().min(0).optional().describe('read the package from here (its packageNextOffset), for packages longer than one page'),
+      notesOffset: z.number().int().min(0).optional().describe('read the notes from here, when they were cut'),
+      researchId: z.string().optional().describe('with researchOffset: read that research brief from there'),
+      researchOffset: z.number().int().min(0).optional(),
+    },
+    safe(async ({ id, packageOffset, notesOffset, researchId, researchOffset }) => {
       const a = getApplication(id)
       if (!a) throw new Error('not found')
       const pkg = pageOf(a.packageMd, packageOffset ?? 0, 12_000)
@@ -254,7 +269,7 @@ export const appTools = [
         applyUrl: a.applyUrl,
         resumeId: a.resumeId,
         reviewNotes: a.reviewNotes,
-        notes: truncate(a.notesMd, 6000),
+        notes: pagedField(a.notesMd, notesOffset, 6000, `get_application ${id} with notesOffset`),
         package: pkg.text,
         packageOffset: pkg.offset,
         packageTotalChars: pkg.totalChars,
@@ -263,7 +278,7 @@ export const appTools = [
         people: people.map((p) => ({ ...personBrief(p), role: links.find((l) => l.personId === p.id)?.role })),
         interactions: db.select().from(schema.interactions).where(eq(schema.interactions.applicationId, id)).orderBy(desc(schema.interactions.at)).limit(30).all(),
         drafts: db.select().from(schema.drafts).where(eq(schema.drafts.applicationId, id)).all(),
-        research: db.select({ id: schema.research.id, title: schema.research.title, body: schema.research.bodyMd }).from(schema.research).where(eq(schema.research.applicationId, id)).all().map((r) => ({ ...r, body: truncate(r.body, 6000) })),
+        research: db.select({ id: schema.research.id, title: schema.research.title, body: schema.research.bodyMd }).from(schema.research).where(eq(schema.research.applicationId, id)).all().map((r) => ({ ...r, body: pagedField(r.body, r.id === researchId ? researchOffset : undefined, 6000, `get_application ${id} with researchId ${r.id} and researchOffset`) })),
         tasks: db.select({ id: schema.tasks.id, kind: schema.tasks.kind, status: schema.tasks.status, title: schema.tasks.title, finishedAt: schema.tasks.finishedAt, error: schema.tasks.error }).from(schema.tasks).where(eq(schema.tasks.applicationId, id)).orderBy(desc(schema.tasks.createdAt)).limit(10).all(),
         otherApplicationsAtCompany: siblingApps(a),
         resumeMatch: (await import('../match')).matchForAgent(a),
@@ -383,15 +398,15 @@ export const appTools = [
 
   tool(
     'get_person',
-    'One contact with notes, interaction history and drafts.',
-    { id: z.string() },
-    safe(({ id }) => {
+    'One contact with notes, interaction history and drafts. Long notes say where they were cut: read on with notesOffset.',
+    { id: z.string(), notesOffset: z.number().int().min(0).optional().describe('read the notes from here, when they were cut') },
+    safe(({ id, notesOffset }) => {
       const p = getPerson(id)
       if (!p) throw new Error('not found')
       return {
         ...personBrief(p),
         why: p.whyMd,
-        notes: truncate(p.notesMd, 6000),
+        notes: pagedField(p.notesMd, notesOffset, 6000, `get_person ${id} with notesOffset`),
         interactions: db.select().from(schema.interactions).where(eq(schema.interactions.personId, id)).orderBy(desc(schema.interactions.at)).limit(40).all(),
         drafts: db.select().from(schema.drafts).where(eq(schema.drafts.personId, id)).all(),
       }
@@ -863,7 +878,7 @@ export const appTools = [
           applyUrl: j.applyUrl,
           postedAt: j.postedAt,
           comp: j.comp,
-          ...(a.includeJd ? { jd: truncate(j.jd, jobs.length > 3 ? 3000 : 12_000) } : {}),
+          ...(a.includeJd ? { jd: clip(j.jd, jobs.length > 3 ? 3000 : 12_000, `read_page ${j.url ?? 'the job URL'} (it pages), or narrow the title to 3 matches or fewer for 12,000 characters each`) } : {}),
         })),
       }
     }),
@@ -931,12 +946,21 @@ export const appTools = [
 
   tool(
     'get_task',
-    "One background task: its instructions, result summary, error, and the tail of its transcript (what it tried and which tools it used). Use it to see why a task failed or what it actually did.",
-    { id: z.string() },
-    safe(({ id }) => {
+    "One background task: its instructions, result summary, error, and the end of its transcript (what it tried and which tools it used). Use it to see why a task failed or what it actually did. A long transcript shows its last 8,000 characters: logOffset reads from an earlier point (logStartsAt says where this part starts); a long result says where it was cut (outputOffset reads on).",
+    { id: z.string(), logOffset: z.number().int().min(0).optional().describe('read the transcript from here instead of its end'), outputOffset: z.number().int().min(0).optional() },
+    safe(({ id, logOffset, outputOffset }) => {
       const t = db.select().from(schema.tasks).where(eq(schema.tasks.id, id)).get()
       if (!t) throw new Error('not found')
-      return { ...t, output: truncate(t.output, 6000), log: t.log ? t.log.slice(-8000) : null }
+      const all = t.log ?? ''
+      const log = pageOf(all, logOffset ?? Math.max(0, all.length - 8000), 8000)
+      return {
+        ...t,
+        output: pagedField(t.output, outputOffset, 6000, `get_task ${id} with outputOffset`),
+        log: t.log == null ? null : log.text,
+        logStartsAt: log.offset,
+        logTotalChars: log.totalChars,
+        logNextOffset: log.nextOffset,
+      }
     }),
     ro,
   ),
@@ -1047,7 +1071,7 @@ export const TOOL_PROFILES = {
   app: null,
   grokbot: null,
   story: ['save_story', 'check_tells', 'get_profile_doc'],
-  lookup: ['read_page', 'board_jobs', 'get_company', 'list_sources'],
+  lookup: ['read_page', 'board_jobs', 'get_company', 'list_sources', 'get_profile_doc'],
 } as const
 export type ToolProfile = keyof typeof TOOL_PROFILES
 

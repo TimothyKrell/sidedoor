@@ -11,7 +11,8 @@ import { resolveAggregatorPostings } from '../scout/resolve'
 import { getApplication, setStage, trackPosting, updateApplication } from '../services/applications'
 import { enqueueTask, URGENT_PRIORITY } from '../services/tasks'
 import { getMeta, getSettings, setMeta } from '../settings'
-import { htmlToText, truncate } from '../text'
+import { clip, htmlToText, truncate } from '../text'
+import { experienceContext, experienceLogLine } from '../experience'
 import { mcpFor, runJob } from '../ai'
 import { aiLimitedUntil, setAiLimitedUntil, usageLimitUntil } from '../ai/limits'
 import { context, render, userName } from '../prompts'
@@ -110,7 +111,7 @@ URL: ${r.url ?? ''}
 Existing tracker applications at this company:
 ${existingAtCompany(r.companyId, r.companyName)}
 Description:
-${truncate(r.jd, 7000) || '(none captured)'}
+${clip(r.jd, 7000, `get_posting ${r.id} with jdOffset`) || '(none captured)'}
 `,
       )
       .join('\n')
@@ -207,7 +208,7 @@ export interface TaskOutcome {
 
 /** The posting as text for prompts: header plus the description we captured. */
 const jdText = (a: schema.Application, p: schema.Posting | undefined) =>
-  `# ${a.companyName} – ${a.role}\n\nSource: ${a.jobUrl ?? ''}\nLocation: ${a.location ?? ''}\nCompensation: ${a.compText ?? ''}\n\n${truncate(p?.jd, 14_000) || '(no description captured; read the posting URL with read_page)'}`
+  `# ${a.companyName} – ${a.role}\n\nSource: ${a.jobUrl ?? ''}\nLocation: ${a.location ?? ''}\nCompensation: ${a.compText ?? ''}\n\n${(p && clip(p.jd, 14_000, `get_posting ${p.id} with jdOffset`)) || '(no description captured; read the posting URL with read_page)'}`
 
 const greenhouseQuestions = async (key: string | undefined) => {
   if (!key?.startsWith('greenhouse:')) return null
@@ -250,8 +251,11 @@ const runPrep = async (task: schema.Task): Promise<TaskOutcome> => {
   const qs = await greenhouseQuestions(p?.key)
   const locationDoubt = p?.locationFit === 'no' || p?.locationFit === 'unclear' ? `\nLocation ${p.locationFit === 'no' ? 'NOT eligible' : 'unclear'}: ${p.locationNote ?? p.location ?? ''}` : ''
   const triage = p?.summary ? `${p.summary}\nReasons: ${(p.reasons ?? []).join('; ')}\nGaps: ${(p.gaps ?? []).join('; ')}${locationDoubt}` : '(none)'
+  // Experience goes in the prompt (the newest and best-matching sections when it's too long), so the facts don't depend on the agent paging.
+  const experience = experienceContext(`${a.role}\n${p?.title ?? ''}\n${p?.jd ?? ''}\n${triage}`)
   const prompt = render('prep', {
     APP_ID: a.id,
+    EXPERIENCE: experience.text,
     LEAD_NAME: `${a.companyName} – ${a.role}`,
     FIT: a.fitScore ?? 'n/a',
     TRIAGE: triage,
@@ -266,6 +270,7 @@ const runPrep = async (task: schema.Task): Promise<TaskOutcome> => {
   })
   const before = a.packageMd
   const r = await runJob({ job: 'prep', prompt, web: true, mcp: mcpFor('app'), schema: PrepOut, maxTurns: 80, timeoutMs: 45 * 60_000 })
+  r.log.push(experienceLogLine(experience))
   const done = { sessionId: r.sessionId, costUsd: r.costUsd ?? undefined, log: r.log, provider: r.provider, model: r.model }
   // Stopping early as told (the listing closed, or too new for this pass) finishes the task without a package.
   if (r.data.stopped && getApplication(a.id)?.packageMd === before) return { output: r.data.summary, ...done }
@@ -359,12 +364,12 @@ const runOutreach = async (task: schema.Task): Promise<TaskOutcome> => {
     a
       ? `Application ${a.id}: ${a.companyName} – ${a.role} (stage ${a.stage}). Posting: ${a.jobUrl ?? ''}\n${a.appliedAt ? `${userName()} APPLIED on ${a.appliedAt.slice(0, 10)}.` : `${userName()} has NOT applied yet. Do not say or imply that they applied; frame it as reaching out before/while applying.`}`
       : 'No specific application (general networking / follow-up).',
-    research ? `Research brief:\n${truncate(research.bodyMd, 5000)}` : '',
+    research && a ? `Research brief:\n${clip(research.bodyMd, 5000, `get_application ${a.id} with researchId ${research.id} and researchOffset`)}` : '',
     'People:',
     ...peopleRows.map((p) => {
       const hist = db.select().from(schema.interactions).where(eq(schema.interactions.personId, p.id)).orderBy(desc(schema.interactions.at)).limit(6).all()
       return `- personId=${p.id} ${p.name}, ${p.title ?? ''} at ${p.companyName ?? ''} (${p.role ?? p.kind}); email ${p.email ?? 'unknown'} (${p.emailConfidence ?? 'n/a'}); linkedin ${p.linkedin ?? 'n/a'}; x ${p.x ?? 'n/a'}; stage ${p.stage}
-  Why: ${truncate(p.whyMd, 800) || 'n/a'}
+  Why: ${clip(p.whyMd, 800, `get_person ${p.id} (its why field is complete)`) || 'n/a'}
   History: ${hist.map((h) => `${h.at.slice(0, 10)} ${h.direction} ${h.channel}: ${h.summary}`).join(' | ') || 'none'}`
     }),
   ]
@@ -462,7 +467,7 @@ const runFunding = async (task: schema.Task): Promise<TaskOutcome> => {
       if (age > 24 * 10 || seen.has(it.link)) continue
       // Most items in these feeds are funding news; keep the obviously-relevant ones.
       if (!/rais|fund|seed|series [a-e]|round|backed|\$\d/i.test(`${it.title} ${it.description}`)) continue
-      items.push({ ...it, description: truncate(htmlToText(it.description), 400) })
+      items.push({ ...it, description: clip(htmlToText(it.description), 400, `read_page ${it.link}`) })
     }
   }
   if (items.length === 0) return { output: 'No new funding news.' }
@@ -593,7 +598,7 @@ const runCustom = async (task: schema.Task): Promise<TaskOutcome> => {
   const r = await runJob({
     job: 'chat',
     prompt: `${instructions}\n\nWhen finished, reply with a short summary the user can read on their phone.`,
-    system: render('system', { CRITERIA: truncate(context.criteria(), 3000) }),
+    system: render('system', { CRITERIA: clip(context.criteria(), 3000, "get_profile_doc 'search' (the structured choices are in Settings)") }),
     web: true,
     mcp: mcpFor('app'),
     maxTurns: 80,

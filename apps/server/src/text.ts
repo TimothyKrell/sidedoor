@@ -23,6 +23,13 @@ export const htmlToText = (input: string) => {
 
 export const truncate = (s: string | null | undefined, n: number) => (!s ? '' : s.length > n ? `${s.slice(0, n)}…` : s)
 
+/**
+ * Cut a long text an agent will read, saying so: where it was cut, how long it is, and `more`, how
+ * to read on from there. Agents rely on what they're given, so text never goes missing silently.
+ */
+export const clip = (s: string | null | undefined, n: number, more: string) =>
+  !s ? '' : s.length <= n ? s : `${s.slice(0, n)}\n\n[Truncated: this is the first ${n.toLocaleString('en-US')} of ${s.length.toLocaleString('en-US')} characters. To read the rest from offset ${n}: ${more}]`
+
 export interface TextPage {
   text: string
   offset: number

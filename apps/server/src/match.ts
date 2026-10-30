@@ -2,12 +2,13 @@ import { desc, eq, or } from 'drizzle-orm'
 import { z } from 'zod'
 import { type MatchRequirement, matchScore, type ResumeMatch } from '@sidedoor/shared/match'
 import { mcpFor, runJob } from './ai'
-import { context, render } from './prompts'
+import { render } from './prompts'
 import { db, schema } from './db/client'
 import { nowIso } from './ids'
 import { linesOf, resumeForApplication } from './services/resumes'
 import { getApplication, setResumeMatch } from './services/applications'
-import { truncate } from './text'
+import { clip } from './text'
+import { experienceContext, experienceLogLine } from './experience'
 
 const MatchOut = z.object({
   summary: z.string(),
@@ -76,18 +77,20 @@ export const runMatch = async (applicationId: string) => {
   const url = a.jobUrl ?? a.applyUrl
   if (!jd && !url) throw new Error('No job description or listing URL to check against')
   const previous = a.matchJson?.requirements ?? []
+  // Past a budget, the newest sections and those matching this posting (match runs have no tool to page it).
+  const experience = experienceContext(`${a.role}\n${jd ?? ''}`)
   const prompt = render('match', {
     ROLE: a.role,
     COMPANY: a.companyName,
-    JD: jd ? truncate(jd, 16_000) : `(not captured: read ${url} with mcp__sidedoor__read_page, which renders JavaScript pages, and use the posting there)`,
+    JD: jd ? clip(jd, 16_000, `read ${url ?? 'the listing'} with mcp__sidedoor__read_page`) : `(not captured: read ${url} with mcp__sidedoor__read_page, which renders JavaScript pages, and use the posting there)`,
     RESUME: lines.map((l) => `[${l.id}] ${l.text}`).join('\n'),
-    INVENTORY: truncate(context.inventory(), 30_000),
+    INVENTORY: experience.text,
     PREVIOUS: previous.length ? JSON.stringify(previous.map((r) => ({ id: r.id, kind: r.kind, short: r.short, quote: r.quote }))) : '(none: first check)',
   })
-  const r = await runJob({ job: 'match', prompt, schema: MatchOut, timeoutMs: 10 * 60_000, ...(jd ? { maxTurns: 3 } : { mcp: mcpFor('lookup'), maxTurns: 10 }) })
+  const r = await runJob({ job: 'match', prompt, schema: MatchOut, timeoutMs: 10 * 60_000, ...(jd && jd.length <= 16_000 && experience.full ? { maxTurns: 3 } : { mcp: mcpFor('lookup'), maxTurns: 10 }) })
   const match = buildMatch(r.data, lines, previous, { at: nowIso(), model: `${r.provider}${r.model ? `/${r.model}` : ''}`, doc, resumeVersion: version })
   setResumeMatch(a.id, match)
-  return { match, costUsd: r.costUsd, sessionId: r.sessionId, log: r.log }
+  return { match, costUsd: r.costUsd, sessionId: r.sessionId, log: [...r.log, experienceLogLine(experience)] }
 }
 
 /** The stored match as agents read it: per-requirement verdicts, and whether the resume changed since. */

@@ -12,8 +12,9 @@ bring it to the front, so this won't interrupt them.
   expected: stop and report. "Next" / "Continue" steps of a multi-page form are fine.
 - Never create an account, sign in, accept terms on their behalf, or solve a captcha. If the form
   needs any of these before you can continue, stop and report it under `needsYou`.
-- Never invent facts. Every answer comes from the package, the applicant profile, or the resume
-  below. If a question isn't covered, leave it blank and list it under `needsYou`.
+- Never invent facts. Every answer comes from the package, the applicant profile, their
+  Experience, or the resume below. If a question isn't covered, leave it blank and list it under
+  `needsYou`.
 - Don't navigate away from the application (no other sites, no job listings).
 
 ## How to fill
@@ -54,6 +55,9 @@ Return the structured result:
 
 ## Applicant profile
 {{PROFILE}}
+
+## Their experience (for factual questions the package doesn't answer, like years with a tool)
+{{EXPERIENCE}}
 
 ## Files
 - Resume PDF to upload: {{RESUME_PDF}}

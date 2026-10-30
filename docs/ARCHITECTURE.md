@@ -103,6 +103,11 @@ contract.
 Each background job kind (triage, prep, research, ...) picks a provider + model in Settings, with
 one default. Jobs run in an empty scratch directory per task, never in a user folder.
 
+Prep, the resume match and form filling get the Experience document in their prompt
+(`src/experience.ts`): whole when it fits the budget, otherwise its opening, newest sections and the
+sections closest to the posting, with the rest listed by offset for `get_profile_doc`. The task log
+records the document version and the sections supplied.
+
 ## Grok Bot
 
 xAI's Grok Bot isn't a CLI Sidedoor runs: it's an agent with its own app, and it connects to

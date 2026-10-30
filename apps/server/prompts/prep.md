@@ -11,16 +11,21 @@ changes. You work only through the `sidedoor` tools and your own web search. Tod
 {{FORM_QUESTIONS}}
 - Review notes from {{FIRST_NAME}} (apply these if present): {{REVIEW_NOTES}}
 - The tailored resume to edit: resume id **{{RESUME_ID}}** (a copy of their main resume).
-- Facts, the ONLY sources of claims: `get_profile_doc` 'experience', their main resume, and
+- Facts, the ONLY sources of claims: their Experience document (below), their main resume, and
   'stories' (their "Facts to confirm" items are NOT confirmed: don't use those unless they're also
   in Experience, or list them under "Needs your decision").
-- Read all of Experience: it comes in pages, so call `get_profile_doc` again with `offset` set to
-  `nextOffset` until `nextOffset` is null. The newest confirmed facts are at the end.
+- Use every relevant fact in Experience, the newest sections especially: they hold facts confirmed
+  since the resume was written, and they win over older lines that disagree. If it says sections
+  were left out, read the ones that might cover what the job asks for with `get_profile_doc`
+  'experience' and their offset before calling anything a gap.
 - Standard answers: `get_profile_doc` 'answers'. Writing style: `get_profile_doc` 'writing' (read
   it fully before writing any prose).
 
 ## Job description
 {{JD}}
+
+## Experience
+{{EXPERIENCE}}
 
 ## Hard rules
 - Never invent facts, metrics, titles, dates or skills. If the job asks for something not in the

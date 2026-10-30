@@ -16,7 +16,8 @@ import { grokBotToken } from '../secrets'
 import { getApplication, setStage, updateApplication } from '../services/applications'
 import { buildResumePdf, resumeForApplication } from '../services/resumes'
 import { getSettings } from '../settings'
-import { truncate } from '../text'
+import { clip, truncate } from '../text'
+import { experienceContext, experienceLogLine } from '../experience'
 import type { TaskOutcome } from './tasks'
 
 export const FillReport = z.object({
@@ -114,6 +115,9 @@ export const runFillForm = (task: schema.Task): Promise<TaskOutcome> =>
     const pdf = { path: resolve(workDir, basename(built.path)) }
     copyFileSync(built.path, pdf.path)
 
+    // Facts for questions the package doesn't cover: the Experience sections closest to this job and package.
+    const posting = a.postingId ? db.select({ jd: schema.postings.jd }).from(schema.postings).where(eq(schema.postings.id, a.postingId)).get() : undefined
+    const experience = experienceContext(`${a.role}\n${posting?.jd ?? ''}\n${a.packageMd}`, 24_000)
     const tab = await openFormTab(url)
     let report: FillReport
     let sent: SubmitReport | null = null
@@ -132,7 +136,8 @@ export const runFillForm = (task: schema.Task): Promise<TaskOutcome> =>
             URL: url,
             RESUME_PDF: pdf.path,
             PACKAGE: a.packageMd ?? '',
-            PROFILE: truncate(context.profile(), 8000),
+            PROFILE: clip(context.profile(), 12_000, "get_profile_doc 'answers' with offset"),
+            EXPERIENCE: experience.text,
             SUBMIT_NOTE: strict ? SUBMIT_NOTE : '',
           }),
           mcp: mcpFor('browser'),
@@ -176,6 +181,7 @@ export const runFillForm = (task: schema.Task): Promise<TaskOutcome> =>
 
     const label = `${a.companyName} – ${a.role}`
     const out: FillOutput = { ...report, submitting, dryRun, submit: sent, evidence }
+    log.push(experienceLogLine(experience))
     const done = { output: JSON.stringify(out), sessionId: r.sessionId, costUsd: costUsd || undefined, log, provider: r.provider, model: r.model }
     const s = sent as SubmitReport | null
     if (s?.outcome === 'submitted') {
