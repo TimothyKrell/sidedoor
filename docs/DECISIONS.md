@@ -246,3 +246,40 @@ current when making a non-obvious call. Open questions for the maintainer live i
   Without that, every skipped role showed as failed and said "Preparing failed… try again", as
   happened to a third of a max-match batch. A prep that saves nothing without saying it stopped still
   fails, and the failure now keeps what the AI said and its log.
+
+## Posted dates and whether a listing is up
+
+- **Ask the ATS about the one job, not the page.** `jobs/listing-check.ts` asks each ATS's public
+  API about the job itself: Greenhouse and Lever per-job endpoints, Workable `api/v2/.../jobs/<code>`,
+  SmartRecruiters `postings/<id>`, Workday `wday/cxs/.../job/...` (`canApply`), and the Ashby board
+  list (Ashby has no per-job API). A page's text misreads both ways: a closed Ashby job still serves
+  a 200 with JSON-LD, and a live description can say "no longer needs to ask". Pages are read only
+  for hosts with no API here, for their JSON-LD `datePosted` and a closed notice in whole sentences.
+- **Closing needs a clear signal or two misses.** A 404 from the ATS's API, Workable `state` other
+  than published, SmartRecruiters `active: false` or Workday `canApply: false` closes the listing at
+  once. A miss that could be a misread (gone from the Ashby board, a page 404 or closed notice)
+  makes it "suspect", rechecked within 4 hours; two in a row close it. A rate limit, an outage or a
+  network error counts for nothing and doesn't reset the count. An open check clears it all.
+- **The result lives on the application.** Many applications have no posting (created from a link
+  by an agent), so `posted_at` (with `posted_at_source` and `posted_at_exact`) and the `listing_*`
+  fields are on `applications`. The check also keeps the linked posting in step: it fills a missing
+  `posted_at` and sets or clears `closed_at`. The application's check decides whether its listing is
+  closed, unless the scout saw the posting go after that check (`listingClosedAt`).
+- **Dates rank by how much they say.** The ATS's own exact date beats JSON-LD or the scout's list
+  date, which beat an estimate (Workday's "Posted 30+ Days Ago", Greenhouse `updated_at`). A check
+  never replaces a better date with a worse one.
+- **A check writes only those fields.** Not the stage, notes, `updatedAt` or `lastActivityAt`, so the
+  backfill (`check_listing` with `all`) can run over every open application. Acting on a closed
+  listing is still `reconcile`'s job: it closes applications you'd only marked interested and flags
+  prepared ones, as it did for postings the scout saw close.
+- **Paced, a few at a time.** The scheduler checks up to 20 watched applications (interested,
+  review, approved) every half hour, each at most daily. Calls to one host are at least 1.5 s apart,
+  and one Ashby board read answers for all its jobs in a run.
+- **Why Taskly's Engineering Manager (Frontend) showed closed.** Its application was linked to the
+  Jobicy copy of the posting, not the Ashby one. The scout built before 2026-10-28 closed any
+  posting missing from its source's latest read, feeds included, and Jobicy's feed had rolled it
+  off. The current scout never closes feed postings, but nothing reopened that one until it
+  reappeared in the feed. Now the application's own Ashby check decides.
+- **A capped board list closes nothing.** Workday is read up to 200 jobs and SmartRecruiters up to
+  300, newest first (`LIST_CAP`). On a bigger board an older posting just falls off the pages read,
+  so a read that reached its cap doesn't close anything; the listing check covers those.

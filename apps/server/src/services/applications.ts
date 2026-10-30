@@ -52,6 +52,9 @@ export const trackPosting = atomic((postingId: string, o: { prep?: boolean; rese
       compMin: p.compMin,
       compMax: p.compMax,
       fitScore: p.fitScore,
+      // The scout's date for now; a listing check replaces it with the ATS's own (services/listings.ts).
+      postedAt: p.postedAt,
+      postedAtSource: p.postedAt ? 'scout' : null,
       nextAction: prep ? 'Your AI is preparing the application' : 'Decide whether to apply',
       lastActivityAt: nowIso(),
     })

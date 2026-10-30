@@ -119,6 +119,43 @@ describe('boards that list no descriptions', () => {
   })
 })
 
+describe('closing postings a board stopped listing', () => {
+  const missingADay = (key: string) => db.update(schema.postings).set({ lastSeenAt: daysAgo(2) }).where(eq(schema.postings.key, key)).run()
+
+  test('a complete board list closes what has been missing a day', async () => {
+    const id = source('src_gone', 'greenhouse', 'gone')
+    BOARDS.gone = [job('keep', 'Engineering Manager'), job('drop', 'Engineering Manager, Growth')]
+    await Effect.runPromise(scan({ sourceIds: [id] }))
+    missingADay('greenhouse:gone:drop')
+    BOARDS.gone = [job('keep', 'Engineering Manager')]
+    await Effect.runPromise(scan({ sourceIds: [id] }))
+    expect(posting('greenhouse:gone:drop')?.closedAt).not.toBeNull()
+    expect(posting('greenhouse:gone:keep')?.closedAt).toBeNull()
+  })
+
+  test('a list cut off at its cap closes nothing: the posting may be further down', async () => {
+    const id = source('src_big', 'workday', 'big.wd1/jobs')
+    const page = (prefix: string) => Array.from({ length: 200 }, (_, i) => job(`${prefix}${i}`, 'Account Executive', { jd: '', location: '' }))
+    BOARDS['big.wd1/jobs'] = [job('old-em', 'Engineering Manager', { jd: 'x', location: 'Remote, United States' }), ...page('a').slice(1)]
+    await Effect.runPromise(scan({ sourceIds: [id] }))
+    missingADay('workday:big.wd1/jobs:old-em')
+    // 200 newer postings push it off the pages the scout reads.
+    BOARDS['big.wd1/jobs'] = page('b')
+    await Effect.runPromise(scan({ sourceIds: [id] }))
+    expect(posting('workday:big.wd1/jobs:old-em')?.closedAt).toBeNull()
+  })
+
+  test('a feed never closes what rolled off it', async () => {
+    const id = source('src_rollfeed', 'rss', 'https://roll.test/rss')
+    BOARDS['https://roll.test/rss'] = [job('f1', 'Engineering Manager'), job('f2', 'Engineering Manager, Platform')]
+    await Effect.runPromise(scan({ sourceIds: [id] }))
+    missingADay('rss:https://roll.test/rss:f1')
+    BOARDS['https://roll.test/rss'] = [job('f2', 'Engineering Manager, Platform')]
+    await Effect.runPromise(scan({ sourceIds: [id] }))
+    expect(posting('rss:https://roll.test/rss:f1')?.closedAt).toBeNull()
+  })
+})
+
 describe('boards found through job feeds', () => {
   test('waiting ones are switched on once; what the user sets afterwards stands', () => {
     source('src_found', 'ashby', 'found', { status: 'candidate', origin: 'aggregator' })
