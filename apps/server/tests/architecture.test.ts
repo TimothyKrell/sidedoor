@@ -3,12 +3,12 @@ import { join, relative } from 'node:path'
 import { expect, test } from 'vitest'
 
 /**
- * People, applications, drafts and touchpoints must change only through the service commands in
+ * People, applications, drafts, touchpoints and questions must change only through the service commands in
  * src/services/. Those commands keep the related records in step (a sent draft marks the
  * person contacted, schedules the follow-up, logs history) and run atomically. A direct
  * db.update(schema.people) elsewhere skips all of that.
  */
-const DOMAIN = /\.(insert|update|delete)\(\s*schema\.(people|interactions|drafts|applications|applicationPeople)\b/
+const DOMAIN = /\.(insert|update|delete)\(\s*schema\.(people|interactions|drafts|applications|applicationPeople|questions)\b/
 const ALLOWED = ['src/services/']
 
 const files = (dir: string): string[] =>

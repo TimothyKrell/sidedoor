@@ -14,25 +14,37 @@ resume actually says, not what they probably could do.
 # Requirements from the last check
 {{PREVIOUS}}
 
+# Resume lines changed since the last check
+{{CHANGED}}
+
 # What to do
 1. List the posting's requirements: everything it asks for or says it values (skills, years,
-   scope, domain, leadership, ways of working, education). Aim for 8-20 items. Skip boilerplate
-   (benefits, EEO, "passion"). Merge near-duplicates. Keep them in the posting's order, must-haves
-   first. When "Requirements from the last check" lists items, keep exactly those items, with the
-   same id, kind, short and quote, in the same order, and only re-judge them against the resume as
-   it reads now (you may add an item the last check clearly missed, without an id).
-2. For each, find the resume lines that answer it (0-3, best first) and judge the match:
-   - strong: a line shows it directly, with scope or results
-   - partial: related or adjacent evidence, or it's there but thin
+   scope, domain, leadership, ways of working, education, location). Aim for 8-20 items. Skip
+   boilerplate (benefits, EEO, "passion"). Merge near-duplicates. Keep them in the posting's order,
+   must-haves first. When "Requirements from the last check" lists items, keep exactly those items,
+   with the same id, kind, area, short and quote, in the same order, add none, and only re-judge
+   them against the resume as it reads now. Requirements whose cited lines didn't change keep their
+   last verdict, so put your care into the ones the changed lines touch.
+2. Give each an area (the score is computed from these by a fixed rubric):
+   - skills: a technology, tool, method or practice
+   - scope: seniority, years, level, team size, people leadership, ownership or impact
+   - domain: an industry, product area, customer type or regulated space
+   - logistics: location, time zone, work authorization, travel, clearance, degree or certification
+3. For each, find the resume lines that answer it (0-3, best first) and judge the match. Judge only
+   what the lines say; when torn between two levels, pick the lower one.
+   - strong: a line shows it directly, by name, with scope or results
+   - partial: it's there but thin (named without proof), or close adjacent evidence
    - weak: only implied, or buried in a list with no proof
    - missing: nothing on the resume answers it
 
 # Output
 Return JSON {"summary": "...", "requirements": [...]}:
 - summary: one plain sentence on the overall fit of this resume to this posting and the biggest gap.
+  Don't state a score: Sidedoor computes it.
 - requirements, each:
   - id: the id from the last check, or null for a new item
   - kind: "must" (required / "you have") or "nice" (preferred / "bonus" / "nice to have")
+  - area: "skills" | "scope" | "domain" | "logistics"
   - short: the requirement in 2-6 words, e.g. "5+ yrs managing engineers", "Go in production"
   - quote: the posting's own words for it, verbatim, one sentence or bullet at most
   - level: "strong" | "partial" | "weak" | "missing"

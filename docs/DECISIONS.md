@@ -94,6 +94,25 @@ current when making a non-obvious call. Open questions for the maintainer live i
   before anything goes. For a submitted application Sidedoor reads the page itself after the click
   (`browser_snapshot` through its own client: URL, title, visible text) and stores it next to the
   confirmation the AI says it saw, so "submitted" doesn't rest on the AI's word alone.
+- **Unconfirmed answers are held back in code, not just the prompt.** A dry run filled pronouns
+  the package marked "(confirm)" and a "how did you hear" it marked "default; confirm", then
+  reported `ready`. Now Sidedoor checks every fill (`src/form-answers.ts`): it reads the package
+  markdown into answers with a confirmed flag (a table Answer/Source cell saying confirm, inferred,
+  default, guess, TBD or TODO; a TODO left in a written answer; a field matching an open item under
+  "Questions for …" or "Needs your decision"), and the filler reports each filled field's source.
+  Anything unconfirmed, or `ai_generated`, becomes a question with the form's options, and the fill
+  can't be `ready`; the audit (label, value, source, confirmed) is stored with the attempt and
+  returned by `submission_status`, and the submit step won't run while any entry is unconfirmed.
+  Parsing at fill time instead of a migration: the package is edited freely (by the user, prep and
+  `answer_questions`), so a stored flag would go stale, and the user's answers in "Answers to the
+  other form questions" confirm a field even while the table still says "(confirm)". Matching form
+  labels to package wording is by key words, so it errs toward asking.
+- **Self-identification answers come only from the user.** Gender, pronouns, race/ethnicity,
+  Hispanic/Latino, veteran, disability, orientation: filled only when Standard answers state that
+  answer for that kind of question (a "decline" there covers a decline option), or the user
+  answered it through `answer_questions` (those go to Standard answers automatically). An explicit
+  Standard answer wins over the package's own "(confirm)" on the same field. One answer isn't read
+  into another: "Race/ethnicity: White" doesn't answer "Are you Hispanic/Latino?".
 - **Long documents are read in pages, not cut.** AI clients cap tool results, so a 51K-character
   Experience document returned whole lost its newest sections (the end, where confirmed facts are
   appended). `get_profile_doc` returns 20,000-character pages ending at line breaks, with
@@ -246,3 +265,59 @@ current when making a non-obvious call. Open questions for the maintainer live i
   Without that, every skipped role showed as failed and said "Preparing failed… try again", as
   happened to a third of a max-match batch. A prep that saves nothing without saying it stopped still
   fails, and the failure now keeps what the AI said and its log.
+
+## Questions for you
+
+- **One row per question and application** (`questions` table, `services/questions.ts`). Prep
+  (`ask_questions`), a form fill's `needsYou`, and any agent ask through the same command, and
+  `save_package` turns a package's "Questions for …" section into rows too. On first boot after the
+  migration, the sections already in unsent packages are imported once (meta `questionsImported`);
+  ones marked "**Answered …**" in the package come in answered, by `package`. Before this, answers
+  lived only as text appended to each package, with no record of which question was answered, when,
+  or by whom, and the same question was asked again elsewhere.
+- **"For every application" is the user's call, suggested by the question.** Questions about the
+  user (`about: 'you'`) default to it; ones about the job don't. An answer for every application
+  answers the same question open in other applications, is reused for any application that asks
+  it later (`askQuestions` returns it with `known: true` and records it answered there), and is
+  kept as one line in its own section, `## Answers to questions`, of Standard answers (form answers)
+  or Experience (facts about past work). It's upserted by question, so changing an answer changes
+  the line, and reopening or dismissing takes it out: reviewable, not appended blind.
+- **Dedupe is exact on the words, semantic in the prompt.** The key drops case, punctuation,
+  markdown and parenthetical hints like "(yes/no)". Prep phrases the same doubt differently per
+  package (145 distinct keys among 146 live questions), so prep is also given every answer already
+  given (`KNOWN_ANSWERS`) and told not to ask those again. A fuzzy matcher was not worth the false
+  merges.
+- **Answers stay in the package whatever prep writes.** Each answer is a `### question` block under
+  `## Your answers to questions` (the old `## Answers to the other form questions` heading is still
+  recognized), and `savePackage` puts answered blocks back after the AI replaces the package.
+- **Applying answers is targeted, and only on request.** "Update the package with N answers"
+  (`reviseWithAnswers`, or `answer_user_questions` with `revise`) sends a prep revision whose notes
+  are only the new answers and say to change only what they affect; the match check reruns after,
+  as with any prep. It's not automatic because a revision spends the user's AI usage. The one
+  automatic step: when Grok Bot's submit stopped for a form's questions and the user answers the
+  last open one in the app, the fill is queued again, as `answer_questions` already did, and only
+  while "Let it submit" is on.
+- **`answer_questions` goes through the store.** Each answer is matched to the question the fill
+  asked (or recorded as a new one), `reusable` means for every application in Standard answers,
+  and the source is `grokbot`. The other tools record the caller as `relayedBy` (default `agent`);
+  answers in the app are `you`.
+## Resume match score
+
+- **The score is stable by construction, not by sampling.** None of the four providers lets us set
+  temperature (they're CLIs), and averaging N calls costs N times as much and still drifts. So the model
+  judges only each requirement's kind, area and level, and a fixed rubric (v2, `MATCH_RUBRIC_VERSION`)
+  turns those into points: must-have skills 40, seniority/scope 25, domain 15, logistics 10,
+  nice-to-haves 10, with an absent criterion's budget shared out in proportion. A check fingerprints
+  the rubric, posting and resume lines, and an identical re-check keeps the stored result without
+  calling the AI. While the posting stays the same, the requirement list is frozen (no items added or
+  dropped), and a requirement keeps its verdict unless a line it cited, or now cites, changed. Before
+  this, the same resume and posting moved 1-3 points between runs and the list grew and shrank (15 vs
+  16 items), so a "loop until the score stops rising" pass was chasing noise.
+- **Prep stores the score its pass ended on.** The prep used to queue a separate match task that
+  asked the model again, so the stored score (79) disagreed with the pass's own summary (82). Now prep
+  checks the final resume itself: that's free when the pass's last check already covered it. It also
+  rewrites the "match X -> Y" in the summary to the stored score (or adds it).
+- **Noise margin.** `check_resume_match` reports `scoreChange` and `improvedBeyondNoise` (more than
+  `MATCH_NOISE_MARGIN`, 3 points). Loops that raise the score stop when a round doesn't clear it.
+- Checks from before v2 keep their stored score. They have no breakdown until they're re-checked,
+  and the first v2 check re-judges everything.

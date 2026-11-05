@@ -39,6 +39,8 @@ export const qo = {
   access: () => queryOptions({ queryKey: ['settings', 'access'], queryFn: () => rpc.access() }),
   connectInfo: () => queryOptions({ queryKey: ['aiStatus', 'connectInfo'], queryFn: () => rpc.connectInfo() }),
   grokBot: () => queryOptions({ queryKey: ['grokBot'], queryFn: () => rpc.grokBot() }),
+  questions: (f: Parameters<typeof rpc.questions>[0]) => queryOptions({ queryKey: ['questions', f], queryFn: () => rpc.questions(f), ...live }),
+  questionCount: () => queryOptions({ queryKey: ['questions', 'count'], queryFn: () => rpc.questionCount(), ...live }),
 }
 
 // The page components were written against `fooFn({ data })` server functions; these keep that

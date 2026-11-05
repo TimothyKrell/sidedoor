@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as PairRouteImport } from './routes/pair'
 import { Route as PipelineRouteImport } from './routes/pipeline'
+import { Route as QuestionsRouteImport } from './routes/questions'
 import { Route as RadarRouteImport } from './routes/radar'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SourcesRouteImport } from './routes/sources'
@@ -43,6 +44,11 @@ const PairRoute = PairRouteImport.update({
 const PipelineRoute = PipelineRouteImport.update({
   id: '/pipeline',
   path: '/pipeline',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const QuestionsRoute = QuestionsRouteImport.update({
+  id: '/questions',
+  path: '/questions',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RadarRoute = RadarRouteImport.update({
@@ -135,6 +141,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/pair': typeof PairRoute
   '/pipeline': typeof PipelineRoute
+  '/questions': typeof QuestionsRoute
   '/radar': typeof RadarRoute
   '/settings': typeof SettingsRoute
   '/sources': typeof SourcesRoute
@@ -157,6 +164,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/pair': typeof PairRoute
   '/pipeline': typeof PipelineRoute
+  '/questions': typeof QuestionsRoute
   '/radar': typeof RadarRoute
   '/settings': typeof SettingsRoute
   '/sources': typeof SourcesRoute
@@ -180,6 +188,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/pair': typeof PairRoute
   '/pipeline': typeof PipelineRoute
+  '/questions': typeof QuestionsRoute
   '/radar': typeof RadarRoute
   '/settings': typeof SettingsRoute
   '/sources': typeof SourcesRoute
@@ -204,6 +213,7 @@ export interface FileRouteTypes {
     | '/'
     | '/pair'
     | '/pipeline'
+    | '/questions'
     | '/radar'
     | '/settings'
     | '/sources'
@@ -226,6 +236,7 @@ export interface FileRouteTypes {
     | '/'
     | '/pair'
     | '/pipeline'
+    | '/questions'
     | '/radar'
     | '/settings'
     | '/sources'
@@ -248,6 +259,7 @@ export interface FileRouteTypes {
     | '/'
     | '/pair'
     | '/pipeline'
+    | '/questions'
     | '/radar'
     | '/settings'
     | '/sources'
@@ -271,6 +283,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   PairRoute: typeof PairRoute
   PipelineRoute: typeof PipelineRoute
+  QuestionsRoute: typeof QuestionsRoute
   RadarRoute: typeof RadarRoute
   SettingsRoute: typeof SettingsRoute
   SourcesRoute: typeof SourcesRoute
@@ -311,6 +324,13 @@ declare module '@tanstack/react-router' {
       path: '/pipeline'
       fullPath: '/pipeline'
       preLoaderRoute: typeof PipelineRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/questions': {
+      id: '/questions'
+      path: '/questions'
+      fullPath: '/questions'
+      preLoaderRoute: typeof QuestionsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/radar': {
@@ -439,6 +459,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   PairRoute: PairRoute,
   PipelineRoute: PipelineRoute,
+  QuestionsRoute: QuestionsRoute,
   RadarRoute: RadarRoute,
   SettingsRoute: SettingsRoute,
   SourcesRoute: SourcesRoute,

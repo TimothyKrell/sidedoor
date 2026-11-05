@@ -37,7 +37,8 @@ const { submissions } = await import('../src/jobs/fill-form')
 const { browserArgsProblem } = await import('../src/mcp/server')
 const { toolsFor } = await import('../src/mcp/tools')
 const { grokBotToken, setSecret } = await import('../src/secrets')
-const { answerFormQuestions, createApplication, getApplication, requestSubmit, updateApplication } = await import('../src/services/applications')
+const { createApplication, getApplication, requestSubmit, updateApplication } = await import('../src/services/applications')
+const { answerFormQuestions, answerQuestions, listQuestions } = await import('../src/services/questions')
 const { docBody } = await import('../src/services/documents')
 const { enqueueTask } = await import('../src/services/tasks')
 const { updateSettings } = await import('../src/settings')
@@ -177,10 +178,48 @@ describe('the fill that submits', () => {
     expect(again.input.submit).toBe(true)
     const pkg = getApplication(a.id)!.packageMd!
     expect(pkg).toContain('### Q1 Why us?')
-    expect(pkg).toContain('## Answers to the other form questions\n\n### Desired salary\n$200k base')
+    expect(pkg).toContain('## Your answers to questions\n\n### Desired salary\n$200k base')
     expect(docBody('answers')).toContain('**Desired salary** $200k base')
     expect(docBody('answers')).not.toContain('anyone here')
+    // Kept as questions: answered, by Grok Bot, the reusable one for every application.
+    const kept = listQuestions({ applicationId: a.id, status: 'answered' })
+    expect(kept.map((q) => [q.question, q.answer, q.answeredBy, q.scope])).toEqual(
+      expect.arrayContaining([
+        ['Desired salary', '$200k base', 'grokbot', 'global'],
+        ['Do you know anyone here?', 'No', 'grokbot', 'application'],
+      ]),
+    )
     expect(submissions(a.id)[0]!.status).toBe('queued')
+  })
+
+  test("the form's questions are kept as questions, and answering the last one in the app sends it again", async () => {
+    allow()
+    const a = app('Initech')
+    const t = requestSubmit(a.id)
+    ai.replies = [{ outcome: 'needs_you', summary: 'Two questions.', filled: [], needsYou: [{ field: 'Earliest start date', why: 'not in the package' }, { field: 'Preferred office', why: 'required', options: ['NYC', 'Remote'] }] }]
+    await run(t.id)
+    const open = listQuestions({ applicationId: a.id, status: 'open' })
+    expect(open.map((q) => [q.question, q.askedBy])).toEqual(expect.arrayContaining([['Earliest start date', 'fill'], ['Preferred office', 'fill']]))
+    expect(open.find((q) => q.question === 'Preferred office')!.options).toEqual(['NYC', 'Remote'])
+    const start = open.find((q) => q.question === 'Earliest start date')!
+    expect(answerQuestions([{ id: start.id, answer: 'Two weeks from offer' }], 'you').resubmitted).toEqual([])
+    const office = open.find((q) => q.question === 'Preferred office')!
+    const r = answerQuestions([{ id: office.id, answer: 'Remote', allApplications: false }], 'you')
+    expect(r.resubmitted).toEqual([a.id])
+    expect(submissions(a.id)[0]!.status).toBe('queued')
+    expect(getApplication(a.id)!.packageMd).toContain('### Preferred office\nRemote')
+  })
+
+  test('answers in the app never queue a submit while Grok Bot may not submit', async () => {
+    allow()
+    const a = app('Massive')
+    const t = requestSubmit(a.id)
+    ai.replies = [{ outcome: 'needs_you', summary: 'One question.', filled: [], needsYou: [{ field: 'Team preference', why: 'required' }] }]
+    await run(t.id)
+    updateSettings('grokBot', { submit: false })
+    const [q] = listQuestions({ applicationId: a.id, status: 'open' })
+    expect(answerQuestions([{ id: q!.id, answer: 'Platform' }], 'you').resubmitted).toEqual([])
+    expect(submissions(a.id)[0]!.status).toBe('questions')
   })
 
   test('with submitting turned off it fills for review and never runs the submit step', async () => {

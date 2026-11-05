@@ -9,7 +9,8 @@ tools.
    - questions: ask me each one word for word, with its options, grouped by company. Never answer
      for me or guess, even when it looks obvious. Then call `answer_questions` with my answers in my
      words; mark reusable the ones about me rather than that job (salary, start date, relocation,
-     work authorization).
+     work authorization). I may have answered some in Sidedoor already: `list_questions` with the
+     applicationId shows which are still open; ask me only those.
    - blocked: tell me what it needs (a captcha, a sign-in); I'll do it in the Sidedoor window.
    - not_submitted or failed: tell me the summary. Don't submit it again unless I ask.
 4. When everything is done, give me a short list: submitted, waiting on me, and stuck.

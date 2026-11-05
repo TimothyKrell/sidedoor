@@ -39,6 +39,7 @@ import {
   updatePerson,
   upsertPerson,
 } from '../services/people'
+import { answerQuestions, askQuestions, dismissQuestions, listQuestions, reviseWithAnswers, savePackage } from '../services/questions'
 import { cancelTask, enqueueTask, retryTask, URGENT_PRIORITY } from '../services/tasks'
 import { getSettings, setMeta } from '../settings'
 import { pageOf, parseComp, truncate } from '../text'
@@ -263,6 +264,8 @@ export const appTools = [
         people: people.map((p) => ({ ...personBrief(p), role: links.find((l) => l.personId === p.id)?.role })),
         interactions: db.select().from(schema.interactions).where(eq(schema.interactions.applicationId, id)).orderBy(desc(schema.interactions.at)).limit(30).all(),
         drafts: db.select().from(schema.drafts).where(eq(schema.drafts.applicationId, id)).all(),
+        /** Questions for the user about this application (list_questions), answered or not. */
+        questions: listQuestions({ applicationId: id, status: 'all' }).map((q) => ({ id: q.id, question: q.question, about: q.about, status: q.status, answer: q.answer })),
         research: db.select({ id: schema.research.id, title: schema.research.title, body: schema.research.bodyMd }).from(schema.research).where(eq(schema.research.applicationId, id)).all().map((r) => ({ ...r, body: truncate(r.body, 6000) })),
         tasks: db.select({ id: schema.tasks.id, kind: schema.tasks.kind, status: schema.tasks.status, title: schema.tasks.title, finishedAt: schema.tasks.finishedAt, error: schema.tasks.error }).from(schema.tasks).where(eq(schema.tasks.applicationId, id)).orderBy(desc(schema.tasks.createdAt)).limit(10).all(),
         otherApplicationsAtCompany: siblingApps(a),
@@ -591,14 +594,14 @@ export const appTools = [
 
   tool(
     'check_resume_match',
-    "Re-run the resume match check for an application now and wait for it (about a minute, ~$0.10): checks its tailored resume (else the main one) against the posting and returns the 0-100 score and each requirement's level (strong/partial/weak/missing), the resume line ids that answer it, why, and a fix from the Experience document when one exists. The result replaces the one the user sees on the application and in the resume editor. Use it after editing a resume to see what moved; requirement ids stay the same across checks. get_application shows the last result without re-running.",
+    "Re-run the resume match check for an application now and wait for it (about a minute, ~$0.10): checks its tailored resume (else the main one) against the posting and returns the 0-100 score, the rubric breakdown behind it (points per criterion: must-have skills, seniority/scope, domain, logistics, nice-to-haves, with the requirements that lost points), and each requirement's level (strong/partial/weak/missing), the resume line ids that answer it, why, and a fix from the Experience document when one exists. The result replaces the one the user sees on the application and in the resume editor. Use it after editing a resume to see what moved. Re-checks are stable: the requirement list and ids stay fixed for the posting, a requirement is re-judged only when a line it cites (or now cites) changed, and an unchanged resume returns the last result as is (free, reused: true). When raising the score in rounds, stop as soon as a round's improvedBeyondNoise is false (it moved by noiseMargin points or less): smaller moves are judgment noise. get_application shows the last result without re-running.",
     { applicationId: z.string() },
     safe(async ({ applicationId }) => {
       const { matchForAgent, runMatch } = await import('../match')
-      await runMatch(applicationId)
+      const { reused } = await runMatch(applicationId)
       const a = getApplication(applicationId)!
-      logActivity('application', `Checked resume match: ${a.companyName} – ${a.role}`, { detail: `${a.matchJson?.score ?? '?'}/100`, link: `/applications/${a.id}` })
-      return matchForAgent(a)
+      logActivity('application', `Checked resume match: ${a.companyName} – ${a.role}`, { detail: `${a.matchJson?.score ?? '?'}/100${reused ? ' (unchanged)' : ''}`, link: `/applications/${a.id}` })
+      return { reused, ...matchForAgent(a) }
     }),
   ),
 
@@ -813,11 +816,68 @@ export const appTools = [
     "Save an application's package: the review doc with the cover letter and form answers that the user reviews and the form filler pastes from. Replaces the whole package.",
     { applicationId: z.string(), packageMd: z.string() },
     safe((a) => {
-      const app = getApplication(a.applicationId)
-      if (!app) throw new Error('not found')
-      updateApplication(app.id, { packageMd: a.packageMd })
-      return { saved: true, chars: a.packageMd.length }
+      const md = savePackage(a.applicationId, a.packageMd)
+      return { saved: true, chars: md.length }
     }),
+  ),
+
+  tool(
+    'list_questions',
+    "Questions only the user can answer, asked by prep, form fills or agents: open ones by default (the same question asked by several applications shows once, with its applications). Each has the id to answer or dismiss it with, what it's about ('you': the user, 'application': this job only), whether an answer is meant for every application (scope 'global'), the choices if the form has a fixed set, and once answered the answer, when, and who gave it.",
+    {
+      status: z.enum(['open', 'answered', 'dismissed', 'all']).optional().describe("default 'open'"),
+      applicationId: z.string().optional(),
+      about: z.enum(['you', 'application']).optional(),
+      limit: z.number().int().min(1).max(200).optional(),
+    },
+    safe(({ status, applicationId, about, limit }) => listQuestions({ status: status ?? 'open', ...(applicationId ? { applicationId } : {}), ...(about ? { about } : {}), limit: limit ?? 100 })),
+    ro,
+  ),
+
+  tool(
+    'ask_questions',
+    "Ask the user questions only they can answer: a fact about their past you couldn't confirm in Experience, a form answer not in Standard answers, or a choice about this application. Sidedoor lists them for the user to answer. Ones they already answered come back with known: true and the answer: use it and don't ask again. about: 'you' for anything about the user (saveTo 'experience' for facts about past work, 'answers' for form answers like salary, start date or work authorization), 'application' for this job only. Leave out applicationId for a question about the user in general.",
+    {
+      applicationId: z.string().optional(),
+      questions: z
+        .array(
+          z.object({
+            question: z.string().describe('one plain question, as the user should read it'),
+            about: z.enum(['you', 'application']).optional(),
+            why: z.string().optional().describe('one line: what the answer changes'),
+            options: z.array(z.string()).optional().describe("the choices, when there's a fixed set"),
+            saveTo: z.enum(['answers', 'experience']).optional(),
+          }),
+        )
+        .min(1)
+        .max(30),
+    },
+    safe(({ applicationId, questions }) => ({ questions: askQuestions(applicationId ?? null, 'agent', questions) })),
+  ),
+
+  tool(
+    'answer_user_questions',
+    "Record the user's answers to questions from list_questions, in their own words (don't make answers up or improve them). Each goes into its application's package. allApplications: the answer holds for every application (defaults to the question's scope): it also answers the same question open elsewhere, is kept in Standard answers (or Experience, with saveTo 'experience') and is never asked again. When Grok Bot was submitting an application and these were the last questions its form asked, Sidedoor fills it again. To have the package rewritten with the answers, set revise.",
+    {
+      answers: z.array(z.object({ questionId: z.string(), answer: z.string().min(1), allApplications: z.boolean().optional(), saveTo: z.enum(['answers', 'experience']).optional() })).min(1),
+      relayedBy: z.string().optional().describe("who is passing the user's answers on, e.g. 'grokbot' (default 'agent')"),
+      revise: z.boolean().optional().describe('then send each application the answers touched back to the AI for a targeted package update'),
+    },
+    safe(({ answers, relayedBy, revise }) => {
+      const r = answerQuestions(
+        answers.map((x) => ({ id: x.questionId, answer: x.answer, ...(x.allApplications != null ? { allApplications: x.allApplications } : {}), ...(x.saveTo ? { saveTo: x.saveTo } : {}) })),
+        relayedBy?.trim() || 'agent',
+      )
+      const revised = revise ? r.applications.filter((id) => !r.resubmitted.includes(id)).flatMap((id) => { try { reviseWithAnswers(id); return [id] } catch { return [] } }) : []
+      return { ...r, revised }
+    }),
+  ),
+
+  tool(
+    'dismiss_questions',
+    "Drop questions the user doesn't need to answer (no longer relevant, or they said to skip it). An answer given before is taken back out of the package and their documents.",
+    { ids: z.array(z.string()).min(1) },
+    safe(({ ids }) => dismissQuestions(ids, 'agent')),
   ),
 
   tool(
@@ -1024,7 +1084,7 @@ export const grokBotSubmitTools = [
   ),
   tool(
     'submission_status',
-    "Where the applications you sent to submit_application stand, newest first: queued or filling (wait), submitted (done; it's now Applied, and evidence holds the page URL, title and text Sidedoor read after the click), ready (a dry run with nothing left to ask; submit_application without dryRun sends it), questions (the form asked things only the user can answer: ask them, word for word, with the options, then answer_questions), blocked (a captcha, sign-in or closed posting: the user has to do it in the Sidedoor window), not_submitted or failed (read the summary).",
+    "Where the applications you sent to submit_application stand, newest first: queued or filling (wait), submitted (done; it's now Applied, and evidence holds the page URL, title and text Sidedoor read after the click), ready (a dry run with nothing left to ask; submit_application without dryRun sends it), questions (the form asked things only the user can answer, or the package had an answer the user hasn't confirmed: ask them, word for word, with the options, then answer_questions), blocked (a captcha, sign-in or closed posting: the user has to do it in the Sidedoor window), not_submitted or failed (read the summary). audit lists every field the last fill put in: its label, value, source (standard_answer, package, user_answer, profile, resume, ai_generated, unconfirmed) and whether the user confirmed it; Sidedoor never submits while any is unconfirmed.",
     { applicationId: z.string().optional() },
     safe(async ({ applicationId }) => (await import('../jobs/fill-form')).submissions(applicationId)),
   ),
@@ -1036,7 +1096,7 @@ export const grokBotSubmitTools = [
       answers: z.array(z.object({ question: z.string().describe('the question as submission_status gave it'), answer: z.string(), reusable: z.boolean().optional() })).min(1),
     },
     safe(async ({ applicationId, answers }) => {
-      const t = (await import('../services/applications')).answerFormQuestions(applicationId, answers)
+      const t = (await import('../services/questions')).answerFormQuestions(applicationId, answers)
       return { taskId: t.id, next: 'Saved. Sidedoor fills and submits it again; check submission_status in a few minutes.' }
     }),
   ),

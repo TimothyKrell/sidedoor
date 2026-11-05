@@ -4,7 +4,7 @@ import { TimeAgo } from '~/components/app/bits'
 import { Segmented } from '~/components/app/segmented'
 import { Button } from '~/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '~/components/ui/tooltip'
-import { LEVEL_META, levelCounts, MATCH_LEVELS, type MatchLevel, type MatchRequirement, type ResumeMatch, scoreTone } from '@sidedoor/shared/match'
+import { type CriterionScore, LEVEL_META, levelCounts, MATCH_LEVELS, type MatchLevel, type MatchRequirement, type ResumeMatch, scoreTone } from '@sidedoor/shared/match'
 import { cn } from '~/lib/utils'
 
 // How well a resume answers a posting: a score ring and level bar to take in at a glance, then one
@@ -104,6 +104,7 @@ export function MatchSummary({ match, stale, running, onRecheck, actions, classN
         </div>
       </div>
       <p className="mt-3 text-sm text-muted-foreground">{match.summary}</p>
+      {match.breakdown ? <MatchBreakdown breakdown={match.breakdown} className="mt-3" /> : <p className="mt-2 text-xs text-muted-foreground">Checked with an older rubric: re-check to see the points behind the score.</p>}
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <RecheckButton stale={stale} running={running} onRecheck={onRecheck} />
         {actions}
@@ -111,6 +112,40 @@ export function MatchSummary({ match, stale, running, onRecheck, actions, classN
           checked <TimeAgo iso={match.at} />
         </span>
       </div>
+    </div>
+  )
+}
+
+/** The rubric behind the score: points per criterion, and the requirements that lost points. */
+export function MatchBreakdown({ breakdown, className }: { breakdown: CriterionScore[]; className?: string }) {
+  return (
+    <div className={cn('space-y-2', className)}>
+      {breakdown.map((c) => (
+        <div key={c.criterion} className="space-y-1">
+          <div className="flex items-baseline gap-2 text-xs">
+            <span className="font-medium">{c.label}</span>
+            <span className="ml-auto text-muted-foreground tabular-nums">
+              <span className="font-medium text-foreground">{c.points}</span> / {c.max}
+            </span>
+          </div>
+          <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+            <div className={cn('h-full rounded-full', c.max && c.points / c.max >= 0.8 ? 'bg-success' : c.max && c.points / c.max >= 0.5 ? 'bg-info' : 'bg-hot')} style={{ width: `${c.max ? (100 * c.points) / c.max : 0}%` }} />
+          </div>
+          {c.gaps.length > 0 && (
+            <ul className="space-y-0.5 text-[11px] text-muted-foreground">
+              {c.gaps.map((g) => (
+                <li key={g.id} className="flex gap-1.5">
+                  <span className="shrink-0 font-medium text-destructive tabular-nums">−{g.lost}</span>
+                  <span className="min-w-0">
+                    <span className="text-foreground">{g.short}</span> <span className={LEVEL_META[g.level].text}>({LEVEL_META[g.level].label.toLowerCase()})</span>
+                    {g.note && <span>: {g.note}</span>}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ))}
     </div>
   )
 }

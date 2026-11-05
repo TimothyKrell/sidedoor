@@ -1,4 +1,4 @@
-import { useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { Bot, Check, CheckCircle2, ChevronDown, Circle, ExternalLink, FileText, ListChecks, Loader2, Mail, PartyPopper, Pencil, Plus, Search, Send, ThumbsDown, Undo2, UserSearch, WandSparkles } from 'lucide-react'
 import { useMemo, useState } from 'react'
@@ -7,6 +7,7 @@ import { CompanyAvatar, CopyButton, Due, Empty, FitBadge, Freshness, LocationNot
 import { DraftCard, PersonRow } from '~/components/app/cards'
 import { useChat, usePageContext } from '~/components/app/chat'
 import { MatchList, MatchStrip, MatchSummary } from '~/components/app/match'
+import { ApplicationQuestions } from '~/components/app/questions'
 import { WritingReview } from '~/components/app/writing'
 import { FollowupPicker, InteractionForm, PersonDialog } from '~/components/app/forms'
 import { Badge } from '~/components/ui/badge'
@@ -20,6 +21,7 @@ import { editPackageFn, type getApplicationFn, qo, requestChangesFn, rpc, setSta
 import { toast } from 'sonner'
 import { extractProseSections, replaceSections } from '@sidedoor/shared/package-sections'
 import { decisionsOf, withoutDecisions } from '@sidedoor/shared/decisions'
+import { withoutQuestions } from '@sidedoor/shared/questions'
 import { fmtDate, STAGE_META, STAGES, type Stage } from '@sidedoor/shared/format'
 import { useAction } from '~/lib/use-action'
 import { cn } from '~/lib/utils'
@@ -506,6 +508,7 @@ function PackageTab({ d }: { d: Detail }) {
   const [md, setMd] = useState(a.packageMd ?? '')
   const save = useAction((v: { id: string; packageMd: string }) => updateApplicationFn({ data: { id: v.id, patch: { packageMd: v.packageMd } } }), { success: 'Saved' })
   const task = useAction((v: { kind: 'prep'; applicationId: string }) => startTaskFn({ data: v }), { success: 'Your AI is preparing it' })
+  const questions = useQuery(qo.questions({ applicationId: a.id, status: 'all' })).data ?? []
   if (!a.packageMd)
     return (
       <Empty>
@@ -539,6 +542,7 @@ function PackageTab({ d }: { d: Detail }) {
           <Pencil /> {editing ? 'Preview' : 'Edit'}
         </Button>
       </div>
+      {!editing && <ApplicationQuestions applicationId={a.id} groups={questions} hasPackage />}
       {!editing && <Decisions d={d} />}
       {!editing && <WritingCheck d={d} />}
       {editing ? (
@@ -549,7 +553,8 @@ function PackageTab({ d }: { d: Detail }) {
           </Button>
         </div>
       ) : (
-        <PackageText md={withoutDecisions(a.packageMd)} />
+        // Its "Questions for" section is listed above, answered or not.
+        <PackageText md={questions.length ? withoutQuestions(withoutDecisions(a.packageMd)) : withoutDecisions(a.packageMd)} />
       )}
     </div>
   )

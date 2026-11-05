@@ -9,6 +9,7 @@ import { notifyPromise } from '../notify'
 import { ATS_LINK, detectAts, detectSource, fetchJson, fetchText, isAdapterKind, parseRss, probeBoard } from '../scout/adapters'
 import { resolveAggregatorPostings } from '../scout/resolve'
 import { getApplication, setStage, trackPosting, updateApplication } from '../services/applications'
+import { answersFor } from '../services/questions'
 import { enqueueTask, URGENT_PRIORITY } from '../services/tasks'
 import { getMeta, getSettings, setMeta } from '../settings'
 import { htmlToText, truncate } from '../text'
@@ -262,6 +263,7 @@ const runPrep = async (task: schema.Task): Promise<TaskOutcome> => {
     APPLY_URL: a.applyUrl ?? a.jobUrl,
     SALARY: s.search.salaryMin ? `${s.search.salaryMin.toLocaleString('en-US')} ${s.search.currency}` : 'not set',
     FORM_QUESTIONS: qs ? JSON.stringify(qs, null, 1) : '(not pre-fetched; inspect the application page with read_page if possible, otherwise use the standard question set)',
+    KNOWN_ANSWERS: truncate(answersFor(a.id).map((q) => `- ${q.text} → ${q.answer}`).join('\n'), 8000) || '(none yet)',
     REVIEW_NOTES: [a.reviewNotes, typeof task.input.instructions === 'string' ? task.input.instructions : null].filter(Boolean).join('\n') || '(none: first preparation)',
   })
   const before = a.packageMd
@@ -283,9 +285,18 @@ const runPrep = async (task: schema.Task): Promise<TaskOutcome> => {
     const ed = await editPackage(a.id).catch((e: unknown) => ({ edited: 0, error: e instanceof Error ? e.message : String(e) }))
     r.log.push(`editor pass: ${'error' in ed && ed.error ? `failed (${ed.error})` : `${ed.edited} section(s) edited`}`)
   }
-  setStage(a.id, 'review', { note: r.data.summary })
-  // Requirements vs. the tailored resume, for the review. Its own task so the notification doesn't wait.
-  enqueueTask('match', `Check resume match: ${a.companyName} – ${a.role}`, { applicationId: a.id, priority: 5 })
+  // Requirements vs. the tailored resume, for the review. The pass usually ended on a check of the
+  // final resume, which then stands as is; only edits after it get checked here. Either way the
+  // summary reports the score that's stored, never one from an earlier round.
+  const { runMatch, withStoredScore } = await import('../match')
+  const final = await runMatch(a.id).catch((e: unknown) => {
+    r.log.push(`final match check failed (${e instanceof Error ? e.message : String(e)}); queued it`)
+    enqueueTask('match', `Check resume match: ${a.companyName} – ${a.role}`, { applicationId: a.id, priority: 5 })
+    return null
+  })
+  if (final) r.log.push(final.reused ? `match ${final.match.score}/100: the pass's last check was of the final resume` : `match ${final.match.score}/100: re-checked the resume as the pass left it`)
+  const summary = final ? withStoredScore(r.data.summary, final.match) : r.data.summary
+  setStage(a.id, 'review', { note: summary })
   await notifyPromise({
     kind: 'package-ready',
     title: `Ready to review: ${a.companyName}`,
@@ -294,7 +305,7 @@ const runPrep = async (task: schema.Task): Promise<TaskOutcome> => {
     priority: 3,
     dedupeKey: `pkg:${a.id}:${task.id}`,
   })
-  return { output: r.data.summary, ...done }
+  return { output: summary, ...done, costUsd: (done.costUsd ?? 0) + (final?.costUsd ?? 0) || undefined }
 }
 
 /**
@@ -585,7 +596,12 @@ const runMatchTask = async (task: schema.Task): Promise<TaskOutcome> => {
   const { runMatch } = await import('../match')
   const r = await runMatch(task.applicationId)
   const missing = r.match.requirements.filter((x) => x.level === 'missing').length
-  return { output: `Match ${r.match.score}/100 across ${r.match.requirements.length} requirements${missing ? `, ${missing} missing` : ''}`, sessionId: r.sessionId, costUsd: r.costUsd ?? undefined, log: r.log }
+  return {
+    output: `Match ${r.match.score}/100 across ${r.match.requirements.length} requirements${missing ? `, ${missing} missing` : ''}${r.reused ? ' (resume and posting unchanged: kept the last check)' : ''}`,
+    sessionId: r.sessionId,
+    costUsd: r.costUsd ?? undefined,
+    log: r.log,
+  }
 }
 
 const runCustom = async (task: schema.Task): Promise<TaskOutcome> => {

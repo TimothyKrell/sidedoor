@@ -14,15 +14,27 @@ import { notifyPromise } from '../notify'
 import { context, render } from '../prompts'
 import { grokBotToken } from '../secrets'
 import { getApplication, setStage, updateApplication } from '../services/applications'
+import { docBody } from '../services/documents'
+import { askQuestions } from '../services/questions'
 import { buildResumePdf, resumeForApplication } from '../services/resumes'
 import { getSettings } from '../settings'
 import { truncate } from '../text'
+import { type AuditEntry, checkFill, FILL_SOURCES, submitRefusal } from '../form-answers'
 import type { TaskOutcome } from './tasks'
 
 export const FillReport = z.object({
   outcome: z.enum(['ready', 'needs_you', 'blocked']),
   summary: z.string(),
-  filled: z.array(z.object({ field: z.string(), value: z.string() })).default([]),
+  filled: z
+    .array(
+      z.object({
+        field: z.string(),
+        value: z.string(),
+        source: z.enum(FILL_SOURCES).default('ai_generated'),
+        options: z.array(z.string()).default([]),
+      }),
+    )
+    .default([]),
   needsYou: z.array(z.object({ field: z.string(), why: z.string(), options: z.array(z.string()).default([]) })).default([]),
 })
 export type FillReport = z.infer<typeof FillReport>
@@ -52,6 +64,25 @@ export interface FillOutput extends FillReport {
   dryRun?: boolean
   submit?: SubmitReport | null
   evidence?: Evidence | null
+  /** Every field the fill put in, where Sidedoor found its value, and whether the user confirmed it. */
+  audit?: AuditEntry[]
+}
+
+/**
+ * The filler's report, checked against the package and Standard answers: anything it filled that
+ * the user hasn't confirmed comes back as a question, so the fill can't be "ready" with it.
+ */
+export const reviewFill = (data: FillReport, a: Pick<schema.Application, 'packageMd' | 'companyName'>): { report: FillReport; audit: AuditEntry[] } => {
+  const { audit, questions } = checkFill({ filled: data.filled, needsYou: data.needsYou, packageMd: a.packageMd, standardAnswers: docBody('answers'), company: a.companyName })
+  if (!questions.length) return { report: data, audit }
+  const held = audit.filter((e) => !e.confirmed).length
+  const report: FillReport = {
+    ...data,
+    outcome: data.outcome === 'blocked' ? 'blocked' : 'needs_you',
+    summary: `${data.summary} ${held ? `Sidedoor held back ${held} answer${held === 1 ? '' : 's'} you haven't confirmed; ` : ''}${questions.length} question${questions.length === 1 ? '' : 's'} for you.`,
+    needsYou: [...data.needsYou, ...questions],
+  }
+  return { report, audit }
 }
 
 /** The visible text of a Playwright snapshot (its quoted names and text nodes), without the tree markup. */
@@ -82,7 +113,9 @@ separate step, so:
 - A required question the material doesn't answer goes under \`needsYou\`: its exact wording in
   \`field\`, and its choices in \`options\` when it has a fixed set. They answer it, and the form is
   filled again.
-- An optional question the material doesn't answer: leave it blank and don't list it.`
+- An optional question the material doesn't answer: leave it blank and don't list it.
+- Sidedoor checks every \`filled\` entry against the package before it submits: anything the
+  package marks unconfirmed, or that you made up, stops the submit and is asked instead.`
 
 /**
  * Open the application form in its own browser window and have the AI fill it, stopping before
@@ -122,6 +155,7 @@ export const runFillForm = (task: schema.Task): Promise<TaskOutcome> =>
     let closed = false
     const log: string[] = []
     let costUsd = 0
+    let audit: AuditEntry[] = []
     try {
       r = await withBrowserTools(tab.cdpEndpoint, workDir, async () => {
         const fill = await runJob({
@@ -142,7 +176,11 @@ export const runFillForm = (task: schema.Task): Promise<TaskOutcome> =>
         })
         log.push(...(fill.log ?? []))
         costUsd += fill.costUsd ?? 0
-        if (!submitting || fill.data.outcome !== 'ready' || fill.data.needsYou.length) return fill
+        const checked = reviewFill(fill.data, a)
+        audit = checked.audit
+        const reviewed = { ...fill, data: checked.report }
+        // The pre-submit audit: nothing goes in with an answer the user hasn't confirmed.
+        if (!submitting || reviewed.data.outcome !== 'ready' || reviewed.data.needsYou.length || submitRefusal(audit)) return reviewed
         await tab.unguard()
         allowSubmit(true)
         db.update(schema.tasks).set({ input: { ...task.input, submitStartedAt: nowIso() } }).where(eq(schema.tasks.id, task.id)).run()
@@ -160,7 +198,7 @@ export const runFillForm = (task: schema.Task): Promise<TaskOutcome> =>
         evidence = evidenceFrom(await browserSnapshot(), go.data.confirmation)
         // It reported back: unless it went in, the same task may try again.
         if (go.data.outcome !== 'submitted') db.update(schema.tasks).set({ input: task.input }).where(eq(schema.tasks.id, task.id)).run()
-        return fill
+        return reviewed
       })
       report = r.data
       // Submitted, or to be filled again once they answer: no window left behind for either.
@@ -175,7 +213,7 @@ export const runFillForm = (task: schema.Task): Promise<TaskOutcome> =>
     }
 
     const label = `${a.companyName} – ${a.role}`
-    const out: FillOutput = { ...report, submitting, dryRun, submit: sent, evidence }
+    const out: FillOutput = { ...report, submitting, dryRun, submit: sent, evidence, audit }
     const done = { output: JSON.stringify(out), sessionId: r.sessionId, costUsd: costUsd || undefined, log, provider: r.provider, model: r.model }
     const s = sent as SubmitReport | null
     if (s?.outcome === 'submitted') {
@@ -183,7 +221,10 @@ export const runFillForm = (task: schema.Task): Promise<TaskOutcome> =>
       await notifyPromise({ kind: 'agent', title: `Applied: ${a.companyName}`, body: s.summary, path: `/applications/${a.id}`, priority: 3 })
       return done
     }
-    const asks = s ? s.problems.length : report.needsYou.length
+    const asked = s ? s.problems.map((p) => ({ question: p.field, why: p.why })) : report.needsYou.map((n) => ({ question: n.field, why: n.why, options: n.options }))
+    // Kept as questions: the user answers them in Sidedoor (or through Grok Bot), and the answers stay for next time.
+    if (asked.length) askQuestions(a.id, 'fill', asked)
+    const asks = asked.length
     const next = s
       ? `Not submitted: ${truncate(s.summary, 120)}${s.outcome === 'not_submitted' ? ' The form is open in the Sidedoor browser window.' : ''}`
       : report.outcome === 'ready'
@@ -219,6 +260,8 @@ export interface Submission {
   questions: { question: string; why: string; options: string[] }[]
   /** For submitted: what the page showed after the click (URL, title, text). */
   evidence?: Evidence | null
+  /** Every field the fill put in: its label, value, where the value came from, and whether the user confirmed it. */
+  audit: AuditEntry[]
 }
 
 /** Where each application Grok Bot sent to be submitted stands: its latest submit task. */
@@ -238,7 +281,7 @@ export const submissions = (applicationId?: string): Submission[] => {
     if (seen.has(t.applicationId!)) continue
     seen.add(t.applicationId!)
     const a = getApplication(t.applicationId!)
-    const base = { applicationId: t.applicationId!, application: a ? `${a.companyName} – ${a.role}` : t.title, taskId: t.id, dryRun: t.input.dryRun === true, questions: [] }
+    const base = { applicationId: t.applicationId!, application: a ? `${a.companyName} – ${a.role}` : t.title, taskId: t.id, dryRun: t.input.dryRun === true, questions: [], audit: [] as AuditEntry[] }
     if (t.status === 'queued' || t.status === 'running') out.push({ ...base, status: t.status === 'queued' ? 'queued' : 'filling', summary: t.status === 'queued' ? 'Waiting for its turn (one form at a time).' : 'Filling the form now.' })
     else if (t.status === 'failed' || t.status === 'cancelled') out.push({ ...base, status: t.status, summary: t.error ?? 'Cancelled.' })
     else {
@@ -248,11 +291,14 @@ export const submissions = (applicationId?: string): Submission[] => {
       } catch {
         o = null
       }
+      if (o?.audit) base.audit = o.audit
       if (!o) out.push({ ...base, status: 'failed', summary: t.output ?? 'No report.' })
       else if (o.submit?.outcome === 'submitted') out.push({ ...base, status: 'submitted', summary: o.submit.summary, evidence: o.evidence ?? null })
       else if (o.submit) out.push({ ...base, status: o.submit.outcome === 'blocked' ? 'blocked' : o.submit.problems.length ? 'questions' : 'not_submitted', summary: o.submit.summary, questions: o.submit.problems.map((p) => ({ question: p.field, why: p.why, options: [] })) })
       else if (o.outcome === 'needs_you') out.push({ ...base, status: 'questions', summary: o.summary, questions: o.needsYou.map((n) => ({ question: n.field, why: n.why, options: n.options ?? [] })) })
       else if (o.outcome === 'blocked') out.push({ ...base, status: 'blocked', summary: o.summary })
+      // A dry run from before Sidedoor audited fills may have used unconfirmed answers: not ready.
+      else if (o.dryRun && !o.audit) out.push({ ...base, status: 'not_submitted', summary: `${o.summary} Dry run from before Sidedoor checked answers against the package; do another dry run.` })
       else if (o.dryRun) out.push({ ...base, status: 'ready', summary: `${o.summary} Dry run: nothing left to ask; not submitted.` })
       // Filled but not submitted: Grok Bot's permission was turned off before it ran.
       else out.push({ ...base, status: 'not_submitted', summary: `${o.summary} Not submitted: letting Grok Bot submit is turned off. The form is open for review.` })

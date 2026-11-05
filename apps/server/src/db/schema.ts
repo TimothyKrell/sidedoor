@@ -391,6 +391,48 @@ export const chatMessages = sqliteTable(
   (t) => [index('chat_messages_thread').on(t.threadId, t.at), index('chat_messages_page').on(t.page)],
 )
 
+export const QUESTION_STATUSES = ['open', 'answered', 'dismissed'] as const
+export type QuestionStatus = (typeof QUESTION_STATUSES)[number]
+
+/**
+ * Questions only the user can answer, one row per question and application: asked by prep (things
+ * it couldn't confirm), a form fill (a required field the package didn't cover) or any agent.
+ * Answers kept here are reused instead of asked again (services/questions.ts).
+ */
+export const questions = sqliteTable(
+  'questions',
+  {
+    id: id(),
+    /** The application it was asked for; null when asked of the user in general. */
+    applicationId: text('application_id'),
+    /** 'global': the answer holds for every application, so it's reused instead of asked again. */
+    scope: text('scope', { enum: ['application', 'global'] }).notNull().default('application'),
+    /** 'you': about the user (their history, salary, work authorization). 'application': about this job only. */
+    about: text('about', { enum: ['you', 'application'] }).notNull().default('application'),
+    text: text('text').notNull(),
+    /** The text normalized, to find the same question asked again. */
+    key: text('key').notNull(),
+    /** Why it's asked: what the answer changes. */
+    why: text('why'),
+    /** The choices, when the form offers a fixed set. */
+    options: json<string[]>('options').notNull().default([]),
+    /** Where an answer that holds for every application is kept: Standard answers, or Experience (facts about past work). */
+    saveTo: text('save_to', { enum: ['answers', 'experience'] }),
+    /** 'prep' | 'fill' | 'agent' | 'package' (found in a package's "Questions for" section). */
+    askedBy: text('asked_by').notNull(),
+    status: text('status', { enum: QUESTION_STATUSES }).notNull().default('open'),
+    answer: text('answer'),
+    answeredAt: text('answered_at'),
+    /** Who answered: 'you' (in the app), 'grokbot' (relayed), another agent's name, or 'package' (already answered in it). */
+    answeredBy: text('answered_by'),
+    /** When a package revision was sent to use this answer (Update the package with answers). */
+    revisedAt: text('revised_at'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index('questions_status').on(t.status), index('questions_application').on(t.applicationId), index('questions_key').on(t.key)],
+)
+
 export const PROFILE_DOCS = ['experience', 'search', 'answers', 'writing', 'stories'] as const
 export type ProfileDocKey = (typeof PROFILE_DOCS)[number]
 
@@ -467,3 +509,4 @@ export type ChatThread = typeof chatThreads.$inferSelect
 export type ChatMessage = typeof chatMessages.$inferSelect
 export type Document = typeof documents.$inferSelect
 export type Resume = typeof resumes.$inferSelect
+export type Question = typeof questions.$inferSelect

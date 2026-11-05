@@ -19,6 +19,7 @@ const people = () => import('../services/people')
 const tasks = () => import('../services/tasks')
 const resumes = () => import('../services/resumes')
 const docs = () => import('../services/documents')
+const qs = () => import('../services/questions')
 const settingsm = () => import('../settings')
 const dbm = () => import('../db/client')
 
@@ -78,6 +79,11 @@ export const router = {
   panelThreads: proc(z.object({ page: z.string().nullable() }), async ({ page }) => (await q()).panelThreads(page)),
   thread: proc(id, async ({ id }) => (await q()).getThread(id)),
   status: proc(none, async () => (await q()).workerStatus()),
+  questions: proc(
+    z.object({ status: z.enum(['open', 'answered', 'dismissed', 'all']).optional(), applicationId: z.string().optional(), about: z.enum(['you', 'application']).optional() }),
+    async (f) => (await qs()).listQuestions({ status: f.status ?? 'open', ...(f.applicationId ? { applicationId: f.applicationId } : {}), ...(f.about ? { about: f.about } : {}) }),
+  ),
+  questionCount: proc(none, async () => (await qs()).openQuestionCount()),
   search: proc(z.object({ q: z.string() }), async ({ q: s }) => (await q()).searchAll(s)),
   tellRules: proc(none, async () => (await import('../writing/tells')).loadTellRules()),
   stories: proc(none, async () => {
@@ -354,6 +360,20 @@ export const router = {
     db.update(schema.postings).set({ closedAt: null, lastSeenAt: new Date().toISOString() }).where(eq(schema.postings.id, postingId)).run()
     return { ok: true }
   }),
+  /** Your answer to a question; allApplications keeps it for every application (Standard answers or Experience). */
+  /** The same question asked by several applications is answered (or dismissed) for each of `ids`. */
+  answerQuestion: proc(
+    z.object({ ids: z.array(z.string()).min(1), answer: z.string().min(1).max(4000), allApplications: z.boolean().optional(), saveTo: z.enum(['answers', 'experience']).optional() }),
+    async ({ ids, answer, allApplications, saveTo }) =>
+      (await qs()).answerQuestions(ids.map((id) => ({ id, answer, ...(allApplications != null ? { allApplications } : {}), ...(saveTo ? { saveTo } : {}) })), 'you'),
+  ),
+  dismissQuestion: proc(z.object({ ids: z.array(z.string()).min(1) }), async ({ ids }) => (await qs()).dismissQuestions(ids, 'you')),
+  reopenQuestion: proc(id, async ({ id }) => {
+    ;(await qs()).reopenQuestion(id)
+    return { ok: true }
+  }),
+  /** Send the package back to the AI to use the new answers, changing only what they affect. */
+  reviseWithAnswers: proc(z.object({ applicationId: z.string() }), async ({ applicationId }) => (await qs()).reviseWithAnswers(applicationId)),
   /** Settle one decision (fine as is, or with your answer) against the package as it is now. */
   setDecision: proc(z.object({ id: z.string(), text: z.string(), done: z.boolean(), answer: z.string().max(2000).nullable().optional() }), async ({ id, text, done, answer }) => {
     const a = await apps()

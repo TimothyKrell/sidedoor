@@ -5,7 +5,7 @@ docs/ARCHITECTURE.md for how it fits together, docs/DECISIONS.md for why. Keep D
 current when making a non-obvious call.
 
 - `pnpm typecheck` and `pnpm test` must pass. Strict TS with noUncheckedIndexedAccess.
-- `apps/server`: one Node process. People / applications / drafts / touchpoints change only through
+- `apps/server`: one Node process. People / applications / drafts / touchpoints / questions change only through
   the commands in `src/services/` (wrapped in `atomic()`); `tests/architecture.test.ts` enforces it.
   Add a command there and a test for the bookkeeping it implies.
 - New web calls go in `apps/server/src/http/router.ts`; the web app calls them as `rpc.<name>()`.

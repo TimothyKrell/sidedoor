@@ -10,6 +10,7 @@ import {
   ListTodo,
   Menu,
   type LucideIcon,
+  MessageCircleQuestion,
   MessageSquare,
   Radar,
   Rss,
@@ -44,6 +45,7 @@ const NAV: NavItem[] = [
   { to: '/', label: 'Today', icon: Sun, mobile: true },
   { to: '/jobs', label: 'Jobs', icon: Briefcase, mobile: true },
   { to: '/pipeline', label: 'Pipeline', icon: KanbanSquare, mobile: true },
+  { to: '/questions', label: 'Questions', icon: MessageCircleQuestion },
   { to: '/people', label: 'People', icon: Users, mobile: true },
   { to: '/resume', label: 'Resume', icon: FileText },
   { to: '/profile', label: 'Profile', icon: UserRound },
@@ -80,6 +82,13 @@ function WorkerDot() {
       )}
     </div>
   )
+}
+
+/** How many questions are waiting for you, beside the nav item. */
+function OpenQuestions() {
+  const { data } = useQuery(qo.questionCount())
+  if (!data) return null
+  return <span className="ml-auto rounded-full bg-primary/12 px-1.5 py-0.5 text-[11px] font-medium text-primary tabular-nums" title={`${data} open`}>{data}</span>
 }
 
 /** Running/queued AI tasks beside the nav item: a spinning arc while work is in flight. */
@@ -256,6 +265,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <n.icon className="size-4" />
               {n.label}
               {n.to === '/tasks' && <TaskActivity />}
+              {n.to === '/questions' && <OpenQuestions />}
             </Link>
           ))}
         </nav>

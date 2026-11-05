@@ -5,7 +5,6 @@ import { db, schema } from '../db/client'
 import { atomic } from '../db/tx'
 import { addDays, newId, nowIso, today } from '../ids'
 import { getSettings } from '../settings'
-import { appendDoc } from './documents'
 import { enqueueTask } from './tasks'
 
 export type AppPatch = Partial<Omit<typeof schema.applications.$inferInsert, 'id' | 'createdAt'>>
@@ -197,37 +196,6 @@ export const requestSubmit = atomic((id: string, o: { dryRun?: boolean } = {}) =
   } else task = enqueueTask('submit-assist', `${dryRun ? 'Dry run' : 'Submit'}: ${a.companyName} – ${a.role}`, { applicationId: id, priority: 10, input })
   updateApplication(id, { nextAction: dryRun ? 'Sidedoor is filling this for Grok Bot (dry run: no submit)' : 'Sidedoor is filling and submitting this for Grok Bot' })
   return task
-})
-
-export interface FormAnswer {
-  question: string
-  answer: string
-  /** True when it's about the user, not this job (salary, start date, relocation): saved to Standard answers too. */
-  reusable?: boolean
-}
-
-const ANSWERS_HEADING = '## Answers to the other form questions'
-
-/**
- * The user's answers to questions a form asked that the package didn't cover. They go into the
- * package (what the form filler pastes from), the ones that apply to any job into Standard
- * answers, and the application is sent to be filled again: submitted, or another dry run when
- * that's what it was last sent for.
- */
-export const answerFormQuestions = atomic((id: string, answers: FormAnswer[]) => {
-  const a = getApplication(id)
-  if (!a) throw new Error(`No application ${id}`)
-  const given = answers.map((x) => ({ ...x, question: x.question.trim(), answer: x.answer.trim() })).filter((x) => x.question && x.answer)
-  if (!given.length) throw new Error('Give at least one question with its answer.')
-  const block = given.map((x) => `### ${x.question}\n${x.answer}`).join('\n\n')
-  const pkg = (a.packageMd ?? '').replace(/\s*$/, '')
-  updateApplication(id, { packageMd: pkg.includes(ANSWERS_HEADING) ? `${pkg}\n\n${block}\n` : `${pkg}${pkg ? '\n\n' : ''}${ANSWERS_HEADING}\n\n${block}\n` })
-  const keep = given.filter((x) => x.reusable)
-  if (keep.length) appendDoc('answers', keep.map((x) => `- **${x.question}** ${x.answer}`).join('\n'))
-  logActivity('application', `Answered ${given.length} form question${given.length === 1 ? '' : 's'}: ${a.companyName} – ${a.role}`, { link: `/applications/${id}` })
-  const T = schema.tasks
-  const last = db.select().from(T).where(and(eq(T.kind, 'submit-assist'), eq(T.applicationId, id))).orderBy(desc(T.createdAt)).get()
-  return requestSubmit(id, { dryRun: last?.input.dryRun === true })
 })
 
 /** Send a package back to the AI with the user's notes. */

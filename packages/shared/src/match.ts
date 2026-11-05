@@ -8,10 +8,16 @@ export type MatchLevel = (typeof MATCH_LEVELS)[number]
 /** One resume line backing a requirement. `text` is the line as it read when the check ran. */
 export type MatchEvidence = { lineId: string; short: string; text: string }
 
+/** Which part of the rubric a requirement scores under (must-haves; nice-to-haves all count as 'nice'). */
+export const MATCH_AREAS = ['skills', 'scope', 'domain', 'logistics'] as const
+export type MatchArea = (typeof MATCH_AREAS)[number]
+
 export type MatchRequirement = {
   /** Stable across re-checks (r1, r2…), so the list doesn't reshuffle when the resume changes. */
   id: string
   kind: 'must' | 'nice'
+  /** Rubric area. Missing on checks made before rubric v2. */
+  area?: MatchArea
   /** A few words, for scanning. */
   short: string
   /** The posting's own words. */
@@ -24,6 +30,12 @@ export type MatchRequirement = {
   fix: string | null
 }
 
+/** A requirement that lost points, and how many. */
+export type MatchGap = { id: string; short: string; level: MatchLevel; lost: number; note: string; fix: string | null }
+
+/** Points for one rubric criterion; the criteria's points add up to the score. */
+export type CriterionScore = { criterion: MatchCriterion; label: string; points: number; max: number; requirements: number; gaps: MatchGap[] }
+
 export type ResumeMatch = {
   at: string
   model: string
@@ -34,17 +46,65 @@ export type ResumeMatch = {
   score: number
   summary: string
   requirements: MatchRequirement[]
+  /** Rubric the score was computed with. Missing on checks before v2 (their score stays as stored). */
+  rubricVersion?: number
+  /** Per-criterion points behind the score (v2+). */
+  breakdown?: CriterionScore[]
+  /** Fingerprint of rubric + posting + resume lines: an identical re-check reuses this result. */
+  inputHash?: string
+  /** Fingerprint of the posting, so the requirement list stays frozen while it doesn't change. */
+  jdHash?: string
+  /** Fingerprint of each resume line when checked, to tell which lines a re-check needs to re-judge. */
+  lineHashes?: Record<string, string>
+  /** Score of the check this one replaced, for "did that round help?". */
+  previousScore?: number | null
 }
 
-/** How much each level counts toward the score; must-haves weigh double. */
-const CREDIT: Record<MatchLevel, number> = { strong: 1, partial: 0.6, weak: 0.25, missing: 0 }
-const WEIGHT = { must: 2, nice: 1 } as const
-
-export const matchScore = (reqs: Pick<MatchRequirement, 'kind' | 'level'>[]) => {
-  const total = reqs.reduce((n, r) => n + WEIGHT[r.kind], 0)
-  if (!total) return 0
-  return Math.round((100 * reqs.reduce((n, r) => n + WEIGHT[r.kind] * CREDIT[r.level], 0)) / total)
+/**
+ * Rubric v2. Each criterion has a fixed point budget; a criterion the posting doesn't ask about
+ * hands its budget to the others in proportion. Within a criterion every requirement counts the
+ * same and earns its level's credit. The model only judges kind, area and level; the points are
+ * computed here, so the arithmetic never wobbles.
+ */
+export const MATCH_RUBRIC_VERSION = 2
+export const MATCH_CRITERIA = ['skills', 'scope', 'domain', 'logistics', 'nice'] as const
+export type MatchCriterion = (typeof MATCH_CRITERIA)[number]
+export const CRITERION_META: Record<MatchCriterion, { label: string; budget: number }> = {
+  skills: { label: 'Must-have skills', budget: 40 },
+  scope: { label: 'Seniority and scope', budget: 25 },
+  domain: { label: 'Domain', budget: 15 },
+  logistics: { label: 'Logistics', budget: 10 },
+  nice: { label: 'Nice-to-haves', budget: 10 },
 }
+/** How much each level earns of a requirement's share. */
+export const LEVEL_CREDIT: Record<MatchLevel, number> = { strong: 1, partial: 0.6, weak: 0.25, missing: 0 }
+/**
+ * A change this small between two checks is judgment noise, not improvement: a loop that raises the
+ * score should stop once a round moves it by no more than this.
+ */
+export const MATCH_NOISE_MARGIN = 3
+
+const one = (n: number) => Math.round(n * 10) / 10
+export const criterionOf = (r: Pick<MatchRequirement, 'kind' | 'area'>): MatchCriterion => (r.kind === 'nice' ? 'nice' : (r.area ?? 'skills'))
+
+/** The rubric applied to a set of judged requirements: per-criterion points, lost points, and the score. */
+export const scoreMatch = (reqs: Pick<MatchRequirement, 'id' | 'kind' | 'area' | 'short' | 'level' | 'note' | 'fix'>[]): { score: number; breakdown: CriterionScore[] } => {
+  const groups = MATCH_CRITERIA.map((c) => ({ c, reqs: reqs.filter((r) => criterionOf(r) === c) })).filter((g) => g.reqs.length)
+  const budget = groups.reduce((n, g) => n + CRITERION_META[g.c].budget, 0)
+  if (!budget) return { score: 0, breakdown: [] }
+  let total = 0
+  const breakdown = groups.map(({ c, reqs: rs }): CriterionScore => {
+    const max = (100 * CRITERION_META[c].budget) / budget
+    const each = max / rs.length
+    const points = rs.reduce((n, r) => n + each * LEVEL_CREDIT[r.level], 0)
+    total += points
+    const gaps = rs.filter((r) => r.level !== 'strong').map((r) => ({ id: r.id, short: r.short, level: r.level, lost: one(each * (1 - LEVEL_CREDIT[r.level])), note: r.note, fix: r.fix }))
+    return { criterion: c, label: CRITERION_META[c].label, points: one(points), max: one(max), requirements: rs.length, gaps: gaps.sort((a, b) => b.lost - a.lost) }
+  })
+  return { score: Math.round(total), breakdown }
+}
+
+export const matchScore = (reqs: Pick<MatchRequirement, 'kind' | 'area' | 'level'>[]) => scoreMatch(reqs.map((r, i) => ({ ...r, id: String(i), short: '', note: '', fix: null }))).score
 
 export const levelCounts = (reqs: Pick<MatchRequirement, 'level'>[]) => {
   const c: Record<MatchLevel, number> = { strong: 0, partial: 0, weak: 0, missing: 0 }

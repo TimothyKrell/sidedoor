@@ -18,6 +18,8 @@ changes. You work only through the `sidedoor` tools and your own web search. Tod
   `nextOffset` until `nextOffset` is null. The newest confirmed facts are at the end.
 - Standard answers: `get_profile_doc` 'answers'. Writing style: `get_profile_doc` 'writing' (read
   it fully before writing any prose).
+- Questions {{FIRST_NAME}} already answered (use these answers; never ask them again):
+{{KNOWN_ANSWERS}}
 
 ## Job description
 {{JD}}
@@ -80,7 +82,9 @@ Every question in form order:
 | # | Question | Required | Answer | Source |
 |---|---|---|---|---|
 (for long free-text answers put "see below" in the table and write the full answer under a
-"### Q<n>: <question>" heading after the table)
+"### Q<n>: <question>" heading after the table. An answer that isn't straight from Standard
+answers, Experience or the resume (inferred, a default, a guess) ends with "(confirm)" and is also
+listed under "Needs your decision": the form filler won't use it until it's confirmed.)
 
 ## Cover letter
 <full text, or "Not requested by this form.">
@@ -96,7 +100,16 @@ Every question in form order:
 ## Facts used
 - <bullet per claim category -> source>
 
-5. Finish with a JSON object (structured output) summarizing what you produced.
+5. Questions only {{FIRST_NAME}} can answer (a fact you couldn't confirm in the fact sources and
+   that would change the package, or a form answer that isn't in Standard answers): check the
+   answered questions above first, then ask the rest with `ask_questions` (applicationId
+   {{APP_ID}}), one plain question each, with `why` in one line. about 'you' for anything about
+   them (saveTo 'experience' for facts about their past work, 'answers' for form answers such as
+   salary, start date or work authorization), 'application' for choices about this job only. Any
+   that come back with known: true are answered: use the answer. Sidedoor shows the open ones next
+   to the package, so don't list them in it; a claim you made and want confirmed still goes under
+   "Needs your decision". Ask only what changes this application, at most about five.
+6. Finish with a JSON object (structured output) summarizing what you produced.
 
 If the review notes tell you to stop before preparing (for example the listing is closed, or
 too new for this pass), do what they say, don't save a package, and finish with `stopped: true`

@@ -17,6 +17,8 @@ export const startServer = async (o: { open: boolean }) => {
   const http = await startHttp()
   startLiveChanges()
   normalizeStages()
+  // Once: the questions in packages saved before Sidedoor kept them.
+  void import('./services/questions').then((m) => m.importPackageQuestions()).catch((e: unknown) => console.error('[questions] import failed', e))
   // SIDEDOOR_NO_JOBS=1: serve data without polling boards or running AI jobs (inspecting a copy).
   const stopJobs = process.env.SIDEDOOR_NO_JOBS === '1' ? async () => {} : startJobs()
   // Probe the AI CLIs in the background so Settings opens with their status ready.

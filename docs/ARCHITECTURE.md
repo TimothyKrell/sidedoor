@@ -126,9 +126,24 @@ Sidedoor rather than the other way round.
   `needsYou` does Sidedoor lift the guard (`tab.unguard()`), let the proxy pass submit clicks
   (`allowSubmit`), and run a short second job (`prompts/submit-form.md`) that clicks submit once and
   reads the confirmation. Submitted moves the application to Applied and closes the window. Open
-  questions come back through `submission_status`; `answer_questions` puts the answers in the
-  package (reusable ones in Standard answers too) and queues the fill again. A `dryRun` request
+  questions come back through `submission_status` and are kept as questions (below);
+  `answer_questions` records the answers, which go into the package (reusable ones in Standard
+  answers too), and queues the fill again. A `dryRun` request
   fills to the same bar and stops; a submitted one keeps what the page showed after the click.
+  Before `ready` counts, `reviewFill` checks the filler's report against the package and Standard
+  answers (`src/form-answers.ts`): unconfirmed answers become questions, and the audit of every
+  filled field (label, value, source, confirmed) is saved in the task output and shown by
+  `submission_status`. `submitRefusal` must pass before the submit step runs.
+
+## Questions for the user
+
+Prep, form fills and agents ask the user things only they can answer through one service
+(`services/questions.ts`, table `questions`): `ask_questions`, a fill's `needsYou`, or a package's
+"Questions for …" section. The user answers on the Questions page or the application's Package tab;
+agents use `list_questions`, `answer_user_questions` and `dismiss_questions`. Answers go into the
+application's package, and those for every application also into one section of Standard answers
+or Experience, and are handed back instead of asking again. Prep is given every answer already
+given. "Update the package" sends a revision limited to the new answers.
 
 ## Repository layout
 

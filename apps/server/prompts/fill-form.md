@@ -14,6 +14,14 @@ bring it to the front, so this won't interrupt them.
   needs any of these before you can continue, stop and report it under `needsYou`.
 - Never invent facts. Every answer comes from the package, the applicant profile, or the resume
   below. If a question isn't covered, leave it blank and list it under `needsYou`.
+- Never fill an answer {{FIRST_NAME}} hasn't confirmed. Leave the field blank and list it under
+  `needsYou` (its exact wording, and its options) when the package marks its answer "confirm",
+  "inferred", "default", "guess", "TBD" or "TODO", or the field comes up under "Questions for …" or
+  "Needs your decision", unless "Answers to the other form questions" answers it.
+- Voluntary self-identification (gender, pronouns, race/ethnicity, Hispanic/Latino, veteran,
+  disability, sexual orientation, transgender): fill one only when the applicant profile states
+  that answer outright (a "Decline" there counts). Otherwise leave it blank and list it under
+  `needsYou` with its options. Never work one out from another.
 - Don't navigate away from the application (no other sites, no job listings).
 
 ## How to fill
@@ -30,8 +38,7 @@ bring it to the front, so this won't interrupt them.
 4. Long answers: paste the package's answer text exactly (the "### Q<n>" sections and the cover
    letter). Don't rewrite them.
 5. Use the package's answer for salary, work authorization, sponsorship, location and "how did you
-   hear". Voluntary self-identification (EEO) questions: follow the applicant profile; if it says
-   nothing, choose "Decline to self-identify" / "I don't wish to answer".
+   hear", unless it's marked unconfirmed (see the rules above).
 6. When done, `browser_snapshot` once more and check every field you answered still shows your
    value (Yes/No buttons show as [pressed], checkboxes as [checked]), every required field (marked
    * or "required") is filled, and no validation errors show. Redo any that lost their value.
@@ -43,7 +50,11 @@ Return the structured result:
   "needs_you" (some fields need them), or "blocked" (couldn't fill: login wall, captcha, form
   didn't load, closed posting).
 - `summary`: one or two plain sentences for the notification.
-- `filled`: each field you filled, with the value (shorten long text to its first ~80 chars).
+- `filled`: each field you filled: `field` is its label as the form shows it, `value` what you put
+  in (shorten long text to its first ~80 chars), `source` where it came from ("standard_answer" for
+  the applicant profile's form answers, "package" for the package, "profile" for the contact
+  details, "resume" for the upload or a fact from it, "ai_generated" for anything else), and
+  `options` the choices it offered when it has a fixed set.
 - `needsYou`: each field or step they must handle, and why. For a question, put its exact wording
   in `field`, and its choices in `options` when it has a fixed set.
 
