@@ -44,6 +44,11 @@ function run() {
     }
   }
 
+  // Electron's default for an uncaught exception in this process is a modal error box, and while it
+  // waits for a click nothing else here runs: the bridge stops answering and every fill times out.
+  process.on('uncaughtException', (e) => log(`[desktop] uncaught: ${e.stack ?? e.message}`))
+  process.on('unhandledRejection', (e) => log(`[desktop] unhandled rejection: ${e instanceof Error ? (e.stack ?? e.message) : String(e)}`))
+
   let win: BrowserWindow | null = null
   let tray: Tray | null = null
   let backend: Backend | null = null
@@ -277,7 +282,7 @@ function run() {
       } catch (e) {
         log(`[desktop] could not copy the MCP runtime: ${String(e)}`)
       }
-      bridge = await startBridge({ onNotifyClick: (path) => show(path) })
+      bridge = await startBridge({ onNotifyClick: (path) => show(path), log })
       const token = randomBytes(24).toString('base64url')
       const port = await pickPort(Number(process.env.SIDEDOOR_PORT ?? 4848))
       backend = await startBackend({
