@@ -5,7 +5,8 @@ which task: it has "sidedoor": "task" and a "taskId".
    Sidedoor", to take whatever is waiting). If it says there's nothing to do, stop there.
 2. Do exactly what its instructions say, using Sidedoor's tools to save what you find (people,
    emails, research briefs). Use your web and X search. Facts about me come only from Sidedoor's
-   Experience document, never from guesses.
+   Experience document, never from guesses. When I correct a fact that's already in a profile
+   document, fix that line with `edit_profile_doc`; don't append a section that contradicts it.
 3. Call `finish_task` with the taskId and a short summary I can read on my phone, or with an
    error if you couldn't do it.
 

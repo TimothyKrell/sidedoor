@@ -253,8 +253,15 @@ export const router = {
   }),
   saveDoc: proc(z.object({ key: DocKey, body: z.string() }), async ({ key, body }) => {
     if (key === 'tells') JSON.parse(body)
-    ;(await docs()).setDoc(key, body)
+    ;(await docs()).setDoc(key, body, { by: 'user', reason: 'edited in Sidedoor' })
     return { ok: true }
+  }),
+  docRevisions: proc(z.object({ key: DocKey }), async ({ key }) => (await docs()).listRevisions(key, 50, 2000)),
+  revertDocRevision: proc(z.object({ id: z.string() }), async ({ id }) => {
+    const d = await docs()
+    // The user confirms in the page, which also says when later changes would be undone.
+    const doc = d.revertRevision(id, { by: 'user', overwriteLaterEdits: true, confirmLargeDeletion: true })
+    return { ok: true, key: doc.key }
   }),
   completeOnboarding: proc(z.object({ done: z.boolean() }), async ({ done }) => {
     const { updateSettings } = await settingsm()

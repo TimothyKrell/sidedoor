@@ -50,6 +50,13 @@
       "when": 1793912215736,
       "tag": "0006_steep_jack_power",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1793914490483,
+      "tag": "0007_fast_wild_pack",
+      "breakpoints": true
     }
   ]
 }

@@ -378,3 +378,18 @@ current when making a non-obvious call. Open questions for the maintainer live i
 - **An application's chat costs nothing to open.** Its first message is built from stored data, not
   an AI turn, so the 58 chats that could exist don't cost usage and don't fill the chat list until
   opened. A newer tuning pass adds its findings to the same chat.
+## Profile documents
+
+- **Correct in place; every change keeps a revision.** Agents could only append to a profile
+  document, so a fact the user corrected stayed in Experience next to the correction ("has used
+  OpenTelemetry" on Oct 23, "only familiar with it" on Oct 30), and prep could read either. Now
+  `edit_profile_doc` replaces exact text (which must match once, so an edit never lands in the
+  wrong place), a section by heading, or inserts under a heading, and the prompts say to fix the
+  stale line instead of appending. Every write to a document, from the editor, an agent or
+  Sidedoor itself, records the text before and after, who and why (`document_revisions`), so any
+  change can be reviewed on the document's page or with `list_profile_doc_revisions` and undone.
+  Reverting puts back the exact earlier text, and asks first when later changes would be undone too.
+- **Large deletions need confirming.** An agent's edit that would remove more than a quarter of a
+  document (and more than 200 characters) is refused unless it passes `confirmLargeDeletion`, so a
+  truncated rewrite or a wrong section can't silently wipe Experience. The revision would let it
+  be undone, but nobody may notice in time. The user's own saves in the editor aren't held to it.

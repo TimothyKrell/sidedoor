@@ -34,6 +34,8 @@ export const qo = {
   aiStatus: () => queryOptions({ queryKey: ['aiStatus'], queryFn: () => rpc.aiStatus(), staleTime: 30_000 }),
   docs: () => queryOptions({ queryKey: ['docs'], queryFn: () => rpc.docs() }),
   doc: (key: Parameters<typeof rpc.doc>[0]['key']) => queryOptions({ queryKey: ['doc', key], queryFn: () => rpc.doc({ key }) }),
+  /** Under ['doc', key] so every document write refreshes it. */
+  docRevisions: (key: Parameters<typeof rpc.doc>[0]['key']) => queryOptions({ queryKey: ['doc', key, 'revisions'], queryFn: () => rpc.docRevisions({ key }) }),
   resumes: () => queryOptions({ queryKey: ['resumes'], queryFn: () => rpc.resumes() }),
   resume: (id: string) => queryOptions({ queryKey: ['resume', id], queryFn: () => rpc.resume({ id }) }),
   starterSources: () => queryOptions({ queryKey: ['sources', 'starter'], queryFn: () => rpc.starterSources() }),
