@@ -70,12 +70,14 @@ function ApplicationPage() {
             {a.location && !/^unknown$/i.test(a.location) && <span>{a.location.replace(/\s*\|\s*/g, ' · ')}</span>}
             {a.compText && !/^(unknown|not (published|listed|stated))\.?$/i.test(a.compText.trim()) && <span>{a.compText}</span>}
             {a.appliedAt && <span>Applied {fmtDate(a.appliedAt)}</span>}
-            {data.posting && (
+            {data.posting ? (
               <Link to="/jobs/$id" params={{ id: data.posting.id }} className="underline-offset-2 hover:underline">
-                <Freshness postedAt={data.posting.postedAt} firstSeenAt={data.posting.firstSeenAt} />
+                <Freshness postedAt={a.postedAt ?? data.posting.postedAt} firstSeenAt={data.posting.firstSeenAt} />
               </Link>
+            ) : (
+              a.postedAt && <Freshness postedAt={a.postedAt} firstSeenAt={a.createdAt} />
             )}
-            {data.posting?.closedAt && <Badge variant="destructive">Listing closed {fmtDate(data.posting.closedAt)}</Badge>}
+            {data.listingClosedAt && <Badge variant="destructive">Listing closed {fmtDate(data.listingClosedAt)}</Badge>}
             {data.postingWarnings.length > 0 && (
               <Badge
                 variant="outline"
@@ -85,6 +87,7 @@ function ApplicationPage() {
                 <ShieldAlert /> Posting has text aimed at AI
               </Badge>
             )}
+            <ListingCheck d={data} />
           </div>
           {data.posting && <LocationNote fit={data.posting.locationFit} note={data.posting.locationNote} />}
           {a.shot != null && (
@@ -283,6 +286,28 @@ function PackageText({ md }: { md: string }) {
   )
 }
 
+const LISTING_LABEL = { open: 'listing up', suspect: 'listing missed once', closed: 'listing closed', unknown: 'listing not confirmed' } as const
+
+/** When the listing was last checked and what that found; click to check again now. */
+function ListingCheck({ d }: { d: Detail }) {
+  const a = d.application
+  const check = useAction((v: { id: string }) => rpc.checkListing(v), { success: (r) => `Listing: ${r.status ?? 'checked'}` })
+  const date = a.postedAt ? `Posted ${fmtDate(a.postedAt)}${a.postedAtExact ? '' : ' (estimated)'}, from ${a.postedAtSource}. ` : ''
+  const title = `${date}${a.listingEvidence ?? 'Not checked yet.'}${a.listingCheckedAt ? ` Checked ${fmtDate(a.listingCheckedAt)}.` : ''} Click to check now.`
+  return (
+    <button type="button" title={title} disabled={check.pending} onClick={() => void check.run({ id: a.id })} className={cn('inline-flex items-center gap-1 underline-offset-2 hover:underline', a.listingStatus === 'suspect' && 'text-destructive')}>
+      {check.pending ? <Loader2 className="size-3 animate-spin" /> : <ListChecks className="size-3" />}
+      {a.listingStatus && a.listingStatus !== 'closed' ? (
+        <>
+          {LISTING_LABEL[a.listingStatus]} <TimeAgo iso={a.listingCheckedAt} />
+        </>
+      ) : a.listingStatus ? null : (
+        'check listing'
+      )}
+    </button>
+  )
+}
+
 /** The one thing to do next, by stage. */
 function NextStep({ d }: { d: Detail }) {
   const a = d.application
@@ -353,7 +378,7 @@ function NextStep({ d }: { d: Detail }) {
               <Button
                 onClick={() => (openDecisions ? setConfirmApprove(true) : void stage.run({ id: a.id, stage: 'approved' }))}
                 disabled={stage.pending}
-                variant={d.posting?.closedAt ? 'outline' : 'default'}
+                variant={d.listingClosedAt ? 'outline' : 'default'}
               >
                 <CheckCircle2 /> Approve
               </Button>

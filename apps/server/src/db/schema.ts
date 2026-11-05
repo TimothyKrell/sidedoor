@@ -145,6 +145,7 @@ export const APPLICATION_STAGES = [
   'closed',
 ] as const
 export type ApplicationStage = (typeof APPLICATION_STAGES)[number]
+export type ListingStatus = 'open' | 'suspect' | 'closed' | 'unknown'
 
 /** A role the user is pursuing. */
 export const applications = sqliteTable(
@@ -193,6 +194,17 @@ export const applications = sqliteTable(
     /** Your AI's estimate (0-100) of the chance this application gets you an interview, and why. */
     shot: integer('shot'),
     shotWhy: text('shot_why'),
+    /** When the listing went up, where that came from ('greenhouse', 'json-ld', 'scout', ...) and whether it's the board's own date or an estimate. */
+    postedAt: text('posted_at'),
+    postedAtSource: text('posted_at_source'),
+    postedAtExact: integer('posted_at_exact', { mode: 'boolean' }),
+    /** The last listing check (jobs/listing-check.ts): open, one ambiguous miss, closed, or couldn't tell. */
+    listingStatus: text('listing_status').$type<ListingStatus>(),
+    listingCheckedAt: text('listing_checked_at'),
+    listingEvidence: text('listing_evidence'),
+    /** Ambiguous misses in a row (a page 404, gone from a board list); two close the listing. */
+    listingMisses: integer('listing_misses').notNull().default(0),
+    listingClosedAt: text('listing_closed_at'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

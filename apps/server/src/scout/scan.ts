@@ -6,7 +6,7 @@ import { db, schema } from '../db/client'
 import { newId, nowIso, toIsoDate } from '../ids'
 import { type AppSettings, getSettings } from '../settings'
 import { parseComp } from '../text'
-import { ADAPTERS, AGGREGATOR_KINDS, DETAILS, isAdapterKind, minPollMinutes, type RawJob } from './adapters'
+import { ADAPTERS, AGGREGATOR_KINDS, DETAILS, isAdapterKind, LIST_CAP, minPollMinutes, type RawJob } from './adapters'
 
 type Filters = ReturnType<typeof compileFilters>
 
@@ -190,8 +190,10 @@ const scanSource = (source: schema.Source, f: Filters) =>
           .run()
       }
       // A company board that stopped listing a posting has closed it. Not aggregators (listings roll off
-      // their feeds while still open), not an empty read (a board hiccup), and only after a day missing.
-      if (!isAggregator && jobs.length > 0)
+      // their feeds while still open), not an empty read (a board hiccup), not a list cut off at its
+      // cap (the rest is further down), and only after a day missing.
+      const partial = fetched.success.length >= (LIST_CAP[source.kind] ?? Infinity)
+      if (!isAggregator && !partial && jobs.length > 0)
         tx.update(schema.postings)
           .set({ closedAt: started })
           .where(and(eq(schema.postings.sourceId, source.id), isNull(schema.postings.closedAt), lt(schema.postings.lastSeenAt, new Date(Date.parse(started) - 24 * 3600_000).toISOString())))

@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, isNotNull, isNull, lte, sql } from 'drizzle-orm'
+import { and, desc, eq, gte, inArray, isNotNull, isNull, lte, or, sql } from 'drizzle-orm'
 import { Duration, Effect, Fiber, Ref, Schedule } from 'effect'
 import { logActivity } from '../activity'
 import { grokBotTick } from './handoff'
@@ -9,6 +9,8 @@ import { notify } from '../notify'
 import { activateFoundBoards } from '../scout/resolve'
 import { scan } from '../scout/scan'
 import { setStage } from '../services/applications'
+import { listingClosedAt } from '../services/listings'
+import { refreshRunning, scheduledListingCheck } from './listing-check'
 import { enqueueTask, prepInProgress } from '../services/tasks'
 import { getMeta, getSettings, setMeta } from '../settings'
 import { readyProviders } from '../ai'
@@ -129,12 +131,15 @@ export const normalizeStages = () => {
 export const reconcile = () => {
   const A = schema.applications
   const preparing = prepInProgress()
+  // The application's own listing check (jobs/listing-check.ts) decides, unless the scout saw its posting go since.
   const closed = db
-    .select({ id: A.id, stage: A.stage, companyName: A.companyName, role: A.role, closedAt: schema.postings.closedAt })
+    .select({ id: A.id, stage: A.stage, companyName: A.companyName, role: A.role, listingStatus: A.listingStatus, listingClosedAt: A.listingClosedAt, listingCheckedAt: A.listingCheckedAt, postingClosedAt: schema.postings.closedAt })
     .from(A)
-    .innerJoin(schema.postings, eq(schema.postings.id, A.postingId))
-    .where(and(inArray(A.stage, ['interested', 'review', 'approved']), isNotNull(schema.postings.closedAt)))
+    .leftJoin(schema.postings, eq(schema.postings.id, A.postingId))
+    .where(and(inArray(A.stage, ['interested', 'review', 'approved']), or(isNotNull(schema.postings.closedAt), eq(A.listingStatus, 'closed'))))
     .all()
+    .map((a) => ({ ...a, closedAt: listingClosedAt(a, { closedAt: a.postingClosedAt }) }))
+    .filter((a) => a.closedAt !== null)
   for (const a of closed) {
     // Nothing was done yet: close it. Work is waiting: keep it and tell you once per closing (the
     // application page shows the listing is gone); boards drop listings by mistake too.
@@ -160,6 +165,14 @@ const scheduleTick = Effect.gen(function* () {
   if (aiReady && s.discover.enabled && onceToday('lastDiscover', s.discover.hour)) {
     setMeta('lastDiscover', today())
     enqueueTask('discover', 'Discover new companies and job boards')
+  }
+  // Listing checks call the ATSs' public APIs, a few each half hour; not AI work, so no AI needed.
+  if (!refreshRunning() && due('lastListingCheck', 30 * 60_000)) {
+    setMeta('lastListingCheck', nowIso())
+    void scheduledListingCheck().then(
+      (r) => r.checked && log(`[listings] ${r.checked} checked: ${r.open} open, ${r.suspect} suspect, ${r.closed} closed, ${r.unknown} unknown, ${r.datesAdded} dates added`),
+      (e: unknown) => log(`[listings] failed: ${String(e).slice(0, 500)}`),
+    )
   }
   if (s.notify.digest && onceToday('lastDigest', s.notify.digestHour)) {
     setMeta('lastDigest', today())

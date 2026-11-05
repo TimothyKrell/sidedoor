@@ -1,4 +1,5 @@
 import { and, desc, eq, gte, inArray, isNotNull, isNull, like, lte, ne, or, sql } from 'drizzle-orm'
+import { listingClosedAt } from './services/listings'
 import { db, schema } from './db/client'
 import { today } from './ids'
 import { linkedinUrl } from '@sidedoor/shared/linkedin'
@@ -58,6 +59,7 @@ const appCols = {
   nextAction: A.nextAction,
   nextActionDate: A.nextActionDate,
   appliedAt: A.appliedAt,
+  postedAt: A.postedAt,
   lastActivityAt: A.lastActivityAt,
   jobUrl: A.jobUrl,
   applyUrl: A.applyUrl,
@@ -222,7 +224,9 @@ export const listApplications = () => {
     : []
   const listingFor = (a: (typeof open)[number]) => {
     const p = a.postingId ? postings.find((x) => x.id === a.postingId) : a.jobUrl ? postings.find((x) => [x.url, x.applyUrl, x.viaUrl].includes(a.jobUrl)) : undefined
-    return p ? { postedAt: p.postedAt, firstSeenAt: p.firstSeenAt, compText: p.compText, compMin: p.compMin, compMax: p.compMax } : null
+    // The application's own posted date (from a listing check) beats the scout's.
+    if (p) return { postedAt: a.postedAt ?? p.postedAt, firstSeenAt: p.firstSeenAt, compText: p.compText, compMin: p.compMin, compMax: p.compMax }
+    return a.postedAt ? { postedAt: a.postedAt, firstSeenAt: a.createdAt, compText: null, compMin: null, compMax: null } : null
   }
   const prep = prepInProgress()
   return { open: open.map((a) => ({ ...a, listing: listingFor(a), prep: prep.get(a.id) ?? null })), closed, peopleCount }
@@ -265,6 +269,8 @@ export const getApplicationDetail = (id: string) => {
     posting,
     /** Text in the posting aimed at AI tools (the warning badge). */
     postingWarnings: injectionFlags(posting?.jd),
+    /** When the listing closed, by the application's own check or the scout's; null while it's up. */
+    listingClosedAt: listingClosedAt(a, posting),
     company,
     otherApplications: others,
     resume: resume ? { id: resume.id, title: resume.title, pdfFile: resume.pdfFile, pdfPages: resume.pdfPages, updatedAt: resume.updatedAt } : null,

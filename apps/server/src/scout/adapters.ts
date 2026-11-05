@@ -187,8 +187,9 @@ const srLocation = (l: Obj) => {
 }
 
 const SR_PAGE = 100
+const LIST_PAGES = { smartrecruiters: 3, workday: 10 }
 const smartrecruiters = (board: string) =>
-  paged(3, (n) =>
+  paged(LIST_PAGES.smartrecruiters, (n) =>
     fetchJson(`https://api.smartrecruiters.com/v1/companies/${board}/postings?limit=${SR_PAGE}&offset=${n * SR_PAGE}`).pipe(
       Effect.map((d) => ({
         total: Predicate.isNumber(obj(d).totalFound) ? (obj(d).totalFound as number) : null,
@@ -250,7 +251,7 @@ const WORKDAY_PAGE = 20
 const workday = (board: string) => {
   const w = workdayParts(board)
   if (!w) return Effect.fail(new FetchError(board, null, 'Workday board should look like tenant.wd5/site'))
-  return paged(10, (n) =>
+  return paged(LIST_PAGES.workday, (n) =>
     postJson(`${w.api}/jobs`, { appliedFacets: {}, limit: WORKDAY_PAGE, offset: n * WORKDAY_PAGE, searchText: '' }).pipe(
       Effect.map((d) => ({
         total: Predicate.isNumber(obj(d).total) ? (obj(d).total as number) : null,
@@ -515,6 +516,12 @@ export const DETAILS: Partial<Record<AdapterKind, (board: string, job: RawJob) =
   workday: workdayDetail,
   rippling: ripplingDetail,
 }
+
+/**
+ * Boards read only up to a cap (newest first). A list that reached its cap is partial: a posting
+ * missing from it may just be further down, so it isn't closed for that.
+ */
+export const LIST_CAP: Partial<Record<string, number>> = { smartrecruiters: LIST_PAGES.smartrecruiters * SR_PAGE, workday: LIST_PAGES.workday * WORKDAY_PAGE }
 
 /**
  * The least time between polls, whatever the source's tier. Workday reads up to ten pages, the HN

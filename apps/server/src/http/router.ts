@@ -363,9 +363,10 @@ export const router = {
     return { ok: true }
   }),
   /** You checked: the listing is still up. Reopen it; the scout closes it again if it stays missing a day. */
-  listingStillOpen: proc(z.object({ postingId: z.string() }), async ({ postingId }) => {
+  listingStillOpen: proc(z.object({ postingId: z.string().optional(), applicationId: z.string().optional() }), async ({ postingId, applicationId }) => {
     const { db, schema } = await dbm()
-    db.update(schema.postings).set({ closedAt: null, lastSeenAt: new Date().toISOString() }).where(eq(schema.postings.id, postingId)).run()
+    if (postingId) db.update(schema.postings).set({ closedAt: null, lastSeenAt: new Date().toISOString() }).where(eq(schema.postings.id, postingId)).run()
+    if (applicationId) (await import('../services/listings')).markListingOpen(applicationId)
     return { ok: true }
   }),
   /** Your answer to a question; allApplications keeps it for every application (Standard answers or Experience). */
@@ -397,6 +398,11 @@ export const router = {
   tuneAll: proc(none, async () => (await import('../review')).tuneAll()),
   /** The application's own chat, with what your AI found waiting in it. */
   applicationChat: proc(id, async ({ id }) => (await import('../chat')).applicationThread(id)),
+  /** Ask the ATS now whether this application's listing is up, and when it was posted. */
+  checkListing: proc(id, async ({ id }) => {
+    const r = await (await import('../jobs/listing-check')).checkApplicationListing(id)
+    return { verdict: r.check.verdict, status: r.application.listingStatus, evidence: r.application.listingEvidence, postedAt: r.application.postedAt }
+  }),
   /** Settle one decision (fine as is, or with your answer) against the package as it is now. */
   setDecision: proc(z.object({ id: z.string(), text: z.string(), done: z.boolean(), answer: z.string().max(2000).nullable().optional() }), async ({ id, text, done, answer }) => {
     const a = await apps()

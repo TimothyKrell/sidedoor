@@ -116,6 +116,11 @@ const appBrief = (a: schema.Application) => ({
   url: a.jobUrl,
   rank: a.rank,
   shot: a.shot,
+  postedAt: a.postedAt,
+  /** Where postedAt came from ('greenhouse:first_published', 'json-ld:datePosted', 'scout:ashby') and whether it's the board's own date. */
+  postedAtSource: a.postedAtSource,
+  postedAtExact: a.postedAtExact,
+  listing: a.listingCheckedAt ? { status: a.listingStatus, checkedAt: a.listingCheckedAt, closedAt: a.listingClosedAt, evidence: a.listingEvidence } : null,
 })
 
 /** Every other application at the same company, so a second application to one employer is never an accident. */
@@ -242,11 +247,19 @@ export const appTools = [
 
   tool(
     'list_applications',
-    'List applications (roles the user is pursuing). Filter by stage or text.',
-    { stage: stageEnum.optional(), query: z.string().optional(), includeClosed: z.boolean().optional() },
+    'List applications (roles the user is pursuing). Filter by stage, text, or when the listing was posted (postedAt comes from check_listing; ones never checked have none).',
+    {
+      stage: stageEnum.optional(),
+      query: z.string().optional(),
+      includeClosed: z.boolean().optional(),
+      postedBefore: z.string().optional().describe('YYYY-MM-DD: only listings posted before this day'),
+      undated: z.boolean().optional().describe('only applications with no posted date yet'),
+    },
     safe((a) => {
       const c = []
       if (a.stage) c.push(eq(schema.applications.stage, a.stage))
+      if (a.postedBefore) c.push(sql`julianday(${schema.applications.postedAt}) < julianday(${a.postedBefore})`)
+      if (a.undated) c.push(isNull(schema.applications.postedAt))
       if (!a.includeClosed) c.push(inArray(schema.applications.status, ['potential', 'active', 'on-hold']))
       if (a.query) c.push(or(like(schema.applications.companyName, `%${a.query}%`), like(schema.applications.role, `%${a.query}%`))!)
       return db.select().from(schema.applications).where(and(...c)).orderBy(desc(schema.applications.lastActivityAt)).limit(80).all().map(appBrief)
@@ -647,6 +660,30 @@ export const appTools = [
       const a = getApplication(applicationId)!
       logActivity('application', `Checked resume match: ${a.companyName} – ${a.role}`, { detail: `${a.matchJson?.score ?? '?'}/100${reused ? ' (unchanged)' : ''}`, link: `/applications/${a.id}` })
       return { reused, ...matchForAgent(a) }
+    }),
+  ),
+
+  tool(
+    'check_listing',
+    "Check whether a listing is still up and when it was posted, from the ATS's own API (Greenhouse, Lever, Ashby, Workable, SmartRecruiters, Workday), else the job page's JSON-LD. Give applicationId to check one now; all: true checks every open application in the background (a few minutes, spaced to respect rate limits) and returns at once: read the results with list_applications or get_application (postedAt, postedAtSource, listing). Writes only the posted date and listing status. A listing closes on a clear signal (the ATS has no such job, or says it no longer takes applications) or on two ambiguous misses in a row (a page 404, gone from a board list), never on one.",
+    {
+      applicationId: z.string().optional(),
+      all: z.boolean().optional().describe('every open application, whatever its stage'),
+      force: z.boolean().optional().describe('with all: also the ones checked in the last 24 hours'),
+    },
+    safe(async (a) => {
+      const lc = await import('../jobs/listing-check')
+      if (a.applicationId) {
+        const r = await lc.checkApplicationListing(a.applicationId)
+        return { ...appBrief(r.application), checkedUrl: r.url, verdict: r.check.verdict }
+      }
+      if (!a.all) throw new Error('Give applicationId, or all: true')
+      if (lc.refreshRunning()) return 'A listing check is already running. Try again in a few minutes.'
+      const due = lc.dueForCheck(a.force ? {} : { staleHours: lc.RECHECK_HOURS })
+      void lc.refreshListings(a.force ? {} : { staleHours: lc.RECHECK_HOURS }).then((r) =>
+        logActivity('application', `Checked ${r.checked} listing${r.checked === 1 ? '' : 's'}`, { detail: `${r.open} open, ${r.suspect} missed once, ${r.closed} closed, ${r.unknown} couldn't tell; ${r.datesAdded} posted dates found`, link: '/applications' }),
+      )
+      return `Checking ${due.length} listing${due.length === 1 ? '' : 's'} in the background, about ${Math.max(1, Math.ceil((due.length * lc.HOST_GAP_MS) / 60_000))} minute(s). Results land on each application (list_applications: postedAt, listing).`
     }),
   ),
 

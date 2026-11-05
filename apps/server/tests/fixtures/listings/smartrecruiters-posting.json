@@ -1,0 +1,24 @@
+{
+ "id": "3743990016023136",
+ "name": "Platform Engineering Manager",
+ "uuid": "bd21a773-13ae-4465-b17e-98fe2dcb18a6",
+ "refNumber": "REF219M",
+ "company": {
+  "name": "WCG International Consultants Ltd.",
+  "identifier": "WCGInternationalConsultantsLtd"
+ },
+ "location": {
+  "city": "Toronto",
+  "region": "ON",
+  "country": "ca",
+  "remote": true,
+  "hybrid": false,
+  "latitude": "43.6548253",
+  "longitude": "-79.388447",
+  "fullLocation": "Toronto, ON, Canada"
+ },
+ "releasedDate": "2026-10-09T16:14:06.608Z",
+ "active": true,
+ "postingUrl": "https://jobs.smartrecruiters.com/WCGInternationalConsultantsLtd/3743990016023136-platform-engineering-manager",
+ "applyUrl": "https://jobs.smartrecruiters.com/WCGInternationalConsultantsLtd/3743990016023136-platform-engineering-manager?oga=true"
+}

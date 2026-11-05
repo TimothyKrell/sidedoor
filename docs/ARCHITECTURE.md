@@ -31,7 +31,8 @@ shape at the smallest size that does the job, and skip what a single-user app do
 │   /api/events  SSE: table-change invalidations, chat streams, notices   │
 │   /mcp         MCP (streamable HTTP, bearer token) – agents             │
 │   /files/*     generated PDFs                                           │
-│ in-process jobs: scout, triage, task queue, scheduler, digest           │
+│ in-process jobs: scout, triage, task queue, scheduler, digest,          │
+│   listing checks (ATS APIs: still up? posted when?)                     │
 │ SQLite (node:sqlite, WAL) in ~/.sidedoor/userdata/sidedoor.sqlite       │
 └─────────────────────────────────────────────────────────────────────────┘
 ```

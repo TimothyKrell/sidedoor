@@ -60,7 +60,7 @@ export const reviewQueue = () => {
       facts,
       bucket: reviewBucket(facts),
       writing: writing.map((w) => ({ key: w.key, title: w.title, blank: w.blank, done: w.done })),
-      listingClosed: !!(a.postingId && closedAt.get(a.postingId)),
+      listingClosed: !!(a.listingClosedAt || (a.postingId && closedAt.get(a.postingId))),
       submission: s && { status: s.status, dryRun: s.dryRun, summary: s.summary },
     }
   })

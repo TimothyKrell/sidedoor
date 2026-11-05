@@ -197,16 +197,17 @@ export function ReviewBanner() {
 export function ListingGone({ d }: { d: Detail }) {
   const qc = useQueryClient()
   const stage = useAction((v: { id: string; stage: Stage; closedReason?: string }) => setStageFn({ data: v }))
-  const posting = d.posting
-  if (!posting?.closedAt) return null
+  const closedAt = d.listingClosedAt
+  if (!closedAt) return null
   const reopen = async () => {
-    await rpc.listingStillOpen({ postingId: posting.id })
+    await rpc.listingStillOpen({ ...(d.posting ? { postingId: d.posting.id } : {}), applicationId: d.application.id })
     await qc.invalidateQueries({ queryKey: ['application', d.application.id] })
   }
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg bg-destructive/10 px-3 py-2 text-sm">
       <span className="min-w-0 flex-1 basis-64">
-        <span className="font-medium">The listing was taken down {fmtDate(posting.closedAt)}.</span> Check the company’s site before you submit.
+        <span className="font-medium">The listing was taken down {fmtDate(closedAt)}.</span> Check the company’s site before you submit.
+        {d.application.listingEvidence && <span className="block text-xs text-muted-foreground">{d.application.listingEvidence}</span>}
       </span>
       <Button size="sm" variant="outline" className="h-7 bg-background" onClick={() => void reopen()}>
         It’s still open
