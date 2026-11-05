@@ -117,8 +117,18 @@ current when making a non-obvious call. Open questions for the maintainer live i
   Experience document returned whole lost its newest sections (the end, where confirmed facts are
   appended). `get_profile_doc` returns 20,000-character pages ending at line breaks, with
   `nextOffset` and a heading outline to jump by; `get_application` pages the package the same way.
-  Prompts that need Experience say to read every page. Inlining the document into prep's prompt
-  would have worked for prep only, and cost every prep the whole document.
+  Agent reads that still cut (notes, research briefs, task logs, board descriptions, prompt
+  excerpts) say so, with the offset and the call that reads on; nothing is cut silently.
+- **Prep, match and form filling get Experience in their prompt, not by paging.** Telling prep to
+  read every page wasn't enough: four reruns barely moved, and their logs suggested the agents never
+  reached the newest section, where the confirmed answers were. Now `experience.ts` puts the
+  document in the prompt: all of it up to 64,000 characters (16K tokens, a fair price for the
+  facts the package is built from); past that, the opening, the newest sections, and the sections
+  that share the most (rarer) terms with the posting, confirmed ones counting extra, with every
+  section left out listed by heading and offset. The prompt says later sections win over older
+  lines that disagree, and the task log records the document's version and which sections went
+  in. Filling a form gets 24,000 characters chosen against the posting and package. A digest kept
+  up to date by an AI was the other option; it would be one more thing to drift from the source.
 - **Agents use MCP, not the database file.** A Bot that can run commands here could write to
   `sidedoor.sqlite` directly, and once did, to an old copy it found. MCP reaches only the running
   app, goes through the same commands as the UI, and keeps the never-send rule in one place.

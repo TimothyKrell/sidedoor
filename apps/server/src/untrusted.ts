@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { decodeEntities, htmlToText, truncate } from './text'
+import { clip, decodeEntities, htmlToText, truncate } from './text'
 
 /**
  * Text from job postings and web pages is data written by strangers, and some of it is aimed at
@@ -181,13 +181,14 @@ export const noPostingText = (note: string) => `${NO_TEXT_PREFIX}: ${note})`
 /**
  * Scraped text, ready for a prompt: sanitized (see guardText), cut to `max`, between markers with
  * an id derived from the content (so the text can't close the fence early), and a note that it is
- * data. Returns the flags too, for logging.
+ * data. Returns the flags too, for logging. `more` says how to read on from a cut, as `clip` does.
  */
-export const fenceUntrusted = (input: string | null | undefined, opts: { what?: string; max?: number; header?: string } = {}) => {
+export const fenceUntrusted = (input: string | null | undefined, opts: { what?: string; max?: number; header?: string; more?: string } = {}) => {
   const what = opts.what ?? 'job posting'
   const g = guardText(input)
   // Nothing inside may look like our own markers.
-  const body = truncate(g.text, opts.max ?? 40_000).replaceAll(FENCE_OPEN, '<untrusted_data').replaceAll(FENCE_CLOSE, '</untrusted_data')
+  const max = opts.max ?? 40_000
+  const body = (opts.more ? clip(g.text, max, opts.more) : truncate(g.text, max)).replaceAll(FENCE_OPEN, '<untrusted_data').replaceAll(FENCE_CLOSE, '</untrusted_data')
   const id = createHash('sha256').update(body).digest('hex').slice(0, 10)
   const n = g.flags.filter((f) => f.kind !== 'invisible').length
   const note = [

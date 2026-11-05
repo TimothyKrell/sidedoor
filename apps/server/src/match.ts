@@ -3,12 +3,12 @@ import { desc, eq, or } from 'drizzle-orm'
 import { z } from 'zod'
 import { MATCH_AREAS, MATCH_NOISE_MARGIN, MATCH_RUBRIC_VERSION, type MatchRequirement, type ResumeMatch, scoreMatch } from '@sidedoor/shared/match'
 import { mcpFor, runJob } from './ai'
-import { context, render } from './prompts'
+import { render } from './prompts'
 import { db, schema } from './db/client'
 import { nowIso } from './ids'
 import { linesOf, resumeForApplication } from './services/resumes'
 import { getApplication, setResumeMatch } from './services/applications'
-import { truncate } from './text'
+import { experienceContext, experienceLogLine } from './experience'
 import { fenceUntrusted, noPostingText } from './untrusted'
 import { logInjection } from './activity'
 
@@ -141,23 +141,25 @@ export const runMatch = async (applicationId: string) => {
   const base = frozenBy(prev, inputs.jdHash)
   const changedLines = base ? lines.filter((l) => base.lineHashes![l.id] !== inputs.lineHashes[l.id]).map((l) => l.id) : []
   const fenced = (text: string) => {
-    const f = fenceUntrusted(text, { max: 16_000 })
+    const f = fenceUntrusted(text, { max: 16_000, more: `read ${url ?? 'the listing'} with mcp__sidedoor__read_page` })
     logInjection(f.flags, { subject: `${a.companyName} – ${a.role}`, link: `/applications/${a.id}`, where: 'the resume match check' })
     return f.text
   }
+  // Past a budget, the newest sections and those matching this posting (match runs have no tool to page it).
+  const experience = experienceContext(`${a.role}\n${jd ?? ''}`)
   const prompt = render('match', {
     ROLE: a.role,
     COMPANY: a.companyName,
     JD: jd ? fenced(jd) : noPostingText(`read ${url} with mcp__sidedoor__read_page, which renders JavaScript pages, and use the posting there`),
     RESUME: lines.map((l) => `[${l.id}] ${l.text}`).join('\n'),
-    INVENTORY: truncate(context.inventory(), 30_000),
+    INVENTORY: experience.text,
     PREVIOUS: previous.length ? JSON.stringify(previous.map((r) => ({ id: r.id, kind: r.kind, area: r.area ?? null, short: r.short, quote: r.quote }))) : '(none: first check)',
     CHANGED: !base ? '(not tracked: judge every requirement)' : changedLines.length ? changedLines.join(', ') : '(none)',
   })
-  const r = await runJob({ job: 'match', prompt, schema: MatchOut, timeoutMs: 10 * 60_000, ...(jd ? { maxTurns: 3 } : { mcp: mcpFor('lookup'), maxTurns: 10 }) })
+  const r = await runJob({ job: 'match', prompt, schema: MatchOut, timeoutMs: 10 * 60_000, ...(jd && jd.length <= 16_000 && experience.full ? { maxTurns: 3 } : { mcp: mcpFor('lookup'), maxTurns: 10 }) })
   const match = buildMatch(r.data, lines, prev, { at: nowIso(), model: `${r.provider}${r.model ? `/${r.model}` : ''}`, doc, resumeVersion: version, jdKey })
   setResumeMatch(a.id, match)
-  return { match, reused: false, costUsd: r.costUsd, sessionId: r.sessionId, log: r.log }
+  return { match, reused: false, costUsd: r.costUsd, sessionId: r.sessionId, log: [...r.log, experienceLogLine(experience)] }
 }
 
 /** "match 64 -> 81" in a pass's summary, with the score after the arrow. */

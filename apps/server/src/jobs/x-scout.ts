@@ -5,7 +5,7 @@ import type { schema } from '../db/client'
 import { notifyPromise } from '../notify'
 import { context, render } from '../prompts'
 import { getApplication } from '../services/applications'
-import { truncate } from '../text'
+import { clip, truncate } from '../text'
 import type { TaskOutcome } from './tasks'
 
 /**
@@ -21,7 +21,7 @@ export const xScoutWork = (task: schema.Task) => {
     APP_ID: a?.id ?? '',
     COMPANY: a?.companyName ?? '',
     ROLE: a?.role ?? '',
-    CRITERIA: truncate(context.criteria(), 4000),
+    CRITERIA: clip(context.criteria(), 4000, "get_profile_doc 'search' with offset"),
     INSTRUCTIONS: typeof task.input.instructions === 'string' ? task.input.instructions : '(none)',
   })
   const finish = async (text: string) => {
