@@ -19,7 +19,7 @@ are due?" from your terminal.
 | **Scout** | Polls company job boards (Greenhouse, Lever, Ashby, Workable, SmartRecruiters, Workday, Recruitee, Gem, Rippling) and job feeds (RSS and JSON, the HN hiring thread) every few minutes. Dream companies are polled more often. |
 | **Triage** | Your AI scores every new posting 0-100 against what you want, with reasons, gaps, and whether you can work from where you live. Strong fits notify you right away. |
 | **Prepare** | For a role you want: a tailored copy of your resume, every form answer, and a cover letter when the form asks for one. Facts come only from your own Experience document. You approve or request changes. |
-| **Review** | One screen for everything on its way out, one application at a time: the resume your AI tuned, its questions, the essays to write or check off, then Approve & submit. Next takes you to the next one. |
+| **Review** | One screen for everything on its way out, one application at a time: the resume your AI tuned, its questions, the essays to write or check off (ramble into the box and have your AI clean it up, or have it draft one from your facts), then Approve & submit. Next takes you to the next one. |
 | **Tuning** | Your AI edits the tailored resume and re-checks the match until it stops rising, using only true facts, then asks what only you can answer. Each application has its own chat to answer in. |
 | **Fill it for me** | Opens the application form in its own window and fills every field from the approved package, uploading your resume. It stops before submit; you review and click it. |
 | **People** | Finds the hiring manager, recruiters and team, their email addresses (with honest confidence labels), LinkedIn and X. Drafts outreach in your voice. You send it. |

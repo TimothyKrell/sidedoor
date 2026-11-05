@@ -406,6 +406,10 @@ export const router = {
     ;(await apps()).setWriting(id, key, { done, ...(text !== undefined ? { text } : {}) })
     return { ok: true }
   }),
+  /** Your AI's help with a written answer. Returns text for the box; nothing is saved until you save it. */
+  assistWriting: proc(z.object({ id: z.string(), key: z.string(), mode: z.enum(['draft', 'cleanup']), text: z.string().max(20_000) }), async ({ id, key, mode, text }) =>
+    (await import('../writing/assist')).assistWriting(id, key, mode, text),
+  ),
   settleDecisions: proc(id, async ({ id }) => ({ settled: (await apps()).settleDecisions(id) })),
   /** Your press of Approve & submit. No MCP tool reaches this: agents can't send an application for you. */
   approveAndSubmit: proc(id, async ({ id }) => {

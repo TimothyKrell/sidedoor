@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { ArrowRight, Check, CheckCircle2, Circle, ListChecks, Loader2, MessageSquare, WandSparkles } from 'lucide-react'
+import { ArrowRight, Check, CheckCircle2, Circle, ListChecks, Loader2, MessageSquare, Sparkles, Undo2, WandSparkles } from 'lucide-react'
 import { type ReactNode, useState } from 'react'
 import { toast } from 'sonner'
 import { decisionsOf } from '@sidedoor/shared/decisions'
@@ -108,7 +108,21 @@ function WritingRow({ id, item }: { id: string; item: WritingItem }) {
   const [text, setText] = useState(item.blank ? '' : item.text)
   const [open, setOpen] = useState(!item.done)
   const save = useAction((v: { done: boolean; text?: string }) => rpc.setWriting({ id, key: item.key, ...v }))
+  const assist = useAction((mode: 'draft' | 'cleanup') => rpc.assistWriting({ id, key: item.key, mode, text }))
+  const [undo, setUndo] = useState<string | null>(null)
+  const [mode, setMode] = useState<'draft' | 'cleanup' | null>(null)
+  const [note, setNote] = useState<string | null>(null)
   const changed = text.trim() !== item.text.trim()
+  /** Fills the box and saves nothing. What was there stays one click away. */
+  const help = async (m: 'draft' | 'cleanup') => {
+    setMode(m)
+    const r = await assist.run(m)
+    setMode(null)
+    if (!r) return
+    setUndo(text)
+    setText(r.text)
+    setNote(r.note)
+  }
   return (
     <li className="py-3 first:pt-0 last:pb-0">
       <div className="flex items-start gap-2.5">
@@ -122,7 +136,21 @@ function WritingRow({ id, item }: { id: string; item: WritingItem }) {
       </div>
       {open && (
         <div className="mt-2 space-y-2 pl-6.5">
-          <Textarea value={text} onChange={(e) => setText(e.target.value)} rows={Math.min(14, Math.max(4, Math.ceil(text.length / 90)))} placeholder="Write this one yourself." />
+          <Textarea value={text} disabled={assist.pending} onChange={(e) => setText(e.target.value)} rows={Math.min(14, Math.max(4, Math.ceil(text.length / 90)))} placeholder="Ramble here in your own words, then clean it up. Or have your AI draft it." />
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="outline" className="h-7 text-xs" disabled={assist.pending} onClick={() => void help('draft')} title="Writes it from your Experience and stories, building on anything in the box">
+              {mode === 'draft' ? <Loader2 className="animate-spin" /> : <WandSparkles />} {text.trim() ? 'Redraft it' : 'Draft it for me'}
+            </Button>
+            <Button size="sm" variant="outline" className="h-7 text-xs" disabled={assist.pending || !text.trim()} onClick={() => void help('cleanup')} title="Organizes what you wrote and tidies it up, without adding anything you didn't say">
+              {mode === 'cleanup' ? <Loader2 className="animate-spin" /> : <Sparkles />} Clean up my answer
+            </Button>
+            {undo !== null && !assist.pending && (
+              <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => { setText(undo); setUndo(null); setNote(null) }}>
+                <Undo2 /> Undo
+              </Button>
+            )}
+          </div>
+          {note && <p className="text-xs text-hot">{note}</p>}
           <div className="flex flex-wrap items-center gap-2">
             <Button size="sm" className="h-7 text-xs" disabled={save.pending || !text.trim()} onClick={async () => { await save.run({ done: true, ...(changed ? { text } : {}) }); setOpen(false) }}>
               <Check /> {changed ? 'Save and check off' : 'Reads right, check off'}

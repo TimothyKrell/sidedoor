@@ -500,3 +500,9 @@ current when making a non-obvious call. Open questions for the maintainer live i
 - **The company limit applies to your own press too.** Batches already stop at a company's limit
   (Settings → AI → Grok Bot). A limit is usually the company's rule, so it matters however the
   application goes in, and Approve & submit refuses with the count rather than spend a slot.
+- **Help with an answer fills the box and saves nothing.** Draft and Clean up return text to the
+  Review page, and what was there is one Undo away, because these are the words the user chose to
+  own. A check-off still takes their press. Cleanup's promise is that it adds nothing, so a number
+  they didn't say makes it fail and leaves their text alone. A draft works from Experience and
+  stories, so a number not found there is flagged rather than refused, along with what the facts
+  didn't cover. Both are one text call with no tools: they can't touch anything.

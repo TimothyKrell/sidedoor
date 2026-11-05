@@ -8,7 +8,7 @@ import { db, schema } from '../db/client'
 import { nowIso } from '../ids'
 import { getApplication, updateApplication } from '../services/applications'
 import { updateDraft } from '../services/people'
-import { checkTells, writingRules } from './tells'
+import { checkTells, numbersIn, writingRules } from './tells'
 
 // The editor pass: a second, separate AI call that applies the user's writing style to a draft
 // with the "only very slightly edit" instruction. Pure text model (no tools), so it can only work
@@ -39,7 +39,7 @@ const EditorOut = z.object({
   ),
 })
 
-const numbers = (s: string) => new Set(s.match(/\d+(?:[.,]\d+)*/g) ?? [])
+const numbers = (s: string) => new Set(numbersIn(s))
 
 /** Code-level guard for "must not add facts": no new numbers, no big growth, nothing empty. */
 const rejectReason = (original: string, edited: string) => {

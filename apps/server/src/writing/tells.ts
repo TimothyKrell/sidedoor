@@ -22,3 +22,6 @@ export const loadTellRules = (): TellRule[] => {
 export const checkTells = (text: string): TellReport => checkTellsWith(loadTellRules(), text)
 
 export const writingRules = () => docBody('writing')
+
+/** The figures in a text, to catch any that weren't in what it was written from. */
+export const numbersIn = (s: string) => s.match(/\d+(?:[.,]\d+)*/g) ?? []
