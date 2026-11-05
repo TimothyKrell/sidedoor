@@ -113,6 +113,29 @@ current when making a non-obvious call. Open questions for the maintainer live i
   answered it through `answer_questions` (those go to Standard answers automatically). An explicit
   Standard answer wins over the package's own "(confirm)" on the same field. One answer isn't read
   into another: "Race/ethnicity: White" doesn't answer "Are you Hispanic/Latino?".
+- **A batch sends one form at a time, and decides each at its turn.** It queues the next fill only
+  when the last one is done, instead of queueing all of them: the form lock already serializes
+  fills, but queueing ahead would make pause and cancel race the queue, and a company's limit has
+  to be checked against what actually went in by then. A form already filling isn't interrupted
+  (it might be mid-submit); pause and cancel hold back only the one waiting. Batches live in the
+  meta store, not a table: no migration, and they update live like settings; the fill tasks keep
+  the real outcomes, so the report reads them rather than copying them.
+- **Company limits count what went in, plus what this batch sent.** `appliedAt` within the window
+  is the history; a batch item whose form came back with questions still counts, since it may go
+  in once they're answered. One role per company per batch by default, because a second
+  application the same day reads as spray. Both apply to dry runs too, so the dry run's report is
+  what the real run would do.
+- **A batch wants the tailored resume.** An application with no tailored resume stops with a
+  rule block instead of quietly sending the base one (`allowBaseResume` to opt in). The PDF is
+  rebuilt when its file is gone or older than the resume's last change: it used to be built once
+  and then reused, so edits after the first build never reached the form.
+- **A job page is read for its apply link before filling.** Applications made from a listing
+  often have only the company's careers page. The batch fetches it (public hosts only) and takes
+  an ATS apply link, a Greenhouse embed (`gh_jid`), an Apply link, or an ATS link in the page's
+  data, and saves it as the apply URL; a mailto becomes an email application, marked, not
+  filled. When nothing is found the page itself is filled, as before.
+- **A batch's dry-run windows close after the report.** Forty-nine windows left open for review
+  would be the cost of a check; nothing in a dry run needs the user's eyes there.
 - **Long documents are read in pages, not cut.** AI clients cap tool results, so a 51K-character
   Experience document returned whole lost its newest sections (the end, where confirmed facts are
   appended). `get_profile_doc` returns 20,000-character pages ending at line breaks, with

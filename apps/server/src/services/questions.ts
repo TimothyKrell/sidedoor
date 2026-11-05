@@ -305,7 +305,7 @@ const continueSubmit = (applicationId: string) => {
   if (!waiting) return false
   if (db.select().from(Q).where(and(eq(Q.applicationId, applicationId), eq(Q.askedBy, 'fill'), eq(Q.status, 'open'))).get()) return false
   try {
-    requestSubmit(applicationId, { dryRun: last.input.dryRun === true, by, skipRuleCheck: true })
+    requestSubmit(applicationId, { dryRun: last.input.dryRun === true, by, skipRuleCheck: true, closeWhenDone: last.input.closeWhenDone === true })
     return true
   } catch (e) {
     console.error('[questions] could not continue the submit', e)
@@ -515,5 +515,5 @@ export const answerFormQuestions = atomic((id: string, answers: FormAnswer[]) =>
   const T = schema.tasks
   const last = db.select().from(T).where(and(eq(T.kind, 'submit-assist'), eq(T.applicationId, id))).orderBy(desc(T.createdAt)).get()
   // The fill checks the rules again before it clicks submit; failing here would lose the answers.
-  return requestSubmit(id, { dryRun: last?.input.dryRun === true, by: last?.input.by === 'you' ? 'you' : 'grokbot', skipRuleCheck: true })
+  return requestSubmit(id, { dryRun: last?.input.dryRun === true, by: last?.input.by === 'you' ? 'you' : 'grokbot', skipRuleCheck: true, closeWhenDone: last?.input.closeWhenDone === true })
 })

@@ -1,4 +1,4 @@
-import { copyFileSync, mkdirSync, rmSync } from 'node:fs'
+import { copyFileSync, mkdirSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { basename, resolve } from 'node:path'
 import { and, desc, eq } from 'drizzle-orm'
 import { z } from 'zod'
@@ -18,7 +18,7 @@ import { getApplication, setStage, updateApplication } from '../services/applica
 import { docBody } from '../services/documents'
 import { askQuestions } from '../services/questions'
 import { checkApplicationRules } from '../services/rules'
-import { buildResumePdf, resumeForApplication } from '../services/resumes'
+import { buildResumePdf, getResume, resumeForApplication } from '../services/resumes'
 import { getSettings } from '../settings'
 import { clip, truncate } from '../text'
 import { experienceContext, experienceLogLine } from '../experience'
@@ -108,6 +108,31 @@ const evidenceFrom = (snap: string | null, reported: string): Evidence => ({
   at: nowIso(),
 })
 
+const isPdf = (path: string) => {
+  try {
+    return statSync(path).size >= 4 && readFileSync(path).subarray(0, 4).toString() === '%PDF'
+  } catch {
+    return false
+  }
+}
+
+/**
+ * The PDF of the resume this application sends: its tailored resume when it has one, else the
+ * base. Built now when there is none yet, its file is gone, or the resume changed since. Fails
+ * with what to do when the tailored resume was deleted or no PDF can be made, rather than
+ * opening a form with nothing to upload.
+ */
+export const resumePdfFor = async (a: Pick<schema.Application, 'resumeId' | 'companyName'>) => {
+  if (a.resumeId && !getResume(a.resumeId)) throw new Error(`The tailored resume for ${a.companyName} is gone. Tailor one again (prep) before filling the form.`)
+  const resume = resumeForApplication(a)
+  if (!resume) throw new Error('No resume to upload. Create one on the Resume page first.')
+  const saved = resume.pdfFile ? resolve(paths.files, resume.pdfFile) : null
+  const fresh = !!saved && isPdf(saved) && !!resume.pdfAt && resume.pdfAt >= resume.updatedAt
+  const path = fresh ? saved : (await buildResumePdf(resume.id)).path
+  if (!isPdf(path)) throw new Error(`Couldn't make the PDF of "${resume.title}" (${path} is missing or not a PDF). Open the resume and build its PDF, then try again.`)
+  return { path, resume }
+}
+
 /** You pressed Approve & submit for this one, or Grok Bot asked and you still let it submit. */
 export const submitAllowed = (task: Pick<schema.Task, 'input'>) => task.input.submit === true && (task.input.by === 'you' || (getSettings().grokBot.submit && !!grokBotToken()))
 
@@ -143,14 +168,13 @@ export const runFillForm = (task: schema.Task): Promise<TaskOutcome> =>
     if (!url) throw new Error('This application has no apply URL. Add one on the Details tab.')
     if (url.startsWith('mailto:')) throw new Error(`This job takes applications by email (${url.slice(7).split('?')[0]}), not a form. Draft the email instead.`)
     if (!a.packageMd) throw new Error('No application package yet. Run "Prepare application" first.')
-    const resume = resumeForApplication(a)
-    if (!resume) throw new Error('No resume to upload. Create one on the Resume page first.')
-    const built = resume.pdfFile ? { path: resolve(paths.files, resume.pdfFile) } : await buildResumePdf(resume.id)
+    const built = await resumePdfFor(a)
     // The agent may upload only what's in this folder: the resume, under a clean name.
     const workDir = resolve(paths.jobs, `fill-${task.id}`)
     mkdirSync(workDir, { recursive: true, mode: 0o700 })
     const pdf = { path: resolve(workDir, basename(built.path)) }
     copyFileSync(built.path, pdf.path)
+    if (!isPdf(pdf.path)) throw new Error(`The resume PDF didn't reach the form's upload folder (${pdf.path}). Nothing was filled.`)
 
     // Facts for questions the package doesn't cover: the Experience sections closest to this job and package.
     const posting = a.postingId ? db.select({ jd: schema.postings.jd }).from(schema.postings).where(eq(schema.postings.id, a.postingId)).get() : undefined
@@ -219,7 +243,8 @@ export const runFillForm = (task: schema.Task): Promise<TaskOutcome> =>
       report = r.data
       // Submitted, or to be filled again once they answer: no window left behind for either.
       const s = sent as SubmitReport | null
-      if (s?.outcome === 'submitted' || (strict && !s && report.outcome === 'needs_you')) {
+      // A batch's dry run is a report, with nothing to review: its window closes too.
+      if (s?.outcome === 'submitted' || (strict && !s && report.outcome === 'needs_you') || (dryRun && task.input.closeWhenDone === true)) {
         await tab.close().catch((e: unknown) => console.error('[fill] close failed', e))
         closed = true
       }
@@ -277,8 +302,11 @@ export interface Submission {
   applicationId: string
   application: string
   taskId: string
-  /** queued/filling: Sidedoor is on it. questions: answer them (answer_questions). The rest are final. */
-  status: 'queued' | 'filling' | 'submitted' | 'ready' | 'questions' | 'blocked' | 'not_submitted' | 'failed' | 'cancelled'
+  /**
+   * queued/filling: Sidedoor is on it. questions: answer them (answer_questions). filled: a fill
+   * for the user, open in the window for them to check and submit. The rest are final.
+   */
+  status: 'queued' | 'filling' | 'submitted' | 'ready' | 'filled' | 'questions' | 'blocked' | 'not_submitted' | 'failed' | 'cancelled'
   /** Filled and reported, never submitted. ready means a real run would have submitted it. */
   dryRun: boolean
   summary: string
@@ -287,6 +315,39 @@ export interface Submission {
   evidence?: Evidence | null
   /** Every field the fill put in: its label, value, where the value came from, and whether the user confirmed it. */
   audit: AuditEntry[]
+}
+
+const RULES_HELD = (r: RuleCheck) => `Filled, not submitted: it breaks the user's rules (${blockingFindings(r).map((f) => f.reason).join('; ')}). Ask the user; only if they want it anyway, call override_rules, then submit_application again.`
+
+/** Where one fill task stands, for submission_status and a batch's report. */
+export const submissionOf = (t: schema.Task): Submission => {
+  const a = t.applicationId ? getApplication(t.applicationId) : undefined
+  const base = { applicationId: t.applicationId ?? '', application: a ? `${a.companyName} – ${a.role}` : t.title, taskId: t.id, dryRun: t.input.submit === true && t.input.dryRun === true, questions: [], audit: [] as AuditEntry[] }
+  if (t.status === 'queued' || t.status === 'running') return { ...base, status: t.status === 'queued' ? 'queued' : 'filling', summary: t.status === 'queued' ? 'Waiting for its turn (one form at a time).' : 'Filling the form now.' }
+  if (t.status === 'failed' || t.status === 'cancelled') return { ...base, status: t.status, summary: t.error ?? 'Cancelled.' }
+  let o: FillOutput | null = null
+  try {
+    o = JSON.parse(t.output ?? '') as FillOutput
+  } catch {
+    o = null
+  }
+  if (!o) return { ...base, status: 'failed', summary: t.output ?? 'No report.' }
+  if (o.audit) base.audit = o.audit
+  const asked = o.needsYou.map((n) => ({ question: n.field, why: n.why, options: n.options ?? [] }))
+  if (t.input.submit !== true) {
+    if (o.outcome === 'blocked') return { ...base, status: 'blocked', summary: o.summary }
+    return { ...base, status: 'filled', summary: `${o.summary} Open in the Sidedoor browser window for the user to check and submit.`, questions: asked }
+  }
+  if (o.rules) return { ...base, status: 'not_submitted', summary: RULES_HELD(o.rules) }
+  if (o.submit?.outcome === 'submitted') return { ...base, status: 'submitted', summary: o.submit.summary, evidence: o.evidence ?? null }
+  if (o.submit) return { ...base, status: o.submit.outcome === 'blocked' ? 'blocked' : o.submit.problems.length ? 'questions' : 'not_submitted', summary: o.submit.summary, questions: o.submit.problems.map((p) => ({ question: p.field, why: p.why, options: [] })) }
+  if (o.outcome === 'needs_you') return { ...base, status: 'questions', summary: o.summary, questions: asked }
+  if (o.outcome === 'blocked') return { ...base, status: 'blocked', summary: o.summary }
+  // A dry run from before Sidedoor audited fills may have used unconfirmed answers: not ready.
+  if (o.dryRun && !o.audit) return { ...base, status: 'not_submitted', summary: `${o.summary} Dry run from before Sidedoor checked answers against the package; do another dry run.` }
+  if (o.dryRun) return { ...base, status: 'ready', summary: `${o.summary} Dry run: nothing left to ask; not submitted.` }
+  // Filled but not submitted: Grok Bot's permission was turned off before it ran.
+  return { ...base, status: 'not_submitted', summary: `${o.summary} Not submitted: letting Grok Bot submit is turned off. The form is open for review.` }
 }
 
 /** Where each application Grok Bot sent to be submitted stands: its latest submit task. */
@@ -305,31 +366,7 @@ export const submissions = (applicationId?: string): Submission[] => {
   for (const t of rows) {
     if (seen.has(t.applicationId!)) continue
     seen.add(t.applicationId!)
-    const a = getApplication(t.applicationId!)
-    const base = { applicationId: t.applicationId!, application: a ? `${a.companyName} – ${a.role}` : t.title, taskId: t.id, dryRun: t.input.dryRun === true, questions: [], audit: [] as AuditEntry[] }
-    if (t.status === 'queued' || t.status === 'running') out.push({ ...base, status: t.status === 'queued' ? 'queued' : 'filling', summary: t.status === 'queued' ? 'Waiting for its turn (one form at a time).' : 'Filling the form now.' })
-    else if (t.status === 'failed' || t.status === 'cancelled') out.push({ ...base, status: t.status, summary: t.error ?? 'Cancelled.' })
-    else {
-      let o: FillOutput | null = null
-      try {
-        o = JSON.parse(t.output ?? '') as FillOutput
-      } catch {
-        o = null
-      }
-      if (o?.audit) base.audit = o.audit
-      if (!o) out.push({ ...base, status: 'failed', summary: t.output ?? 'No report.' })
-      else if (o.rules)
-        out.push({ ...base, status: 'not_submitted', summary: `Filled, not submitted: it breaks the user's rules (${blockingFindings(o.rules).map((f) => f.reason).join('; ')}). Ask the user; only if they want it anyway, call override_rules, then submit_application again.` })
-      else if (o.submit?.outcome === 'submitted') out.push({ ...base, status: 'submitted', summary: o.submit.summary, evidence: o.evidence ?? null })
-      else if (o.submit) out.push({ ...base, status: o.submit.outcome === 'blocked' ? 'blocked' : o.submit.problems.length ? 'questions' : 'not_submitted', summary: o.submit.summary, questions: o.submit.problems.map((p) => ({ question: p.field, why: p.why, options: [] })) })
-      else if (o.outcome === 'needs_you') out.push({ ...base, status: 'questions', summary: o.summary, questions: o.needsYou.map((n) => ({ question: n.field, why: n.why, options: n.options ?? [] })) })
-      else if (o.outcome === 'blocked') out.push({ ...base, status: 'blocked', summary: o.summary })
-      // A dry run from before Sidedoor audited fills may have used unconfirmed answers: not ready.
-      else if (o.dryRun && !o.audit) out.push({ ...base, status: 'not_submitted', summary: `${o.summary} Dry run from before Sidedoor checked answers against the package; do another dry run.` })
-      else if (o.dryRun) out.push({ ...base, status: 'ready', summary: `${o.summary} Dry run: nothing left to ask; not submitted.` })
-      // Filled but not submitted: Grok Bot's permission was turned off before it ran.
-      else out.push({ ...base, status: 'not_submitted', summary: `${o.summary} Not submitted: letting Grok Bot submit is turned off. The form is open for review.` })
-    }
+    out.push(submissionOf(t))
   }
   return out
 }

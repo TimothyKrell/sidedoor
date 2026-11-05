@@ -45,6 +45,8 @@ export const qo = {
   questions: (f: Parameters<typeof rpc.questions>[0]) => queryOptions({ queryKey: ['questions', f], queryFn: () => rpc.questions(f), ...live }),
   questionCount: () => queryOptions({ queryKey: ['questions', 'count'], queryFn: () => rpc.questionCount(), ...live }),
   staleFlags: () => queryOptions({ queryKey: ['staleFlags'], queryFn: () => rpc.staleFlags({}), ...live }),
+  /** Under grokBot, so it refreshes with tasks and settings (live.ts). */
+  submitBatch: () => queryOptions({ queryKey: ['grokBot', 'batch'], queryFn: () => rpc.submitBatch() }),
 }
 
 // The page components were written against `fooFn({ data })` server functions; these keep that

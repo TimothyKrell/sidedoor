@@ -219,7 +219,7 @@ const UNSENT: schema.ApplicationStage[] = ['interested', 'review', 'approved']
  * the one that submits. A dry run fills and reports the questions without approving or submitting
  * anything. `by: 'you'` comes only from the app's own button; no agent tool can set it.
  */
-export const requestSubmit = atomic((id: string, o: { dryRun?: boolean; skipRuleCheck?: boolean; by?: SubmitBy } = {}) => {
+export const requestSubmit = atomic((id: string, o: { dryRun?: boolean; skipRuleCheck?: boolean; by?: SubmitBy; /** The batch sending it (jobs/submit-batch.ts). */ batchId?: string; /** Close the window after a dry run's report. */ closeWhenDone?: boolean } = {}) => {
   const a = getApplication(id)
   if (!a) throw new Error(`No application ${id}`)
   if (a.appliedAt || !UNSENT.includes(a.stage)) throw new Error(`${a.companyName} – ${a.role} is ${STAGE_LABEL[a.stage]}${a.appliedAt ? `, applied ${a.appliedAt.slice(0, 10)}` : ''}: nothing to submit.`)
@@ -241,7 +241,7 @@ export const requestSubmit = atomic((id: string, o: { dryRun?: boolean; skipRule
       )
   }
   if (!dryRun && a.stage !== 'approved') setStage(id, 'approved', { note: by === 'you' ? 'You approved it to submit' : 'Approved by Grok Bot to submit' })
-  const input = { submit: true, by, dryRun }
+  const input = { submit: true, by, dryRun, ...(o.batchId ? { batchId: o.batchId } : {}), ...(o.closeWhenDone ? { closeWhenDone: true } : {}) }
   let task: schema.Task
   if (open) {
     db.update(T).set({ input: { ...open.input, ...input } }).where(eq(T.id, open.id)).run()

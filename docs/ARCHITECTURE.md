@@ -178,6 +178,18 @@ page and agents agree.
    the exact text (`textMark`), so a later change reopens it.
 4. **Send.** Approve & submit calls `requestSubmit` with `by: 'you'`, the same path Grok Bot uses,
    with the same stops: nothing goes in on an answer the user hasn't confirmed.
+- **Batches** (`jobs/submit-batch.ts`, tools `start_submit_batch`, `submit_batch_status`,
+  `pause_submit_batch`, `cancel_submit_batch`; the latest shows under Grok Bot in Settings). A
+  batch is a list stored in meta (`submitBatches`), in order (given, priority, score, posted), in
+  one of three modes: dry-run, fill (left open for the user) or submit. A runner tick
+  (`advanceBatches`, every 5 s) gives the next item its turn only once the previous fill task is
+  done, so one form fills at a time and pause/cancel act before the next form opens. Each turn
+  checks the rules (unsent, package, tailored resume, listing up), the company limit
+  (`grokBot.companyLimits` plus the batch's own, counted from `appliedAt` and this batch's sends),
+  one role per company, and the apply URL (`jobs/apply-url.ts`: a bare job page is read for its
+  ATS apply link; a mailto is reported as an email application). Then it queues the same fill
+  task as `submit_application` (or a plain fill). The report reads each item's latest fill task,
+  so answers given afterwards show up in it.
 
 ## Repository layout
 
