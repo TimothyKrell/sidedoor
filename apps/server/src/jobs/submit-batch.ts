@@ -148,6 +148,10 @@ export const limitProblem = (b: Pick<SubmitBatch, 'items' | 'limits'>, item: Bat
 
 // --- starting and steering -------------------------------------------------------------------
 
+/** The same limit for one application sent on its own, by Approve & submit. */
+export const companyLimitProblem = (a: Pick<schema.Application, 'id' | 'companyId' | 'companyName'>) =>
+  limitProblem({ items: [], limits: [] }, { applicationId: a.id, companyId: a.companyId, company: a.companyName } as BatchItem)
+
 export interface BatchFilter {
   /** Default: approved. */
   stages?: schema.ApplicationStage[]

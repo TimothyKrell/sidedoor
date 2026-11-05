@@ -266,6 +266,17 @@ describe('submitting', () => {
     expect(getApplication(a.id)!.stage).toBe('approved')
   })
 
+  test('your press respects a company limit you set', async () => {
+    const { companyLimitProblem } = await import('../src/jobs/submit-batch')
+    const { updateSettings } = await import('../src/settings')
+    createApplication({ companyName: 'Limited', role: 'One', stage: 'applied', appliedAt: new Date().toISOString() })
+    const a = app('Limited', { role: 'Two' })
+    expect(companyLimitProblem(a)).toBeNull()
+    updateSettings('grokBot', { companyLimits: [{ company: 'Limited', max: 1, days: 30 }] })
+    expect(companyLimitProblem(a)).toMatch(/Limited limit: 1 per 30 days/)
+    updateSettings('grokBot', { companyLimits: [] })
+  })
+
   test('no agent tool can act as your press', () => {
     const app = toolsFor('app').map((t) => t.name)
     const grok = toolsFor('grokbot').map((t) => t.name)

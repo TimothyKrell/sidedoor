@@ -409,6 +409,9 @@ export const router = {
   settleDecisions: proc(id, async ({ id }) => ({ settled: (await apps()).settleDecisions(id) })),
   /** Your press of Approve & submit. No MCP tool reaches this: agents can't send an application for you. */
   approveAndSubmit: proc(id, async ({ id }) => {
+    const a = (await apps()).getApplication(id)
+    const limit = a ? (await import('../jobs/submit-batch')).companyLimitProblem(a) : null
+    if (limit) throw new Error(`Not sent. ${limit} Change the limit in Settings → AI → Grok Bot if you want it to go anyway.`)
     const t = (await apps()).requestSubmit(id, { by: 'you' })
     return { taskId: t.id }
   }),

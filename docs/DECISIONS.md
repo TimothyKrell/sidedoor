@@ -497,3 +497,6 @@ current when making a non-obvious call. Open questions for the maintainer live i
 - **An override covers the rules that failed when it was given.** "Go ahead anyway" (the
   application page or `override_rules`) records who and why; if a different rule fails later (the
   form asks for a clearance the user blocks), it's stopped again.
+- **The company limit applies to your own press too.** Batches already stop at a company's limit
+  (Settings → AI → Grok Bot). A limit is usually the company's rule, so it matters however the
+  application goes in, and Approve & submit refuses with the count rather than spend a slot.
