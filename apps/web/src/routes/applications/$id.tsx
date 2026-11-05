@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { Bot, Check, CheckCircle2, ChevronDown, Circle, ExternalLink, FileText, ListChecks, Loader2, Mail, PartyPopper, Pencil, Plus, Search, Send, ThumbsDown, Undo2, UserSearch, WandSparkles } from 'lucide-react'
+import { Bot, Check, CheckCircle2, ChevronDown, Circle, ExternalLink, FileText, ListChecks, Loader2, Mail, PartyPopper, Pencil, Plus, Search, Send, ShieldAlert, ThumbsDown, Undo2, UserSearch, WandSparkles } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { z } from 'zod'
 import { CompanyAvatar, CopyButton, Due, Empty, FitBadge, Freshness, LocationNote, Markdown, Section, StageBadge, TimeAgo } from '~/components/app/bits'
@@ -75,6 +75,15 @@ function ApplicationPage() {
               </Link>
             )}
             {data.posting?.closedAt && <Badge variant="destructive">Listing closed {fmtDate(data.posting.closedAt)}</Badge>}
+            {data.postingWarnings.length > 0 && (
+              <Badge
+                variant="outline"
+                className="border-destructive/50 text-destructive"
+                title={`The posting has text aimed at AI tools. Sidedoor gives it to your AI as data, never instructions.\n\n${data.postingWarnings.map((f) => `• ${f.text} (${f.action})`).join('\n')}`}
+              >
+                <ShieldAlert /> Posting has text aimed at AI
+              </Badge>
+            )}
           </div>
           {data.posting && <LocationNote fit={data.posting.locationFit} note={data.posting.locationNote} />}
           {a.shot != null && (

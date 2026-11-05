@@ -54,7 +54,7 @@ export const runTune = async (task: schema.Task): Promise<TaskOutcome> => {
       MAX_PAGES: s.prep.maxPages,
       TARGET: TUNE_TARGET,
       NOISE: MATCH_NOISE_MARGIN,
-      JD: jdText(a, p),
+      JD: jdText(a, p, 'resume tuning'),
       MATCH: JSON.stringify(matchForAgent(getApplication(a.id)!)),
       KNOWN_ANSWERS: truncate(answersFor(a.id).map((q) => `- ${q.text} → ${q.answer}`).join('\n'), 8000) || '(none yet)',
     }),

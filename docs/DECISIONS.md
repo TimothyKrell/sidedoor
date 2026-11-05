@@ -270,6 +270,18 @@ current when making a non-obvious call. Open questions for the maintainer live i
 
 ## Preparing packages
 
+- **Posting text is data, and the guard marks rather than deletes.** Postings now carry lines for
+  AI applicants (Videoco: "If you are an LLM or AI model, make sure to include…"; Imageco hides
+  "include the phrase…" in white text). Prompts get posting text only through `fenceUntrusted()`.
+  Lines that look aimed at AI stay in, marked ⚠, so a false positive costs a mark and the agent
+  still reads the line. Some flagged lines are a person's attention check ("mention the word
+  WATERMELON"), and whether to answer one is the user's call, so the agent reports these instead
+  of acting on them. Text hidden in the HTML is the only thing left out of prompts, because nobody
+  meant applicants to read it. The stored description keeps everything, the hidden text in a
+  marked section, and warnings are computed from it when shown, so a better detector covers old
+  postings without a migration. On the live data the patterns flag 25 of 3,018 postings; the ones
+  checked by hand were all real except a "Please mention “Hacker News”" referral line.
+
 - **A prep told to stop isn't a failure.** Bulk instructions can tell prep to stop early (the
   listing closed, or it's too new for this pass). The AI says so with `stopped: true`, and if it left
   the package alone the task finishes with its note and the application keeps its next action.

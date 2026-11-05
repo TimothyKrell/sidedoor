@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, gte, inArray, isNull, notInArray, or, sql } from 'drizzle-orm'
 import { Effect } from 'effect'
 import { z } from 'zod'
-import { logActivity } from '../activity'
+import { logActivity, logInjection } from '../activity'
 import { domainOf, ensureCompany } from '../companies'
 import { db, schema } from '../db/client'
 import { newId, nowIso } from '../ids'
@@ -13,6 +13,7 @@ import { answersFor } from '../services/questions'
 import { enqueueTask, URGENT_PRIORITY } from '../services/tasks'
 import { getMeta, getSettings, setMeta } from '../settings'
 import { htmlToText, truncate } from '../text'
+import { fenceUntrusted, noPostingText } from '../untrusted'
 import { mcpFor, runJob } from '../ai'
 import { aiLimitedUntil, setAiLimitedUntil, usageLimitUntil } from '../ai/limits'
 import { context, render, userName } from '../prompts'
@@ -78,6 +79,13 @@ const maybeNotifyHot = async (postingId: string) => {
   })
 }
 
+const triageJd = (r: schema.Posting) => {
+  if (!r.jd) return noPostingText('none')
+  const f = fenceUntrusted(r.jd, { max: 7000 })
+  logInjection(f.flags, { subject: `${r.companyName ?? 'Unknown company'} – ${r.title}`, link: `/jobs/${r.id}`, where: 'triage' })
+  return f.text
+}
+
 export const runTriage = async () => {
   const s = getSettings()
   // Swap aggregator listings for the company's own posting first, so triage reads the full JD.
@@ -111,7 +119,7 @@ URL: ${r.url ?? ''}
 Existing tracker applications at this company:
 ${existingAtCompany(r.companyId, r.companyName)}
 Description:
-${truncate(r.jd, 7000) || '(none captured)'}
+${triageJd(r)}
 `,
       )
       .join('\n')
@@ -206,9 +214,14 @@ export interface TaskOutcome {
   model?: string
 }
 
-/** The posting as text for prompts: header plus the description we captured. */
-export const jdText = (a: schema.Application, p: schema.Posting | undefined) =>
-  `# ${a.companyName} – ${a.role}\n\nSource: ${a.jobUrl ?? ''}\nLocation: ${a.location ?? ''}\nCompensation: ${a.compText ?? ''}\n\n${truncate(p?.jd, 14_000) || '(no description captured; read the posting URL with read_page)'}`
+/** The posting as text for prompts: header plus the description we captured, fenced as data. */
+export const jdText = (a: schema.Application, p: schema.Posting | undefined, where: string) => {
+  const head = `# ${a.companyName} – ${a.role}\n\nSource: ${a.jobUrl ?? ''}\nLocation: ${a.location ?? ''}\nCompensation: ${a.compText ?? ''}`
+  if (!p?.jd) return noPostingText(`read the posting URL with read_page. ${head.replace(/\n+/g, '; ')}`)
+  const f = fenceUntrusted(p.jd, { max: 14_000, header: `${head}\n` })
+  logInjection(f.flags, { subject: `${a.companyName} – ${a.role}`, link: `/applications/${a.id}`, where })
+  return f.text
+}
 
 const greenhouseQuestions = async (key: string | undefined) => {
   if (!key?.startsWith('greenhouse:')) return null
@@ -258,7 +271,7 @@ const runPrep = async (task: schema.Task): Promise<TaskOutcome> => {
     TRIAGE: triage,
     RESUME_ID: resume.id,
     MAX_PAGES: s.prep.maxPages,
-    JD: jdText(a, p),
+    JD: jdText(a, p, 'prep'),
     JOB_URL: a.jobUrl,
     APPLY_URL: a.applyUrl ?? a.jobUrl,
     SALARY: s.search.salaryMin ? `${s.search.salaryMin.toLocaleString('en-US')} ${s.search.currency}` : 'not set',
@@ -326,7 +339,7 @@ export const researchWork = (task: schema.Task) => {
     ROLE: a.role,
     FIT: a.fitScore ?? 'n/a',
     JOB_URL: a.jobUrl,
-    JD: jdText(a, p),
+    JD: jdText(a, p, 'research'),
     DOMAIN: company?.domain ?? 'unknown',
     KNOWN_PEOPLE: known.map((x) => `- ${x.name} (${x.title ?? x.kind}) id=${x.id}`).join('\n') || '- none',
     INSTRUCTIONS: typeof task.input.instructions === 'string' ? task.input.instructions : '(none)',

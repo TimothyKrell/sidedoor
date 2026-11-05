@@ -9,6 +9,8 @@ import { nowIso } from './ids'
 import { linesOf, resumeForApplication } from './services/resumes'
 import { getApplication, setResumeMatch } from './services/applications'
 import { truncate } from './text'
+import { fenceUntrusted, noPostingText } from './untrusted'
+import { logInjection } from './activity'
 
 const MatchOut = z.object({
   summary: z.string(),
@@ -138,10 +140,15 @@ export const runMatch = async (applicationId: string) => {
   const previous = prev?.requirements ?? []
   const base = frozenBy(prev, inputs.jdHash)
   const changedLines = base ? lines.filter((l) => base.lineHashes![l.id] !== inputs.lineHashes[l.id]).map((l) => l.id) : []
+  const fenced = (text: string) => {
+    const f = fenceUntrusted(text, { max: 16_000 })
+    logInjection(f.flags, { subject: `${a.companyName} – ${a.role}`, link: `/applications/${a.id}`, where: 'the resume match check' })
+    return f.text
+  }
   const prompt = render('match', {
     ROLE: a.role,
     COMPANY: a.companyName,
-    JD: jd ? truncate(jd, 16_000) : `(not captured: read ${url} with mcp__sidedoor__read_page, which renders JavaScript pages, and use the posting there)`,
+    JD: jd ? fenced(jd) : noPostingText(`read ${url} with mcp__sidedoor__read_page, which renders JavaScript pages, and use the posting there`),
     RESUME: lines.map((l) => `[${l.id}] ${l.text}`).join('\n'),
     INVENTORY: truncate(context.inventory(), 30_000),
     PREVIOUS: previous.length ? JSON.stringify(previous.map((r) => ({ id: r.id, kind: r.kind, area: r.area ?? null, short: r.short, quote: r.quote }))) : '(none: first check)',

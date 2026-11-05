@@ -1,5 +1,6 @@
 import { Duration, Effect, Predicate, Schedule } from 'effect'
 import { htmlToText } from '../text'
+import { htmlToJd, jdFrom } from '../untrusted'
 
 /** A posting normalized from any source. */
 export interface RawJob {
@@ -80,7 +81,7 @@ const greenhouse = (board: string) =>
           url: str(j.absolute_url),
           applyUrl: str(j.absolute_url),
           postedAt: str(j.first_published) ?? str(j.updated_at),
-          jd: htmlToText(str(j.content) ?? ''),
+          jd: htmlToJd(str(j.content)),
         }
       }),
     ),
@@ -96,7 +97,7 @@ const lever = (board: string) =>
         if (locs.length === 0) locs.push(str(c.location))
         locs.push(str(j.workplaceType))
         const lists = arr(j.lists)
-          .map((l) => `${str(obj(l).text) ?? ''}\n${htmlToText(str(obj(l).content) ?? '')}`)
+          .map((l) => `${str(obj(l).text) ?? ''}\n${htmlToJd(str(obj(l).content))}`)
           .join('\n\n')
         const sr = obj(j.salaryRange)
         const comp = Predicate.isNumber(sr.min)
@@ -109,7 +110,7 @@ const lever = (board: string) =>
           url: str(j.hostedUrl),
           applyUrl: str(j.applyUrl),
           postedAt: msToIso(j.createdAt),
-          jd: [str(j.descriptionPlain), lists, str(j.additionalPlain)].filter(Boolean).join('\n\n').trim(),
+          jd: [jdFrom(str(j.description), str(j.descriptionPlain)), lists, jdFrom(str(j.additional), str(j.additionalPlain))].filter(Boolean).join('\n\n').trim(),
           comp,
         }
       }),
@@ -135,7 +136,7 @@ const ashby = (board: string) =>
             url: str(j.jobUrl),
             applyUrl: str(j.applyUrl),
             postedAt: str(j.publishedAt),
-            jd: str(j.descriptionPlain) ?? htmlToText(str(j.descriptionHtml) ?? ''),
+            jd: jdFrom(str(j.descriptionHtml), str(j.descriptionPlain)),
             comp: str(obj(j.compensation).compensationTierSummary),
           }
         }),
@@ -156,7 +157,7 @@ const workable = (board: string) =>
             url: str(j.url),
             applyUrl: str(j.application_url) ?? str(j.url),
             postedAt: str(j.published_on),
-            jd: htmlToText(str(j.description) ?? ''),
+            jd: htmlToJd(str(j.description)),
           }
         }),
     ),
@@ -218,7 +219,7 @@ const smartrecruitersDetail = (board: string, job: RawJob) =>
       const jd = ['companyDescription', 'jobDescription', 'qualifications', 'additionalInformation']
         .map((k) => {
           const s = obj(sections[k])
-          const text = htmlToText(str(s.text) ?? '')
+          const text = htmlToJd(str(s.text))
           return text ? `${str(s.title) ?? ''}\n${text}`.trim() : ''
         })
         .filter(Boolean)
@@ -284,7 +285,7 @@ const workdayDetail = (board: string, job: RawJob) => {
     Effect.map((raw): Partial<RawJob> => {
       const i = obj(obj(raw).jobPostingInfo)
       const locs = [str(i.location), ...arr(i.additionalLocations).map(str), str(i.remoteType)]
-      return { jd: htmlToText(str(i.jobDescription) ?? ''), location: joinLocs(locs) || job.location, postedAt: str(i.startDate) ?? job.postedAt }
+      return { jd: htmlToJd(str(i.jobDescription)), location: joinLocs(locs) || job.location, postedAt: str(i.startDate) ?? job.postedAt }
     }),
   )
 }
@@ -310,7 +311,7 @@ const recruitee = (board: string) =>
             url: str(j.careers_url),
             applyUrl: str(j.careers_apply_url) ?? str(j.careers_url),
             postedAt: recruiteeDate(str(j.published_at) ?? str(j.created_at)),
-            jd: [htmlToText(str(j.description) ?? ''), htmlToText(str(j.requirements) ?? '')].filter(Boolean).join('\n\n'),
+            jd: [htmlToJd(str(j.description)), htmlToJd(str(j.requirements))].filter(Boolean).join('\n\n'),
             comp: Predicate.isNumber(sal.min) ? `${str(sal.currency) ?? ''} ${sal.min}-${str(sal.max) ?? ''} ${str(sal.period) ?? ''}`.trim() : undefined,
           }
         }),
@@ -333,7 +334,7 @@ const gem = (board: string) =>
             url: str(j.absolute_url),
             applyUrl: str(j.absolute_url),
             postedAt: str(j.first_published_at) ?? str(j.updated_at),
-            jd: str(j.content_plain) ?? htmlToText(str(j.content) ?? ''),
+            jd: jdFrom(str(j.content), str(j.content_plain)),
           }
         }),
     ),
@@ -363,7 +364,7 @@ const ripplingDetail = (board: string, job: RawJob) =>
       const d = obj(raw)
       const desc = obj(d.description)
       return {
-        jd: [htmlToText(str(desc.role) ?? ''), htmlToText(str(desc.company) ?? '')].filter(Boolean).join('\n\n'),
+        jd: [htmlToJd(str(desc.role)), htmlToJd(str(desc.company))].filter(Boolean).join('\n\n'),
         location: joinLocs(arr(d.workLocations).map(str)) || job.location,
         postedAt: str(d.createdOn),
       }
@@ -385,7 +386,7 @@ const remoteok = (board: string) =>
             url: str(j.url),
             applyUrl: str(j.apply_url) ?? str(j.url),
             postedAt: str(j.date),
-            jd: htmlToText(str(j.description) ?? ''),
+            jd: htmlToJd(str(j.description)),
             comp: Predicate.isNumber(j.salary_min) ? `$${j.salary_min}-$${j.salary_max}` : undefined,
           }),
         ),
@@ -433,7 +434,7 @@ export const parseJsonFeed = (d: unknown): RawJob[] => {
       url,
       applyUrl: str(j.apply_url) ?? url,
       postedAt: str(j.publication_date) ?? str(j.pubDate) ?? str(j.pub_date) ?? str(j.date_published),
-      jd: htmlToText(str(j.description) ?? str(j.jobDescription) ?? str(j.content_html) ?? str(j.content_text) ?? ''),
+      jd: htmlToJd(str(j.description) ?? str(j.jobDescription) ?? str(j.content_html) ?? str(j.content_text)),
       comp: str(j.salary) || (salMin !== undefined && salMin !== null ? `${str(j.salaryCurrency) ?? ''} ${str(salMin)}-${str(salMax) ?? ''}`.trim() : undefined),
     }
   })
@@ -455,7 +456,7 @@ const rss = (feed: string) =>
           url: it.link,
           applyUrl: it.link,
           postedAt: it.postedAt,
-          jd: htmlToText(it.description),
+          jd: htmlToJd(it.description),
         }
       })
       // A page that isn't a feed at all would otherwise look like a quiet feed forever.
@@ -483,7 +484,7 @@ const hn = (_board: string) =>
       .map(obj)
       .filter((c) => Predicate.isString(c.text))
       .map((c): RawJob => {
-        const text = htmlToText(str(c.text) ?? '')
+        const text = htmlToJd(str(c.text))
         const first = text.split('\n')[0] ?? ''
         const parts = first.split('|').map((p) => p.trim())
         const roleish = parts.find((p, i) => i > 0 && /engineer|developer|manager|lead|head|director|cto|staff/i.test(p))

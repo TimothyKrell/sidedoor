@@ -9,6 +9,7 @@ import { baseResume, getResume, resumeForApplication } from './services/resumes'
 import { gmailComposeUrl } from './services/people'
 import { prepInProgress } from './services/tasks'
 import { getMeta, getSettings } from './settings'
+import { injectionFlags } from './untrusted'
 
 const P = schema.postings
 const A = schema.applications
@@ -227,6 +228,14 @@ export const listApplications = () => {
   return { open: open.map((a) => ({ ...a, listing: listingFor(a), prep: prep.get(a.id) ?? null })), closed, peopleCount }
 }
 
+/** An application's posting. Older applications (imported, or added by hand) have no posting id; their job URL usually matches one. */
+export const postingForApplication = (a: Pick<schema.Application, 'postingId' | 'jobUrl'>) =>
+  a.postingId
+    ? db.select().from(P).where(eq(P.id, a.postingId)).get()
+    : a.jobUrl
+      ? db.select().from(P).where(or(eq(P.url, a.jobUrl), eq(P.applyUrl, a.jobUrl), eq(P.viaUrl, a.jobUrl))).orderBy(desc(P.firstSeenAt)).get()
+      : undefined
+
 export const getApplicationDetail = (id: string) => {
   const a = db.select().from(A).where(eq(A.id, id)).get()
   if (!a) return null
@@ -238,12 +247,7 @@ export const getApplicationDetail = (id: string) => {
   const research = db.select().from(schema.research).where(eq(schema.research.applicationId, id)).orderBy(desc(schema.research.createdAt)).all()
   const interactions = db.select().from(schema.interactions).where(eq(schema.interactions.applicationId, id)).orderBy(desc(schema.interactions.at)).all()
   const tasks = db.select().from(schema.tasks).where(eq(schema.tasks.applicationId, id)).orderBy(desc(schema.tasks.createdAt)).limit(20).all()
-  // Older applications (imported, or added by hand) have no posting id; their job URL usually matches one.
-  const posting = a.postingId
-    ? db.select().from(P).where(eq(P.id, a.postingId)).get()
-    : a.jobUrl
-      ? db.select().from(P).where(or(eq(P.url, a.jobUrl), eq(P.applyUrl, a.jobUrl), eq(P.viaUrl, a.jobUrl))).orderBy(desc(P.firstSeenAt)).get()
-      : null
+  const posting = postingForApplication(a) ?? null
   const company = a.companyId ? db.select().from(schema.companies).where(eq(schema.companies.id, a.companyId)).get() : null
   const others = a.companyId ? db.select(appCols).from(A).where(and(eq(A.companyId, a.companyId), ne(A.id, id))).all() : []
   const resume = a.resumeId ? getResume(a.resumeId) : undefined
@@ -259,6 +263,8 @@ export const getApplicationDetail = (id: string) => {
     interactions,
     tasks,
     posting,
+    /** Text in the posting aimed at AI tools (the warning badge). */
+    postingWarnings: injectionFlags(posting?.jd),
     company,
     otherApplications: others,
     resume: resume ? { id: resume.id, title: resume.title, pdfFile: resume.pdfFile, pdfPages: resume.pdfPages, updatedAt: resume.updatedAt } : null,
