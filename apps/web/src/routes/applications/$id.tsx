@@ -9,6 +9,7 @@ import { useChat, usePageContext } from '~/components/app/chat'
 import { MatchList, MatchStrip, MatchSummary } from '~/components/app/match'
 import { Decisions, ListingGone } from '~/components/app/review'
 import { ApplicationQuestions } from '~/components/app/questions'
+import { StaleFlags } from '~/components/app/stale'
 import { WritingReview } from '~/components/app/writing'
 import { FollowupPicker, InteractionForm, PersonDialog } from '~/components/app/forms'
 import { Badge } from '~/components/ui/badge'
@@ -533,6 +534,7 @@ function PackageTab({ d }: { d: Detail }) {
         </Button>
       </div>
       {!editing && <ApplicationQuestions applicationId={a.id} groups={questions} hasPackage />}
+      {!editing && <StaleFlags applicationId={a.id} />}
       {!editing && <Decisions d={d} />}
       {!editing && <WritingCheck d={d} />}
       {editing ? (

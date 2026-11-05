@@ -10,11 +10,11 @@ const DEPENDENTS: Record<string, string[]> = {
   companies: ['applications', 'application', 'postings', 'posting', 'people', 'person', 'radar', 'today', 'sources'],
   sources: ['sources', 'radar', 'posting'],
   postings: ['postings', 'posting', 'today', 'radar', 'application', 'reviewQueue'],
-  applications: ['applications', 'application', 'reviewQueue', 'today', 'person', 'posting', 'search', 'questions'],
+  applications: ['applications', 'application', 'reviewQueue', 'today', 'person', 'posting', 'search', 'questions', 'staleFlags'],
   people: ['people', 'person', 'application', 'today', 'search'],
   application_people: ['application', 'person'],
   interactions: ['person', 'application', 'today', 'people'],
-  drafts: ['person', 'application', 'today', 'people'],
+  drafts: ['person', 'application', 'today', 'people', 'staleFlags'],
   research: ['application', 'posting', 'radar'],
   tasks: ['tasks', 'application', 'applications', 'reviewQueue', 'status', 'today', 'grokBot'],
   activity: ['today'],
@@ -25,6 +25,7 @@ const DEPENDENTS: Record<string, string[]> = {
   documents: ['docs', 'doc', 'stories'],
   resumes: ['resumes', 'resume', 'application', 'reviewQueue'],
   questions: ['questions', 'reviewQueue'],
+  stale_flags: ['staleFlags'],
 }
 
 const NEVER = new Set(['thread'])

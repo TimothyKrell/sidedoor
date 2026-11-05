@@ -281,6 +281,39 @@ export const drafts = sqliteTable('drafts', {
   sentAt: text('sent_at'),
 })
 
+/**
+ * A sentence in something not yet sent (an outreach draft, or a cover letter / answer in the package
+ * of an application not yet submitted) that a later change to a profile document contradicts or
+ * makes out of date. Found by the stale-check task (jobs/stale-check.ts); the user or an agent fixes
+ * the text and clears the flag. Nothing here ever changes the draft itself.
+ */
+export const staleFlags = sqliteTable(
+  'stale_flags',
+  {
+    id: id(),
+    /** The outreach draft, or null when the sentence is in an application package. */
+    draftId: text('draft_id'),
+    applicationId: text('application_id'),
+    /** Package section ('cover-letter', 'q:3'), or null for a draft or the rest of the package. */
+    section: text('section'),
+    /** The profile document whose change made it stale. */
+    docKey: text('doc_key').notNull(),
+    /** The sentence as it appears in the draft. */
+    sentence: text('sentence').notNull(),
+    /** What the profile document says now. */
+    fact: text('fact').notNull(),
+    /** A corrected sentence, for the user to use or not. Never applied automatically. */
+    suggestion: text('suggestion'),
+    /** open; cleared by the user or an agent; resolved when the sentence is gone or the draft went out. */
+    status: text('status', { enum: ['open', 'cleared', 'resolved'] }).notNull().default('open'),
+    note: text('note'),
+    taskId: text('task_id'),
+    createdAt: createdAt(),
+    clearedAt: text('cleared_at'),
+  },
+  (t) => [index('stale_flags_draft').on(t.draftId), index('stale_flags_app').on(t.applicationId), index('stale_flags_status').on(t.status)],
+)
+
 export const research = sqliteTable('research', {
   id: id(),
   applicationId: text('application_id'),
@@ -304,6 +337,7 @@ export const TASK_KINDS = [
   'submit-assist',
   'x-scout',
   'import-resume',
+  'stale-check',
   'custom',
 ] as const
 export type TaskKind = (typeof TASK_KINDS)[number]
@@ -527,6 +561,7 @@ export type Person = typeof people.$inferSelect
 export type Interaction = typeof interactions.$inferSelect
 export type Draft = typeof drafts.$inferSelect
 export type Research = typeof research.$inferSelect
+export type StaleFlag = typeof staleFlags.$inferSelect
 export type Task = typeof tasks.$inferSelect
 export type Activity = typeof activity.$inferSelect
 export type ChatThread = typeof chatThreads.$inferSelect

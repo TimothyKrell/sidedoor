@@ -5,6 +5,7 @@ import { paths } from '../config'
 import { db, schema } from '../db/client'
 import { atomic } from '../db/tx'
 import { newId, nowIso } from '../ids'
+import { docChanged } from './stale-flags'
 
 /**
  * The user's profile documents (markdown, owned by the app). Each starts from a template in
@@ -57,6 +58,7 @@ const storedBody = (key: DocKey) => db.select({ body: schema.documents.body }).f
 const writeDoc = (key: DocKey, body: string | null, w: DocWrite = {}) => {
   const before = storedBody(key)
   if (before === body) return getDoc(key)
+  const was = getDoc(key).body
   // Only the user's own text counts: replacing the template removes nothing of theirs.
   const removed = (before ?? '').length - (body ?? '').length
   if (before && !w.confirmLargeDeletion && removed > SMALL_REMOVAL && removed > before.length * MAX_UNCONFIRMED_REMOVAL)
@@ -68,6 +70,8 @@ const writeDoc = (key: DocKey, body: string | null, w: DocWrite = {}) => {
   db.insert(schema.documentRevisions).values({ id: newId('drev_'), docKey: key, before, after: body, by: w.by ?? 'app', reason: w.reason ?? null, at }).run()
   if (body == null) db.delete(schema.documents).where(eq(schema.documents.key, key)).run()
   else db.insert(schema.documents).values({ key, body, updatedAt: at }).onConflictDoUpdate({ target: schema.documents.key, set: { body, updatedAt: at } }).run()
+  // Unsent drafts may now say something this contradicts; check them in the background.
+  docChanged(key, was, body ?? getDoc(key).body)
   return getDoc(key)
 }
 
