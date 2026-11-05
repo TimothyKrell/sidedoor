@@ -321,3 +321,27 @@ current when making a non-obvious call. Open questions for the maintainer live i
   `MATCH_NOISE_MARGIN`, 3 points). Loops that raise the score stop when a round doesn't clear it.
 - Checks from before v2 keep their stored score. They have no breakdown until they're re-checked,
   and the first v2 check re-judges everything.
+
+## Getting applications out
+
+- **One page, in the order the work happens.** Reviewing meant opening each application and hunting
+  through its tabs for what was left, with 58 of them waiting. `/review` shows one application at a
+  time as four steps, with Next. It's a page rather than a list you expand, because the job is to
+  finish one and move on. Today shows only the counts per step, and those applications no longer
+  also appear in Up next.
+- **Steps warn, they don't block.** An untuned resume or an open decision is the user's call, so
+  Approve & submit stays available and names what's open first. What can't be overridden is the
+  form check: nothing goes in on an answer they haven't confirmed.
+- **Pressing Approve & submit submits.** This relaxes "nothing submits but Grok Bot". The press is
+  a per-application decision by the user, in the app, so it needs no setting. Agents still can't do
+  it: `by: 'you'` is set only by the `approveAndSubmit` RPC, and no MCP tool reaches it. An agent can
+  relay an answer that lets a submit the user started carry on, but can't start one.
+- **Tuning is measured by Sidedoor, not reported by the AI.** The start and finish scores come from
+  the match check itself, and a pass that ends lower is undone, so "raised from 80 to 91" can be
+  trusted. The AI stops at 95, or when two rounds don't beat the noise margin, and after 4 rounds at
+  most. It stops short of inventing anything: what's left becomes questions.
+- **A check-off belongs to the text.** If the AI revises an essay after the user checked it, the
+  check would otherwise vouch for words they never read, so it's stored as a mark of the text.
+- **An application's chat costs nothing to open.** Its first message is built from stored data, not
+  an AI turn, so the 58 chats that could exist don't cost usage and don't fill the chat list until
+  opened. A newer tuning pass adds its findings to the same chat.

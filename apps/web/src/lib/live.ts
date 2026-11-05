@@ -9,22 +9,22 @@ import { useEffect } from 'react'
 const DEPENDENTS: Record<string, string[]> = {
   companies: ['applications', 'application', 'postings', 'posting', 'people', 'person', 'radar', 'today', 'sources'],
   sources: ['sources', 'radar', 'posting'],
-  postings: ['postings', 'posting', 'today', 'radar', 'application'],
-  applications: ['applications', 'application', 'today', 'person', 'posting', 'search', 'questions'],
+  postings: ['postings', 'posting', 'today', 'radar', 'application', 'reviewQueue'],
+  applications: ['applications', 'application', 'reviewQueue', 'today', 'person', 'posting', 'search', 'questions'],
   people: ['people', 'person', 'application', 'today', 'search'],
   application_people: ['application', 'person'],
   interactions: ['person', 'application', 'today', 'people'],
   drafts: ['person', 'application', 'today', 'people'],
   research: ['application', 'posting', 'radar'],
-  tasks: ['tasks', 'application', 'applications', 'status', 'today', 'grokBot'],
+  tasks: ['tasks', 'application', 'applications', 'reviewQueue', 'status', 'today', 'grokBot'],
   activity: ['today'],
   notifications: [],
   chat_threads: ['threads'],
   chat_messages: ['threads'],
   settings: ['settings', 'aiStatus', 'docs', 'grokBot'],
   documents: ['docs', 'doc', 'stories'],
-  resumes: ['resumes', 'resume', 'application'],
-  questions: ['questions'],
+  resumes: ['resumes', 'resume', 'application', 'reviewQueue'],
+  questions: ['questions', 'reviewQueue'],
 }
 
 const NEVER = new Set(['thread'])

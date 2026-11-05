@@ -20,6 +20,7 @@ import {
   unrankApplications,
   trackPosting,
   updateApplication,
+  setWriting,
 } from '../services/applications'
 import { findEmailFor } from '../services/email-finder'
 import {
@@ -571,9 +572,9 @@ export const appTools = [
 
   tool(
     'start_task',
-    'Queue background AI work: research (company + people + emails for an application), prep (tailored resume + application package), outreach (draft messages to linked people), submit-assist (open the approved application form in Sidedoor\'s browser window on the user\'s desktop and fill it, stopping before submit; the user reviews and submits), discover (find new companies/boards), funding (scan funding news). Use instructions for specifics.',
+    'Queue background AI work: research (company + people + emails for an application), prep (tailored resume + application package), outreach (draft messages to linked people), tune (work the tailored resume up against the posting until the match stops rising, then ask the user what only they can answer), submit-assist (open the approved application form in Sidedoor\'s browser window on the user\'s desktop and fill it, stopping before submit; the user reviews and submits), discover (find new companies/boards), funding (scan funding news). Use instructions for specifics.',
     {
-      kind: z.enum(['research', 'prep', 'outreach', 'discover', 'funding', 'custom', 'submit-assist']),
+      kind: z.enum(['research', 'prep', 'outreach', 'discover', 'funding', 'custom', 'tune', 'submit-assist']),
       applicationId: z.string().optional(),
       personId: z.string().optional(),
       instructions: z.string().optional(),
@@ -582,13 +583,31 @@ export const appTools = [
     safe((a) => {
       const app = a.applicationId ? getApplication(a.applicationId) : undefined
       const label = app ? `${app.companyName} – ${app.role}` : (a.instructions?.slice(0, 60) ?? a.kind)
-      const t = enqueueTask(a.kind, `${a.kind === 'submit-assist' ? 'Fill form' : `${a.kind[0]!.toUpperCase()}${a.kind.slice(1)}`}: ${label}`, {
+      const t = enqueueTask(a.kind, `${a.kind === 'submit-assist' ? 'Fill form' : a.kind === 'tune' ? 'Tune resume' : `${a.kind[0]!.toUpperCase()}${a.kind.slice(1)}`}: ${label}`, {
         applicationId: a.applicationId ?? null,
         personId: a.personId ?? null,
         priority: a.urgent ? URGENT_PRIORITY : 10,
         input: a.instructions ? { instructions: a.instructions } : {},
       })
       return { taskId: t.id, status: t.status }
+    }),
+  ),
+
+  tool(
+    'review_queue',
+    "Every application waiting on the user before it goes out, in their order, with the step each is on (ai, tune, answers, writing, ready, sending, stuck), its match, how far tuning took it, and what's still open. Use it to tell them what's left. Only the user can approve and submit from here.",
+    {},
+    safe(async () => (await import('../review')).reviewQueue()),
+    ro,
+  ),
+
+  tool(
+    'check_off_writing',
+    "Mark a written answer in the package (the cover letter, or a free-text question) as read and done, once the user says so. Never check one off on your own judgment. key: 'cover-letter' or 'q:<n>', as review_queue's Writing step and the package number them. done false reopens it. Changing the text later reopens it too.",
+    { applicationId: z.string(), key: z.string(), done: z.boolean().optional() },
+    safe(({ applicationId, key, done }) => {
+      setWriting(applicationId, key, { done: done ?? true })
+      return { saved: true }
     }),
   ),
 

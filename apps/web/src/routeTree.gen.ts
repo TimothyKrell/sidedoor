@@ -14,6 +14,7 @@ import { Route as PairRouteImport } from './routes/pair'
 import { Route as PipelineRouteImport } from './routes/pipeline'
 import { Route as QuestionsRouteImport } from './routes/questions'
 import { Route as RadarRouteImport } from './routes/radar'
+import { Route as ReviewRouteImport } from './routes/review'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SourcesRouteImport } from './routes/sources'
 import { Route as StoriesRouteImport } from './routes/stories'
@@ -54,6 +55,11 @@ const QuestionsRoute = QuestionsRouteImport.update({
 const RadarRoute = RadarRouteImport.update({
   id: '/radar',
   path: '/radar',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReviewRoute = ReviewRouteImport.update({
+  id: '/review',
+  path: '/review',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsRoute = SettingsRouteImport.update({
@@ -143,6 +149,7 @@ export interface FileRoutesByFullPath {
   '/pipeline': typeof PipelineRoute
   '/questions': typeof QuestionsRoute
   '/radar': typeof RadarRoute
+  '/review': typeof ReviewRoute
   '/settings': typeof SettingsRoute
   '/sources': typeof SourcesRoute
   '/stories': typeof StoriesRoute
@@ -166,6 +173,7 @@ export interface FileRoutesByTo {
   '/pipeline': typeof PipelineRoute
   '/questions': typeof QuestionsRoute
   '/radar': typeof RadarRoute
+  '/review': typeof ReviewRoute
   '/settings': typeof SettingsRoute
   '/sources': typeof SourcesRoute
   '/stories': typeof StoriesRoute
@@ -190,6 +198,7 @@ export interface FileRoutesById {
   '/pipeline': typeof PipelineRoute
   '/questions': typeof QuestionsRoute
   '/radar': typeof RadarRoute
+  '/review': typeof ReviewRoute
   '/settings': typeof SettingsRoute
   '/sources': typeof SourcesRoute
   '/stories': typeof StoriesRoute
@@ -215,6 +224,7 @@ export interface FileRouteTypes {
     | '/pipeline'
     | '/questions'
     | '/radar'
+    | '/review'
     | '/settings'
     | '/sources'
     | '/stories'
@@ -238,6 +248,7 @@ export interface FileRouteTypes {
     | '/pipeline'
     | '/questions'
     | '/radar'
+    | '/review'
     | '/settings'
     | '/sources'
     | '/stories'
@@ -261,6 +272,7 @@ export interface FileRouteTypes {
     | '/pipeline'
     | '/questions'
     | '/radar'
+    | '/review'
     | '/settings'
     | '/sources'
     | '/stories'
@@ -285,6 +297,7 @@ export interface RootRouteChildren {
   PipelineRoute: typeof PipelineRoute
   QuestionsRoute: typeof QuestionsRoute
   RadarRoute: typeof RadarRoute
+  ReviewRoute: typeof ReviewRoute
   SettingsRoute: typeof SettingsRoute
   SourcesRoute: typeof SourcesRoute
   StoriesRoute: typeof StoriesRoute
@@ -338,6 +351,13 @@ declare module '@tanstack/react-router' {
       path: '/radar'
       fullPath: '/radar'
       preLoaderRoute: typeof RadarRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/review': {
+      id: '/review'
+      path: '/review'
+      fullPath: '/review'
+      preLoaderRoute: typeof ReviewRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings': {
@@ -461,6 +481,7 @@ const rootRouteChildren: RootRouteChildren = {
   PipelineRoute: PipelineRoute,
   QuestionsRoute: QuestionsRoute,
   RadarRoute: RadarRoute,
+  ReviewRoute: ReviewRoute,
   SettingsRoute: SettingsRoute,
   SourcesRoute: SourcesRoute,
   StoriesRoute: StoriesRoute,

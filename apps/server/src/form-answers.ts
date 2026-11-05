@@ -47,7 +47,7 @@ const FLAG = /\b(confirm|unconfirmed|inferred|infer|default|guess|guessed|todo|t
 /** In a long written answer, where "confirm" can be an ordinary word: only explicit markers. */
 const STRONG_FLAG = /\bTODO\b|\bTBD\b|\[[^\]]*\b(confirm|todo|tbd|guess|inferred)\b[^\]]*\]|\([^)]*\b(confirm|inferred|default|guess)\b[^)]*\)/i
 const PENDING_HEADING = /^(questions? for\b|open questions|needs your decision)/i
-const GIVEN_HEADING = /^answers to the other form questions/i
+const GIVEN_HEADING = /^(answers to the other form questions|your answers to questions)\b/i
 
 const cells = (line: string) => line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.trim())
 

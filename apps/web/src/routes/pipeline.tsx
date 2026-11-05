@@ -1,6 +1,6 @@
 import { useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { ArrowDown, ArrowUp, ArrowUpDown, ListRestart, Plus } from 'lucide-react'
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
+import { ArrowDown, ArrowUp, ArrowUpDown, ClipboardCheck, ListRestart, Plus } from 'lucide-react'
 import { useState } from 'react'
 import { z } from 'zod'
 import { Empty, PageHeader } from '~/components/app/bits'
@@ -130,6 +130,11 @@ function Pipeline() {
         subtitle={data.open.length ? `${data.open.length} open application${data.open.length === 1 ? '' : 's'}, from interested to offer.` : 'Jobs you go after show up here, from interested to offer.'}
         actions={
           <>
+            <Button asChild variant="secondary" size="sm">
+              <Link to="/review">
+                <ClipboardCheck /> Review queue
+              </Link>
+            </Button>
             <Button variant={reordering ? 'default' : 'outline'} size="sm" onClick={() => setReordering((r) => !r)}>
               <ArrowUpDown /> {reordering ? 'Done' : 'Reorder'}
             </Button>

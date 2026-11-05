@@ -15,6 +15,7 @@ export const qo = {
   postings: (f: PostingFilters) => queryOptions({ queryKey: ['postings', f], queryFn: () => rpc.postings(f), ...live }),
   posting: (id: string) => queryOptions({ queryKey: ['posting', id], queryFn: () => rpc.posting({ id }) }),
   applications: () => queryOptions({ queryKey: ['applications'], queryFn: () => rpc.applications(), ...live }),
+  reviewQueue: () => queryOptions({ queryKey: ['reviewQueue'], queryFn: () => rpc.reviewQueue(), ...live }),
   application: (id: string) => queryOptions({ queryKey: ['application', id], queryFn: () => rpc.application({ id }), ...live }),
   people: (f: PeopleFilters) => queryOptions({ queryKey: ['people', f], queryFn: () => rpc.people(f) }),
   person: (id: string) => queryOptions({ queryKey: ['person', id], queryFn: () => rpc.person({ id }), ...live }),

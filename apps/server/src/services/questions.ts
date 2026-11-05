@@ -288,12 +288,13 @@ export const reopenQuestion = atomic((id: string) => {
   return byId(id)!
 })
 
-/** Grok Bot's submit stopped for questions, and none of the form's is left open: fill (and submit) it again. */
+/** A submit stopped for questions, and none of the form's is left open: fill (and submit) it again. */
 const continueSubmit = (applicationId: string) => {
-  if (!getSettings().grokBot.submit) return false
   const T = schema.tasks
   const last = db.select().from(T).where(and(eq(T.kind, 'submit-assist'), eq(T.applicationId, applicationId))).orderBy(desc(T.createdAt)).get()
   if (!last || last.input.submit !== true || last.status !== 'done' || !last.output) return false
+  const by = last.input.by === 'you' ? 'you' : 'grokbot'
+  if (by === 'grokbot' && !getSettings().grokBot.submit) return false
   let waiting = false
   try {
     const o = JSON.parse(last.output) as { outcome?: string; submit?: { problems?: unknown[] } | null }
@@ -304,7 +305,7 @@ const continueSubmit = (applicationId: string) => {
   if (!waiting) return false
   if (db.select().from(Q).where(and(eq(Q.applicationId, applicationId), eq(Q.askedBy, 'fill'), eq(Q.status, 'open'))).get()) return false
   try {
-    requestSubmit(applicationId, { dryRun: last.input.dryRun === true })
+    requestSubmit(applicationId, { dryRun: last.input.dryRun === true, by })
     return true
   } catch (e) {
     console.error('[questions] could not continue the submit', e)
@@ -513,5 +514,5 @@ export const answerFormQuestions = atomic((id: string, answers: FormAnswer[]) =>
   if (items.length) answerQuestions(items, 'grokbot', { continueSubmit: false })
   const T = schema.tasks
   const last = db.select().from(T).where(and(eq(T.kind, 'submit-assist'), eq(T.applicationId, id))).orderBy(desc(T.createdAt)).get()
-  return requestSubmit(id, { dryRun: last?.input.dryRun === true })
+  return requestSubmit(id, { dryRun: last?.input.dryRun === true, by: last?.input.by === 'you' ? 'you' : 'grokbot' })
 })

@@ -1,5 +1,8 @@
 import { and, desc, eq, inArray, isNotNull, notInArray } from 'drizzle-orm'
+import { decisionsOf, setDecisionLine } from '@sidedoor/shared/decisions'
 import type { ResumeMatch } from '@sidedoor/shared/match'
+import { extractProseSections, replaceSections } from '@sidedoor/shared/package-sections'
+import { type ResumeTune, textMark } from '@sidedoor/shared/review'
 import { logActivity } from '../activity'
 import { db, schema } from '../db/client'
 import { atomic } from '../db/tx'
@@ -167,15 +170,49 @@ export const setShot = atomic((id: string, shot: number | null, why: string | nu
   return getApplication(id)
 })
 
+/** Record a pass of the AI working the resume up. Not activity: the pipeline order stays put. */
+export const setResumeTune = atomic((id: string, tune: ResumeTune) => {
+  db.update(schema.applications).set({ tuneJson: tune, updatedAt: nowIso() }).where(eq(schema.applications.id, id)).run()
+})
+
+/**
+ * Check a written answer off, or reopen it. New text goes into the package first, and the check is
+ * of that text: if the AI or you change it later, it's open again.
+ */
+export const setWriting = atomic((id: string, key: string, o: { done: boolean; text?: string }) => {
+  const a = getApplication(id)
+  if (!a?.packageMd) throw new Error('No package')
+  const before = extractProseSections(a.packageMd, { all: true }).find((s) => s.key === key)
+  if (!before) throw new Error('That answer changed; reload the package')
+  const text = (o.text ?? before.text).trim()
+  if (o.done && !text) throw new Error('Write the answer before checking it off.')
+  const checks = { ...a.writingChecks }
+  if (o.done) checks[key] = textMark(text)
+  else delete checks[key]
+  updateApplication(id, { writingChecks: checks, ...(text !== before.text ? { packageMd: replaceSections(a.packageMd, { [key]: text }) } : {}) })
+})
+
+/** Settle every open decision as fine as is. */
+export const settleDecisions = atomic((id: string) => {
+  const a = getApplication(id)
+  if (!a?.packageMd) throw new Error('No package')
+  const open = decisionsOf(a.packageMd).filter((d) => !d.done)
+  updateApplication(id, { packageMd: open.reduce((md, d) => setDecisionLine(md, d.line, true), a.packageMd) })
+  return open.length
+})
+
+export type SubmitBy = 'you' | 'grokbot'
+
 /** Stages an application is still waiting to go in. */
 const UNSENT: schema.ApplicationStage[] = ['interested', 'review', 'approved']
 
 /**
- * Grok Bot asks for an application to go in: approve it if it isn't yet, and queue the fill that
- * submits it (jobs/fill-form.ts). A fill already waiting for it becomes the one that submits.
- * A dry run fills and reports the questions without approving or submitting anything.
+ * You press Approve & submit, or Grok Bot asks for an application to go in: approve it if it isn't
+ * yet, and queue the fill that submits it (jobs/fill-form.ts). A fill already waiting for it becomes
+ * the one that submits. A dry run fills and reports the questions without approving or submitting
+ * anything. `by: 'you'` comes only from the app's own button; no agent tool can set it.
  */
-export const requestSubmit = atomic((id: string, o: { dryRun?: boolean } = {}) => {
+export const requestSubmit = atomic((id: string, o: { dryRun?: boolean; by?: SubmitBy } = {}) => {
   const a = getApplication(id)
   if (!a) throw new Error(`No application ${id}`)
   if (a.appliedAt || !UNSENT.includes(a.stage)) throw new Error(`${a.companyName} – ${a.role} is ${STAGE_LABEL[a.stage]}${a.appliedAt ? `, applied ${a.appliedAt.slice(0, 10)}` : ''}: nothing to submit.`)
@@ -187,14 +224,16 @@ export const requestSubmit = atomic((id: string, o: { dryRun?: boolean } = {}) =
   const open = db.select().from(T).where(and(eq(T.kind, 'submit-assist'), eq(T.applicationId, id), inArray(T.status, ['queued', 'running']))).get()
   if (open?.status === 'running' && open.input.submit !== true) throw new Error('A fill for the user to review is running for this one now. Ask again once it is done.')
   const dryRun = o.dryRun === true
-  if (!dryRun && a.stage !== 'approved') setStage(id, 'approved', { note: 'Approved by Grok Bot to submit' })
-  const input = { submit: true, by: 'grokbot', dryRun }
+  const by = o.by ?? 'grokbot'
+  if (!dryRun && a.stage !== 'approved') setStage(id, 'approved', { note: by === 'you' ? 'You approved it to submit' : 'Approved by Grok Bot to submit' })
+  const input = { submit: true, by, dryRun }
   let task: schema.Task
   if (open) {
     db.update(T).set({ input: { ...open.input, ...input } }).where(eq(T.id, open.id)).run()
     task = { ...open, input: { ...open.input, ...input } }
   } else task = enqueueTask('submit-assist', `${dryRun ? 'Dry run' : 'Submit'}: ${a.companyName} – ${a.role}`, { applicationId: id, priority: 10, input })
-  updateApplication(id, { nextAction: dryRun ? 'Sidedoor is filling this for Grok Bot (dry run: no submit)' : 'Sidedoor is filling and submitting this for Grok Bot' })
+  const forWho = by === 'you' ? '' : ' for Grok Bot'
+  updateApplication(id, { nextAction: dryRun ? `Sidedoor is filling this${forWho} (dry run: no submit)` : `Sidedoor is filling and submitting this${forWho}` })
   return task
 })
 

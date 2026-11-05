@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm'
 import { index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
 import type { ResumeMatch } from '@sidedoor/shared/match'
+import type { ResumeTune } from '@sidedoor/shared/review'
 import type { ResumeContent, ResumeNote, ThemeOptions } from '@sidedoor/shared/resume'
 
 const id = () => text('id').primaryKey()
@@ -180,6 +181,10 @@ export const applications = sqliteTable(
     editorJson: json<PackageEdit>('editor_json'),
     /** Requirements from the posting matched against the tailored resume (src/server/match.ts). */
     matchJson: json<ResumeMatch>('match_json'),
+    /** The last time the AI worked the resume up against the posting (jobs/tune.ts). */
+    tuneJson: json<ResumeTune>('tune_json'),
+    /** Written answers you've checked off: section key → the mark of the text you checked. */
+    writingChecks: json<Record<string, string>>('writing_checks'),
     reviewNotes: text('review_notes'),
     notesMd: text('notes_md'),
     closedReason: text('closed_reason'),
@@ -295,6 +300,7 @@ export const TASK_KINDS = [
   'funding',
   'resume-notes',
   'match',
+  'tune',
   'submit-assist',
   'x-scout',
   'import-resume',

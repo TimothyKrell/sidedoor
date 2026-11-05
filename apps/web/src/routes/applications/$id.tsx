@@ -7,6 +7,7 @@ import { CompanyAvatar, CopyButton, Due, Empty, FitBadge, Freshness, LocationNot
 import { DraftCard, PersonRow } from '~/components/app/cards'
 import { useChat, usePageContext } from '~/components/app/chat'
 import { MatchList, MatchStrip, MatchSummary } from '~/components/app/match'
+import { Decisions, ListingGone } from '~/components/app/review'
 import { ApplicationQuestions } from '~/components/app/questions'
 import { WritingReview } from '~/components/app/writing'
 import { FollowupPicker, InteractionForm, PersonDialog } from '~/components/app/forms'
@@ -272,31 +273,6 @@ function PackageText({ md }: { md: string }) {
   )
 }
 
-/** Prepared work whose listing disappeared: check before spending more on it. */
-function ListingGone({ d }: { d: Detail }) {
-  const qc = useQueryClient()
-  const stage = useAction((v: { id: string; stage: Stage; closedReason?: string }) => setStageFn({ data: v }))
-  const posting = d.posting
-  if (!posting?.closedAt) return null
-  const reopen = async () => {
-    await rpc.listingStillOpen({ postingId: posting.id })
-    await qc.invalidateQueries({ queryKey: ['application', d.application.id] })
-  }
-  return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg bg-destructive/10 px-3 py-2 text-sm">
-      <span className="min-w-0 flex-1 basis-64">
-        <span className="font-medium">The listing was taken down {fmtDate(posting.closedAt)}.</span> Check the company’s site before you submit.
-      </span>
-      <Button size="sm" variant="outline" className="h-7 bg-background" onClick={() => void reopen()}>
-        It’s still open
-      </Button>
-      <Button size="sm" variant="ghost" className="h-7" disabled={stage.pending} onClick={() => void stage.run({ id: d.application.id, stage: 'closed', closedReason: 'Listing closed' })}>
-        Close it
-      </Button>
-    </div>
-  )
-}
-
 /** The one thing to do next, by stage. */
 function NextStep({ d }: { d: Detail }) {
   const a = d.application
@@ -345,6 +321,11 @@ function NextStep({ d }: { d: Detail }) {
       return (
         <div className={cn(box, 'border-primary/40')}>
           <ListingGone d={d} />
+          <Button asChild size="sm" variant="secondary">
+            <Link to="/review" search={{ app: a.id }}>
+              <ListChecks /> Go through it step by step
+            </Link>
+          </Button>
           <div className="text-sm font-medium">
             {confirmApprove ? `${openDecisions} decision${openDecisions === 1 ? ' is' : 's are'} still open below. Approve without settling ${openDecisions === 1 ? 'it' : 'them'}?` : 'Review the package below, then approve or send it back.'}
           </div>
@@ -886,107 +867,3 @@ function DetailsTab({ d }: { d: Detail }) {
     </div>
   )
 }
-
-/**
- * The package's "Needs your decision" items. Each is fine as is or gets your answer; answers are
- * kept in the package and go to your AI together, as one revision.
- */
-function Decisions({ d }: { d: Detail }) {
-  const a = d.application
-  const items = decisionsOf(a.packageMd)
-  const qc = useQueryClient()
-  const [answering, setAnswering] = useState<string | null>(null)
-  const [answer, setAnswer] = useState('')
-  const changes = useAction((v: { id: string; notes: string }) => requestChangesFn({ data: v }), { success: 'Sent to your AI. It’s revising the package with your answers.' })
-  if (!items.length) return null
-  const open = items.filter((x) => !x.done).length
-  const answered = items.filter((x) => x.answer)
-  const settle = async (text: string, done: boolean, ans?: string | null) => {
-    try {
-      await rpc.setDecision({ id: a.id, text, done, answer: ans ?? null })
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : String(e))
-    }
-    await qc.invalidateQueries({ queryKey: ['application', a.id] })
-  }
-  const sendAll = () =>
-    changes.run({
-      id: a.id,
-      notes: `My answers to the open decisions:\n${answered.map((x) => `- ${x.text.replace(/\*\*/g, '')}\n  My answer: ${x.answer}`).join('\n')}`,
-    })
-  return (
-    <section className="rounded-xl border bg-card p-4">
-      <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
-        <div className="min-w-0 flex-1">
-          <h3 className="text-sm font-semibold">{open ? `${open} decision${open === 1 ? '' : 's'} for you` : 'Decisions made'}</h3>
-          <p className="mt-0.5 text-xs text-muted-foreground">Things your AI couldn’t settle on its own.</p>
-        </div>
-        {answered.length > 0 && (
-          <Button size="sm" disabled={changes.pending} onClick={() => void sendAll()}>
-            Send {answered.length} answer{answered.length === 1 ? '' : 's'} to your AI
-          </Button>
-        )}
-      </div>
-      <ul className="mt-3 divide-y">
-        {items.map((x) => {
-          const text = x.text.replace(/\*\*/g, '')
-          return (
-            <li key={x.line} className="py-2.5 first:pt-0 last:pb-0">
-              <div className="flex flex-wrap items-start gap-x-2.5 gap-y-1.5 text-sm">
-                <span className="mt-0.5 shrink-0">{x.done ? <Check className="size-4 text-success" /> : <Circle className="size-4 text-muted-foreground" />}</span>
-                <div className="min-w-0 flex-1 basis-60">
-                  <div className={cn(x.done && 'text-muted-foreground')}>{text}</div>
-                  {x.done && <div className="mt-0.5 text-xs text-muted-foreground">{x.answer ? <span className="text-foreground">You: {x.answer}</span> : 'Fine as is'}</div>}
-                </div>
-                {answering !== x.text && (
-                  <div className="flex shrink-0 gap-1 max-sm:w-full max-sm:pl-6.5">
-                    {x.done ? (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 text-xs"
-                        onClick={() => {
-                          // Reopening an answer puts it back in the box to edit.
-                          if (x.answer) {
-                            setAnswering(x.text)
-                            setAnswer(x.answer)
-                          }
-                          void settle(x.text, false)
-                        }}
-                      >
-                        {x.answer ? 'Edit' : 'Undo'}
-                      </Button>
-                    ) : (
-                      <>
-                        <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => void settle(x.text, true)}>
-                          Fine as is
-                        </Button>
-                        <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { setAnswering(x.text); setAnswer('') }}>
-                          Answer…
-                        </Button>
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-              {answering === x.text && (
-                <div className="mt-2 space-y-2 pl-6.5">
-                  <Textarea value={answer} onChange={(e) => setAnswer(e.target.value)} rows={2} autoFocus placeholder="Your answer. It goes to your AI with any others when you send them." />
-                  <div className="flex gap-2">
-                    <Button size="sm" variant="outline" disabled={!answer.trim()} onClick={async () => { await settle(x.text, true, answer); setAnswering(null) }}>
-                      Save answer
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => setAnswering(null)}>
-                      Cancel
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </li>
-          )
-        })}
-      </ul>
-    </section>
-  )
-}
-

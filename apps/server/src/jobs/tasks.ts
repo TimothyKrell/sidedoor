@@ -207,7 +207,7 @@ export interface TaskOutcome {
 }
 
 /** The posting as text for prompts: header plus the description we captured. */
-const jdText = (a: schema.Application, p: schema.Posting | undefined) =>
+export const jdText = (a: schema.Application, p: schema.Posting | undefined) =>
   `# ${a.companyName} – ${a.role}\n\nSource: ${a.jobUrl ?? ''}\nLocation: ${a.location ?? ''}\nCompensation: ${a.compText ?? ''}\n\n${truncate(p?.jd, 14_000) || '(no description captured; read the posting URL with read_page)'}`
 
 const greenhouseQuestions = async (key: string | undefined) => {
@@ -297,6 +297,8 @@ const runPrep = async (task: schema.Task): Promise<TaskOutcome> => {
   if (final) r.log.push(final.reused ? `match ${final.match.score}/100: the pass's last check was of the final resume` : `match ${final.match.score}/100: re-checked the resume as the pass left it`)
   const summary = final ? withStoredScore(r.data.summary, final.match) : r.data.summary
   setStage(a.id, 'review', { note: summary })
+  // Then push the resume as far as the facts allow, so the review starts from its best.
+  enqueueTask('tune', `Tune resume: ${a.companyName} – ${a.role}`, { applicationId: a.id, priority: 5 })
   await notifyPromise({
     kind: 'package-ready',
     title: `Ready to review: ${a.companyName}`,
@@ -621,6 +623,7 @@ const runCustom = async (task: schema.Task): Promise<TaskOutcome> => {
 
 export const RUNNERS: Partial<Record<schema.TaskKind, (t: schema.Task) => Promise<TaskOutcome>>> = {
   prep: runPrep,
+  tune: async (t) => (await import('./tune')).runTune(t),
   research: runResearch,
   outreach: runOutreach,
   funding: runFunding,

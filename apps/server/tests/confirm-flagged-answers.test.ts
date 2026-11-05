@@ -29,8 +29,9 @@ const { executeTask } = await import('../src/jobs/tasks')
 const { submissions } = await import('../src/jobs/fill-form')
 const { checkFill, readPackage, submitRefusal } = await import('../src/form-answers')
 const { grokBotToken, setSecret } = await import('../src/secrets')
-const { answerFormQuestions, createApplication, getApplication, requestSubmit } = await import('../src/services/applications')
+const { createApplication, getApplication, requestSubmit } = await import('../src/services/applications')
 const { docBody, setDoc } = await import('../src/services/documents')
+const { answerFormQuestions } = await import('../src/services/questions')
 const { updateSettings } = await import('../src/settings')
 
 // Shaped like the package behind the Acmepay dry run on 2026-10-30 (personal details replaced).

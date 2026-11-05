@@ -7,6 +7,7 @@ import { STAGE_META, STAGES } from '@sidedoor/shared/format'
 import { CompanyAvatar, Empty, Section, TimeAgo } from '~/components/app/bits'
 import { AppRow, PersonRow, PostingCard } from '~/components/app/cards'
 import { useChat } from '~/components/app/chat'
+import { ReviewBanner } from '~/components/app/review'
 import { Button } from '~/components/ui/button'
 import { qo, rpc, runScoutNowFn } from '~/lib/api'
 import { useAction } from '~/lib/use-action'
@@ -39,20 +40,16 @@ interface Step {
   avatar?: string
 }
 
-/** Most urgent kind first: work that's done and waiting on you, then people, then new things. */
-const PRIORITY = ['Ready to submit', 'They replied', 'Follow up', 'Review', 'Draft to send', 'Strong new match']
+/** Most urgent kind first: people, then new things. Applications to send have their own section above. */
+const PRIORITY = ['They replied', 'Follow up', 'Draft to send', 'Strong new match']
 
 /**
- * The few things worth doing now. Kinds take turns in priority order (submit, a reply, the most
- * overdue follow-up, a review...), so a pile of one kind never hides the rest.
+ * The few things worth doing now. Kinds take turns in priority order (a reply, the most overdue
+ * follow-up, a draft...), so a pile of one kind never hides the rest.
  */
 const plan = (d: Data): Step[] => {
   const byKind = new Map<string, Step[]>()
   const steps = { push: (x: Step) => byKind.set(x.kind, [...(byKind.get(x.kind) ?? []), x]) }
-  for (const a of d.review.filter((x) => x.stage === 'approved'))
-    steps.push({ key: `s${a.id}`, kind: 'Ready to submit', title: `${a.companyName} · ${a.role}`, detail: 'Approved. Have your AI fill the form, then submit it.', to: '/applications/$id', params: { id: a.id }, cta: 'Submit', avatar: a.companyName })
-  for (const a of d.review.filter((x) => x.stage === 'review'))
-    steps.push({ key: `r${a.id}`, kind: 'Review', title: `${a.companyName} · ${a.role}`, detail: 'Tailored resume and answers are ready for you to check.', to: '/applications/$id', params: { id: a.id }, cta: 'Review', avatar: a.companyName })
   const replied = d.duePeople.filter((p) => p.stage === 'replied' && daysOverdue(p.nextContactAt, d.today) <= STALE_DAYS)
   for (const p of replied)
     steps.push({ key: `p${p.id}`, kind: 'They replied', title: p.name, detail: p.nextAction ?? `${p.title ?? ''}${p.companyName ? ` · ${p.companyName}` : ''}`, to: '/people/$id', params: { id: p.id }, cta: 'Reply', avatar: p.companyName ?? p.name })
@@ -139,6 +136,8 @@ function Today() {
       </header>
 
       {newInstall && <GettingStarted setup={data.setup} />}
+
+      <ReviewBanner />
 
       {shown.length > 0 && (
         <Section title="Up next">

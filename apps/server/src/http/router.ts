@@ -84,6 +84,7 @@ export const router = {
     async (f) => (await qs()).listQuestions({ status: f.status ?? 'open', ...(f.applicationId ? { applicationId: f.applicationId } : {}), ...(f.about ? { about: f.about } : {}) }),
   ),
   questionCount: proc(none, async () => (await qs()).openQuestionCount()),
+  reviewQueue: proc(none, async () => (await import('../review')).reviewQueue()),
   search: proc(z.object({ q: z.string() }), async ({ q: s }) => (await q()).searchAll(s)),
   tellRules: proc(none, async () => (await import('../writing/tells')).loadTellRules()),
   stories: proc(none, async () => {
@@ -374,6 +375,21 @@ export const router = {
   }),
   /** Send the package back to the AI to use the new answers, changing only what they affect. */
   reviseWithAnswers: proc(z.object({ applicationId: z.string() }), async ({ applicationId }) => (await qs()).reviseWithAnswers(applicationId)),
+  /** Check a written answer off, saving your text first if you changed it. */
+  setWriting: proc(z.object({ id: z.string(), key: z.string(), done: z.boolean(), text: z.string().max(20_000).optional() }), async ({ id, key, done, text }) => {
+    ;(await apps()).setWriting(id, key, { done, ...(text !== undefined ? { text } : {}) })
+    return { ok: true }
+  }),
+  settleDecisions: proc(id, async ({ id }) => ({ settled: (await apps()).settleDecisions(id) })),
+  /** Your press of Approve & submit. No MCP tool reaches this: agents can't send an application for you. */
+  approveAndSubmit: proc(id, async ({ id }) => {
+    const t = (await apps()).requestSubmit(id, { by: 'you' })
+    return { taskId: t.id }
+  }),
+  /** Have your AI work up every resume waiting for review that it hasn't yet. */
+  tuneAll: proc(none, async () => (await import('../review')).tuneAll()),
+  /** The application's own chat, with what your AI found waiting in it. */
+  applicationChat: proc(id, async ({ id }) => (await import('../chat')).applicationThread(id)),
   /** Settle one decision (fine as is, or with your answer) against the package as it is now. */
   setDecision: proc(z.object({ id: z.string(), text: z.string(), done: z.boolean(), answer: z.string().max(2000).nullable().optional() }), async ({ id, text, done, answer }) => {
     const a = await apps()
@@ -437,13 +453,13 @@ export const router = {
     },
   ),
   startTask: proc(
-    z.object({ kind: z.enum(['research', 'prep', 'outreach', 'discover', 'funding', 'custom', 'submit-assist', 'match', 'x-scout']), applicationId: z.string().optional(), personId: z.string().optional(), instructions: z.string().optional(), title: z.string().optional(), urgent: z.boolean().optional() }),
+    z.object({ kind: z.enum(['research', 'prep', 'outreach', 'discover', 'funding', 'custom', 'submit-assist', 'match', 'tune', 'x-scout']), applicationId: z.string().optional(), personId: z.string().optional(), instructions: z.string().optional(), title: z.string().optional(), urgent: z.boolean().optional() }),
     async (d) => {
       const t = await tasks()
       const m = await apps()
       const a = d.applicationId ? m.getApplication(d.applicationId) : undefined
       const label = d.title ?? (a ? `${a.companyName} – ${a.role}` : (d.instructions?.slice(0, 70) ?? d.kind))
-      const verb = { 'submit-assist': 'Fill form', match: 'Check resume match', 'x-scout': 'Research on X' }[d.kind as string] ?? `${d.kind[0]!.toUpperCase()}${d.kind.slice(1)}`
+      const verb = { 'submit-assist': 'Fill form', match: 'Check resume match', tune: 'Tune resume', 'x-scout': 'Research on X' }[d.kind as string] ?? `${d.kind[0]!.toUpperCase()}${d.kind.slice(1)}`
       const task = t.enqueueTask(d.kind, `${verb}: ${label}`, { applicationId: d.applicationId ?? null, personId: d.personId ?? null, priority: d.urgent ? t.URGENT_PRIORITY : 10, input: d.instructions ? { instructions: d.instructions } : {} })
       return { id: task.id }
     },

@@ -43,6 +43,13 @@
       "when": 1793394923140,
       "tag": "0005_questions",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1793912215736,
+      "tag": "0006_steep_jack_power",
+      "breakpoints": true
     }
   ]
 }

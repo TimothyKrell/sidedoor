@@ -27,20 +27,21 @@ const nextHeading = (md: string, from: number, level: number) => {
   return m ? m.index : md.length
 }
 
-export function extractProseSections(md: string | null | undefined): ProseSection[] {
+/** `all` keeps short and empty answers too: a question left for you to write is still one to write. */
+export function extractProseSections(md: string | null | undefined, o: { all?: boolean } = {}): ProseSection[] {
   if (!md) return []
   const out: ProseSection[] = []
   const q = /^###\s+Q(\d+)[:.)]?\s*(.*)$/gm
   for (const m of md.matchAll(q)) {
     const bodyFrom = (m.index ?? 0) + m[0].length
     const r = trimmedRange(md, bodyFrom, nextHeading(md, bodyFrom, 3))
-    if (r.text.length >= 40) out.push({ key: `q:${m[1]}`, title: `Q${m[1]}: ${m[2]!.trim()}`, ...r })
+    if (o.all || r.text.length >= 40) out.push({ key: `q:${m[1]}`, title: `Q${m[1]}: ${m[2]!.trim()}`, ...r })
   }
   const cl = /^##\s+Cover letter\s*$/im.exec(md)
   if (cl) {
     const bodyFrom = cl.index + cl[0].length
     const r = trimmedRange(md, bodyFrom, nextHeading(md, bodyFrom, 2))
-    if (r.text.length >= 80 && !/^_?not requested/i.test(r.text)) out.push({ key: 'cover-letter', title: 'Cover letter', ...r })
+    if ((o.all || r.text.length >= 80) && !/^_?not requested/i.test(r.text)) out.push({ key: 'cover-letter', title: 'Cover letter', ...r })
   }
   return out.sort((a, b) => a.start - b.start)
 }
@@ -48,7 +49,7 @@ export function extractProseSections(md: string | null | undefined): ProseSectio
 /** Replace sections by key (applied back to front so offsets stay valid). */
 export function replaceSections(md: string, replacements: Record<string, string>) {
   let next = md
-  const secs = extractProseSections(md).filter((s) => replacements[s.key] !== undefined).sort((a, b) => b.start - a.start)
+  const secs = extractProseSections(md, { all: true }).filter((s) => replacements[s.key] !== undefined).sort((a, b) => b.start - a.start)
   for (const s of secs) next = next.slice(0, s.start) + replacements[s.key]! + next.slice(s.end)
   return next
 }

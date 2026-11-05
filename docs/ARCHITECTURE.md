@@ -71,8 +71,8 @@ Job postings and application forms are untrusted, and during a fill an agent is 
   - uploads only by absolute path from the fill's own folder, which is Playwright's only MCP root;
   - navigation only to public http(s) pages.
 - **Submitting.** An in-page guard blocks the final submit while the agent works. A second check
-  refuses clicks the agent itself labels as submitting. The user submits, unless they let Grok Bot
-  submit (below).
+  refuses clicks the agent itself labels as submitting. It lifts only for a fill the user sent with
+  Approve & submit, or one Grok Bot sent when they let it (below).
 - **Windows.** No permissions; no navigation outside the web; popups stay in the same window.
 
 ## Data ownership
@@ -144,6 +144,24 @@ agents use `list_questions`, `answer_user_questions` and `dismiss_questions`. An
 application's package, and those for every application also into one section of Standard answers
 or Experience, and are handed back instead of asking again. Prep is given every answer already
 given. "Update the package" sends a revision limited to the new answers.
+
+## Getting an application out
+
+`/review` walks everything in Ready for review and Approved, one application at a time, in pipeline
+order. `review.ts` works out each one's step, using `packages/shared/src/review.ts` so Today, the
+page and agents agree.
+
+1. **Resume.** A `tune` task (`jobs/tune.ts`, `prompts/tune.md`) runs after every prep, or from Tune
+   on the page. The AI edits and re-checks until the match reaches 95 or stops rising, then asks
+   for what only the user knows through `ask_questions`. Sidedoor measures the start and finish
+   itself and restores the resume if the pass left it lower.
+2. **Questions and decisions.** The question store, and the package's "Needs your decision" list.
+   Talk it through opens the application's own chat (`applicationThread`), which starts with what
+   the AI found and costs nothing until the user writes.
+3. **Writing.** Every free-text answer and cover letter, to write or check off. A check-off is of
+   the exact text (`textMark`), so a later change reopens it.
+4. **Send.** Approve & submit calls `requestSubmit` with `by: 'you'`, the same path Grok Bot uses,
+   with the same stops: nothing goes in on an answer the user hasn't confirmed.
 
 ## Repository layout
 

@@ -103,8 +103,8 @@ const evidenceFrom = (snap: string | null, reported: string): Evidence => ({
   at: nowIso(),
 })
 
-/** Grok Bot asked for this one to go in, and the user still lets it submit. */
-export const submitAllowed = (task: Pick<schema.Task, 'input'>) => task.input.submit === true && getSettings().grokBot.submit && !!grokBotToken()
+/** You pressed Approve & submit for this one, or Grok Bot asked and you still let it submit. */
+export const submitAllowed = (task: Pick<schema.Task, 'input'>) => task.input.submit === true && (task.input.by === 'you' || (getSettings().grokBot.submit && !!grokBotToken()))
 
 const SUBMIT_NOTE = `## This one gets submitted
 Nobody reviews this form before it goes: when you report "ready", Sidedoor submits it in a
@@ -217,7 +217,7 @@ export const runFillForm = (task: schema.Task): Promise<TaskOutcome> =>
     const done = { output: JSON.stringify(out), sessionId: r.sessionId, costUsd: costUsd || undefined, log, provider: r.provider, model: r.model }
     const s = sent as SubmitReport | null
     if (s?.outcome === 'submitted') {
-      setStage(a.id, 'applied', { note: `Submitted by Sidedoor for Grok Bot. ${s.summary}` })
+      setStage(a.id, 'applied', { note: `Submitted by Sidedoor${task.input.by === 'you' ? '' : ' for Grok Bot'}. ${s.summary}` })
       await notifyPromise({ kind: 'agent', title: `Applied: ${a.companyName}`, body: s.summary, path: `/applications/${a.id}`, priority: 3 })
       return done
     }
@@ -233,7 +233,7 @@ export const runFillForm = (task: schema.Task): Promise<TaskOutcome> =>
           : 'Form filled in the Sidedoor browser window: review it and submit'
         : report.outcome === 'needs_you'
           ? strict
-            ? `${asks} question${asks === 1 ? '' : 's'} for you before Grok Bot can submit`
+            ? `${asks} question${asks === 1 ? '' : 's'} for you before ${task.input.by === 'you' ? 'it can go in' : 'Grok Bot can submit'}`
             : `Form mostly filled; ${asks} item${asks === 1 ? '' : 's'} need you, then submit`
           : `Couldn't fill the form: ${truncate(report.summary, 120)}`
     updateApplication(a.id, { nextAction: next })

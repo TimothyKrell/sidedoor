@@ -10,6 +10,7 @@ import {
   ListTodo,
   Menu,
   type LucideIcon,
+  ClipboardCheck,
   MessageCircleQuestion,
   MessageSquare,
   Radar,
@@ -44,6 +45,7 @@ interface NavItem {
 const NAV: NavItem[] = [
   { to: '/', label: 'Today', icon: Sun, mobile: true },
   { to: '/jobs', label: 'Jobs', icon: Briefcase, mobile: true },
+  { to: '/review', label: 'Review', icon: ClipboardCheck, mobile: true },
   { to: '/pipeline', label: 'Pipeline', icon: KanbanSquare, mobile: true },
   { to: '/questions', label: 'Questions', icon: MessageCircleQuestion },
   { to: '/people', label: 'People', icon: Users, mobile: true },
@@ -200,8 +202,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [searchOpen, setSearchOpen] = useState(false)
   const onChatPage = path.startsWith('/chat')
   const fullBleed = path.startsWith('/resume/')
-  // The pipeline board has a column per stage, so it takes the whole width instead of the reading column.
-  const wide = path === '/pipeline'
+  // The pipeline board and the review queue need the whole width, not the reading column.
+  const wide = path === '/pipeline' || path === '/review'
   useLiveUpdates()
   const navigate = useNavigate()
   // In a browser, notifications show as toasts (the desktop app shows native ones instead).
@@ -324,7 +326,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       )}
 
       {/* Mobile bottom nav */}
-      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t bg-background/90 backdrop-blur pb-safe md:hidden">
+      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-6 border-t bg-background/90 backdrop-blur pb-safe md:hidden">
         {NAV.filter((n) => n.mobile).map((n) => (
           <Link key={n.to} to={n.to} className={cn('flex flex-col items-center gap-0.5 pt-2 text-[11px] text-muted-foreground', isActive(path, n.to) && 'text-primary')}>
             <n.icon className="size-5" />

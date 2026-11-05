@@ -329,7 +329,7 @@ const emailNote = (to: string | null | undefined, p: { email: string | null; ema
 }
 
 /** The resume changed after the match check read it. */
-const matchStale = (a: Pick<schema.Application, 'matchJson' | 'resumeId'>) => {
+export const matchStale = (a: Pick<schema.Application, 'matchJson' | 'resumeId'>) => {
   if (!a.matchJson) return false
   const r = resumeForApplication(a)
   return !r || r.id !== a.matchJson.doc || String(r.version) !== a.matchJson.resumeVersion

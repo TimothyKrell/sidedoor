@@ -1,9 +1,12 @@
-import { eq } from 'drizzle-orm'
+import { decisionsOf } from '@sidedoor/shared/decisions'
+import { desc, eq, sql } from 'drizzle-orm'
 import { chatCwd, mcpFor, resolveJobAi, runJob } from './ai'
 import { logActivity } from './activity'
 import { db, schema } from './db/client'
 import { newId, nowIso } from './ids'
 import { context, render, userName } from './prompts'
+import { getApplication } from './services/applications'
+import { listQuestions } from './services/questions'
 import { truncate } from './text'
 
 export type ChatEvent =
@@ -39,6 +42,46 @@ export const stopTurn = (threadId: string) => turns.get(threadId)?.abort.abort()
 
 /** Start a chat turn. Returns immediately; progress is published to subscribers and persisted. */
 export type ChatMode = 'story'
+
+/** What an application's own chat adds to the system prompt. */
+const forApplication = (id: string | undefined) => {
+  const a = id ? getApplication(id) : undefined
+  return a ? render('application-chat', { APP_ID: a.id, LEAD_NAME: `${a.companyName} – ${a.role}`, RESUME_ID: a.resumeId ?? '(none yet: use create_tailored_resume)' }) : ''
+}
+
+/** Your AI's opening message in an application's chat: where the resume stands and what it wants to know. */
+const applicationBrief = (a: schema.Application) => {
+  const open = listQuestions({ status: 'open', applicationId: a.id })
+  const t = a.tuneJson
+  const head = t
+    ? `**Resume match ${t.from === t.to ? t.to : `${t.from} → ${t.to}`}.** ${t.summary}`
+    : a.matchJson
+      ? `**Resume match ${a.matchJson.score}.** I haven't tuned this resume yet.`
+      : "I haven't checked this resume against the posting yet."
+  const asks = open.map((q, i) => `${i + 1}. ${q.question}${q.why ? ` _${q.why}_` : ''}`).join('\n')
+  const decisions = decisionsOf(a.packageMd).filter((d) => !d.done).length
+  const left = decisions ? ` ${decisions} decision${decisions === 1 ? ' is' : 's are'} still open on the Review page, and I can talk through any of them.` : ''
+  return `${head}\n\n${asks ? `${open.length === 1 ? 'This could' : 'These could'} take it higher. Answer here in any order, and I'll update the resume:\n\n${asks}\n\n${left.trim()}`.trim() : `I have no questions about the resume.${left} Ask me anything about it, or tell me what to change.`}`
+}
+
+/**
+ * The application's own chat, made the first time you open it. It opens with what your AI found,
+ * and a newer tuning pass adds its findings to the end. Costs nothing: no AI runs until you write.
+ */
+export const applicationThread = (applicationId: string) => {
+  const a = getApplication(applicationId)
+  if (!a) throw new Error(`No application ${applicationId}`)
+  const T = schema.chatThreads
+  const found = db.select().from(T).where(sql`json_extract(${T.context}, '$.applicationId') = ${a.id}`).orderBy(desc(T.updatedAt)).get()
+  const tuneAt = a.tuneJson?.at ?? ''
+  if (found && (found.context?.tuneAt ?? '') === tuneAt) return { threadId: found.id }
+  const threadId = found?.id ?? newId('thr_')
+  const context = { path: `/applications/${a.id}`, applicationId: a.id, tuneAt }
+  if (found) db.update(T).set({ context, updatedAt: nowIso() }).where(eq(T.id, found.id)).run()
+  else db.insert(T).values({ id: threadId, title: truncate(`${a.companyName} – ${a.role}`, 70), context }).run()
+  db.insert(schema.chatMessages).values({ id: newId('msg_'), threadId, role: 'assistant', parts: [{ type: 'text', text: applicationBrief(a) }], at: nowIso() }).run()
+  return { threadId }
+}
 
 export const startTurn = (v: { threadId?: string; message: string; pageContext?: string; pageLabel?: string; mode?: ChatMode; title?: string }) => {
   let thread = v.threadId ? db.select().from(schema.chatThreads).where(eq(schema.chatThreads.id, v.threadId)).get() : undefined
@@ -86,7 +129,7 @@ export const startTurn = (v: { threadId?: string; message: string; pageContext?:
         model: ai.model,
         cwd: chatCwd(threadId),
         prompt,
-        system: story ? render('story-interview', {}) : render('system', { CRITERIA: truncate(context.criteria(), 4000) }),
+        system: story ? render('story-interview', {}) : `${render('system', { CRITERIA: truncate(context.criteria(), 4000) })}${forApplication(thread.context?.applicationId)}`,
         web: !story,
         mcp: mcpFor(story ? 'story' : 'app'),
         maxTurns: 60,
