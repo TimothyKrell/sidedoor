@@ -358,6 +358,16 @@ export const router = {
     m.setStage(d.id, d.stage, { ...(d.closedReason ? { closedReason: d.closedReason } : {}), ...(d.won ? { won: true } : {}), ...(d.note ? { note: d.note } : {}) })
     return { ok: true }
   }),
+  /** Check one application against your rules, or (no id) every one not yet sent and list what breaks them. */
+  checkRules: proc(z.object({ id: z.string().optional() }), async ({ id }) => {
+    const m = await import('../services/rules')
+    return id ? { check: m.checkApplicationRules(id), open: null } : { check: null, open: m.checkOpenApplications() }
+  }),
+  /** Go ahead despite the rules it fails, or (clear) take that back. */
+  overrideRules: proc(z.object({ id: z.string(), note: z.string().optional(), clear: z.boolean().optional() }), async ({ id, note, clear }) => {
+    const m = await import('../services/rules')
+    return clear ? m.clearRulesOverride(id) : m.overrideRules(id, { by: 'you', note: note ?? null })
+  }),
   requestChanges: proc(z.object({ id: z.string(), notes: z.string().min(1) }), async ({ id, notes }) => {
     ;(await apps()).requestChanges(id, notes)
     return { ok: true }

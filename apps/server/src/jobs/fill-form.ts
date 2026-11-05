@@ -2,6 +2,7 @@ import { copyFileSync, mkdirSync, rmSync } from 'node:fs'
 import { basename, resolve } from 'node:path'
 import { and, desc, eq } from 'drizzle-orm'
 import { z } from 'zod'
+import { blockingFindings, type RuleCheck } from '@sidedoor/shared/rules'
 import { mcpFor, runJob } from '../ai'
 import { logActivity } from '../activity'
 import { openFormTab, withFormLock } from '../browser'
@@ -16,6 +17,7 @@ import { grokBotToken } from '../secrets'
 import { getApplication, setStage, updateApplication } from '../services/applications'
 import { docBody } from '../services/documents'
 import { askQuestions } from '../services/questions'
+import { checkApplicationRules } from '../services/rules'
 import { buildResumePdf, resumeForApplication } from '../services/resumes'
 import { getSettings } from '../settings'
 import { clip, truncate } from '../text'
@@ -67,6 +69,8 @@ export interface FillOutput extends FillReport {
   evidence?: Evidence | null
   /** Every field the fill put in, where Sidedoor found its value, and whether the user confirmed it. */
   audit?: AuditEntry[]
+  /** Filled, then held back from submitting: it fails the user's rules and nobody overrode that. */
+  rules?: RuleCheck | null
 }
 
 /**
@@ -155,6 +159,7 @@ export const runFillForm = (task: schema.Task): Promise<TaskOutcome> =>
     let report: FillReport
     let sent: SubmitReport | null = null
     let evidence: Evidence | null = null
+    let held: RuleCheck | null = null
     let r: Awaited<ReturnType<typeof runJob<typeof FillReport>>>
     let closed = false
     const log: string[] = []
@@ -186,6 +191,12 @@ export const runFillForm = (task: schema.Task): Promise<TaskOutcome> =>
         const reviewed = { ...fill, data: checked.report }
         // The pre-submit audit: nothing goes in with an answer the user hasn't confirmed.
         if (!submitting || reviewed.data.outcome !== 'ready' || reviewed.data.needsYou.length || submitRefusal(audit)) return reviewed
+        // A last look at the user's rules, with the questions the form itself asked.
+        const check = checkApplicationRules(a.id, { questions: reviewed.data.filled.map((f) => f.field) })
+        if (blockingFindings(check).length) {
+          held = check
+          return reviewed
+        }
         await tab.unguard()
         allowSubmit(true)
         db.update(schema.tasks).set({ input: { ...task.input, submitStartedAt: nowIso() } }).where(eq(schema.tasks.id, task.id)).run()
@@ -218,13 +229,21 @@ export const runFillForm = (task: schema.Task): Promise<TaskOutcome> =>
     }
 
     const label = `${a.companyName} – ${a.role}`
-    const out: FillOutput = { ...report, submitting, dryRun, submit: sent, evidence, audit }
+    const out: FillOutput = { ...report, submitting, dryRun, submit: sent, evidence, audit, rules: held }
     log.push(experienceLogLine(experience))
     const done = { output: JSON.stringify(out), sessionId: r.sessionId, costUsd: costUsd || undefined, log, provider: r.provider, model: r.model }
     const s = sent as SubmitReport | null
     if (s?.outcome === 'submitted') {
       setStage(a.id, 'applied', { note: `Submitted by Sidedoor${task.input.by === 'you' ? '' : ' for Grok Bot'}. ${s.summary}` })
       await notifyPromise({ kind: 'agent', title: `Applied: ${a.companyName}`, body: s.summary, path: `/applications/${a.id}`, priority: 3 })
+      return done
+    }
+    const h = held as RuleCheck | null
+    if (h) {
+      const why = blockingFindings(h).map((f) => f.reason).join('; ')
+      updateApplication(a.id, { nextAction: `Not submitted: breaks your rules (${truncate(why, 160)}). Go ahead anyway to submit it.` })
+      logActivity('application', `Held back, breaks your rules: ${label}`, { detail: why, link: `/applications/${a.id}` })
+      await notifyPromise({ kind: 'agent', title: `Didn't submit ${a.companyName}`, body: `It breaks your rules: ${why}`, path: `/applications/${a.id}`, priority: 4 })
       return done
     }
     const asked = s ? s.problems.map((p) => ({ question: p.field, why: p.why })) : report.needsYou.map((n) => ({ question: n.field, why: n.why, options: n.options }))
@@ -299,6 +318,8 @@ export const submissions = (applicationId?: string): Submission[] => {
       }
       if (o?.audit) base.audit = o.audit
       if (!o) out.push({ ...base, status: 'failed', summary: t.output ?? 'No report.' })
+      else if (o.rules)
+        out.push({ ...base, status: 'not_submitted', summary: `Filled, not submitted: it breaks the user's rules (${blockingFindings(o.rules).map((f) => f.reason).join('; ')}). Ask the user; only if they want it anyway, call override_rules, then submit_application again.` })
       else if (o.submit?.outcome === 'submitted') out.push({ ...base, status: 'submitted', summary: o.submit.summary, evidence: o.evidence ?? null })
       else if (o.submit) out.push({ ...base, status: o.submit.outcome === 'blocked' ? 'blocked' : o.submit.problems.length ? 'questions' : 'not_submitted', summary: o.submit.summary, questions: o.submit.problems.map((p) => ({ question: p.field, why: p.why, options: [] })) })
       else if (o.outcome === 'needs_you') out.push({ ...base, status: 'questions', summary: o.summary, questions: o.needsYou.map((n) => ({ question: n.field, why: n.why, options: n.options ?? [] })) })

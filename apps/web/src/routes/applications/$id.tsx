@@ -10,6 +10,7 @@ import { MatchList, MatchStrip, MatchSummary } from '~/components/app/match'
 import { Decisions, ListingGone } from '~/components/app/review'
 import { ApplicationQuestions } from '~/components/app/questions'
 import { StaleFlags } from '~/components/app/stale'
+import { RulesCard } from '~/components/app/rules'
 import { WritingReview } from '~/components/app/writing'
 import { FollowupPicker, InteractionForm, PersonDialog } from '~/components/app/forms'
 import { Badge } from '~/components/ui/badge'
@@ -119,6 +120,8 @@ function ApplicationPage() {
           ))}
         </div>
       )}
+
+      {(['interested', 'review', 'approved'] as Stage[]).includes(a.stage) && <RulesCard id={a.id} check={a.rulesJson} />}
 
       <NextStep d={data} />
 

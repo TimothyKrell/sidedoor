@@ -1,6 +1,7 @@
 import { and, desc, eq, inArray, isNotNull, notInArray } from 'drizzle-orm'
 import { decisionsOf, setDecisionLine } from '@sidedoor/shared/decisions'
 import type { ResumeMatch } from '@sidedoor/shared/match'
+import { blockingFindings } from '@sidedoor/shared/rules'
 import { extractProseSections, replaceSections } from '@sidedoor/shared/package-sections'
 import { type ResumeTune, textMark } from '@sidedoor/shared/review'
 import { logActivity } from '../activity'
@@ -8,6 +9,7 @@ import { db, schema } from '../db/client'
 import { atomic } from '../db/tx'
 import { addDays, newId, nowIso, today } from '../ids'
 import { getSettings } from '../settings'
+import { checkApplicationRules } from './rules'
 import { enqueueTask } from './tasks'
 
 export type AppPatch = Partial<Omit<typeof schema.applications.$inferInsert, 'id' | 'createdAt'>>
@@ -63,6 +65,8 @@ export const trackPosting = atomic((postingId: string, o: { prep?: boolean; rese
     .run()
   db.update(schema.postings).set({ applicationId: id, userStatus: 'tracked' }).where(eq(schema.postings.id, p.id)).run()
   const label = `${p.companyName ?? 'Unknown company'} – ${p.title}`
+  // Check the user's rules now, so a role that breaks them shows it before anyone preps it.
+  checkApplicationRules(id)
   if (prep) enqueueTask('prep', `Prepare package: ${label}`, { applicationId: id })
   if (o.research ?? s.research.auto) enqueueTask('research', `Research & people: ${label}`, { applicationId: id })
   logActivity('application', `Tracking ${label}`, { link: `/applications/${id}` })
@@ -215,7 +219,7 @@ const UNSENT: schema.ApplicationStage[] = ['interested', 'review', 'approved']
  * the one that submits. A dry run fills and reports the questions without approving or submitting
  * anything. `by: 'you'` comes only from the app's own button; no agent tool can set it.
  */
-export const requestSubmit = atomic((id: string, o: { dryRun?: boolean; by?: SubmitBy } = {}) => {
+export const requestSubmit = atomic((id: string, o: { dryRun?: boolean; skipRuleCheck?: boolean; by?: SubmitBy } = {}) => {
   const a = getApplication(id)
   if (!a) throw new Error(`No application ${id}`)
   if (a.appliedAt || !UNSENT.includes(a.stage)) throw new Error(`${a.companyName} – ${a.role} is ${STAGE_LABEL[a.stage]}${a.appliedAt ? `, applied ${a.appliedAt.slice(0, 10)}` : ''}: nothing to submit.`)
@@ -228,6 +232,14 @@ export const requestSubmit = atomic((id: string, o: { dryRun?: boolean; by?: Sub
   if (open?.status === 'running' && open.input.submit !== true) throw new Error('A fill for the user to review is running for this one now. Ask again once it is done.')
   const dryRun = o.dryRun === true
   const by = o.by ?? 'grokbot'
+  // The user's rules: a fail nobody overrode stops a submit. A dry run never submits, so it may go ahead.
+  if (!dryRun && !o.skipRuleCheck) {
+    const block = blockingFindings(checkApplicationRules(id))
+    if (block.length)
+      throw new Error(
+        `Not submitting ${a.companyName} – ${a.role}: it breaks the user's rules. ${block.map((f) => `${f.reason}${f.quote ? ` ("${f.quote}")` : ''}`).join('; ')}. ${by === 'you' ? 'Open the application and choose Go ahead anyway if you want it sent.' : 'Ask the user; only if they want it anyway, call override_rules, then submit again.'}`,
+      )
+  }
   if (!dryRun && a.stage !== 'approved') setStage(id, 'approved', { note: by === 'you' ? 'You approved it to submit' : 'Approved by Grok Bot to submit' })
   const input = { submit: true, by, dryRun }
   let task: schema.Task

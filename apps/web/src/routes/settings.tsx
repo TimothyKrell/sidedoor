@@ -156,6 +156,94 @@ function SaveBar({ dirty, saving, onSave }: { dirty: boolean; saving: boolean; o
 
 // ------------------------------------------------------------------ sections
 
+const ASK_OPTIONS = [
+  { value: 'flag' as const, label: 'Flag it' },
+  { value: 'fail' as const, label: 'Block it' },
+  { value: 'ignore' as const, label: 'Ignore' },
+]
+const pick = <T,>(v: T[]) => v[v.length - 1]
+
+/** Hard rules, checked in code before prep and before submit. */
+function RulesSection() {
+  const rules = useSection('rules')
+  const r = rules.v
+  const [open, setOpen] = useState<Awaited<ReturnType<typeof rpc.checkRules>>['open']>(null)
+  const [checking, setChecking] = useState(false)
+  const money = (n: number | null, set: (n: number | null) => void) => <Input type="number" inputMode="numeric" value={n ?? ''} onChange={(e) => set(e.target.value ? Number(e.target.value) : null)} className="w-32 text-right tabular-nums" />
+  const checkAll = async () => {
+    setChecking(true)
+    try {
+      setOpen((await rpc.checkRules({})).open)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e))
+    } finally {
+      setChecking(false)
+    }
+  }
+  return (
+    <Card
+      title="Your rules"
+      desc="Checked against every posting before prep and again before anything is submitted. A role that breaks one isn't prepared or submitted unless you go ahead anyway on its page; a flag shows there and lets prep go ahead. Pay the posting doesn't state never counts against it."
+      footer={
+        <>
+          <Button size="sm" variant="outline" disabled={checking || rules.dirty} onClick={() => void checkAll()}>
+            {checking && <Loader2 className="animate-spin" />} Check open applications
+          </Button>
+          <SaveBar dirty={rules.dirty} saving={rules.saving} onSave={() => void rules.save()} />
+        </>
+      }
+    >
+      <Row label="Check postings against these rules">
+        <Switch checked={r.enabled} onCheckedChange={(enabled) => rules.set({ enabled })} />
+      </Row>
+      <Row label="Fully remote only" hint="Hybrid, on-site, relocation and “within N miles of an office” break it.">
+        <Switch checked={r.remoteOnly} onCheckedChange={(remoteOnly) => rules.set({ remoteOnly })} />
+      </Row>
+      <Row label="Total comp floor" hint="Yearly, in your search currency. Only roles clearly under it break it.">
+        {money(r.compFloor, (compFloor) => rules.set({ compFloor }))}
+      </Row>
+      <Row label="Target total comp" hint="Shown on each application, so higher-paying roles can go first.">
+        <div className="flex items-center gap-1.5">
+          {money(r.targetMin, (targetMin) => rules.set({ targetMin }))}
+          <span className="text-xs text-muted-foreground">to</span>
+          {money(r.targetMax, (targetMax) => rules.set({ targetMax }))}
+        </div>
+      </Row>
+      <Row label="Equity and bonus on top of a posted base" hint="A base under your floor by less than this gets a flag, not a block, when the posting offers equity or a bonus.">
+        <NumberInput value={r.equityAllowancePct} min={0} max={100} onChange={(equityAllowancePct) => rules.set({ equityAllowancePct })} suffix="%" />
+      </Row>
+      <Field label="U.S. citizenship, permanent residency or export-control (“U.S. person”) requirement">
+        <PillSelect options={ASK_OPTIONS} value={[r.citizenship]} onChange={(v) => { const c = pick(v); if (c) rules.set({ citizenship: c }) }} />
+      </Field>
+      <Field label="Security clearance requirement">
+        <PillSelect options={ASK_OPTIONS} value={[r.clearance]} onChange={(v) => { const c = pick(v); if (c) rules.set({ clearance: c }) }} />
+      </Field>
+      {open && (
+        <div className="space-y-1.5 rounded-lg border p-3 text-sm">
+          {!open.enabled ? (
+            <div className="text-muted-foreground">Rule checks are off.</div>
+          ) : (
+            <>
+              <div className="text-xs text-muted-foreground">
+                Checked {open.counts.checked}: {open.counts.fail} break your rules, {open.counts.flag} flagged, {open.counts.pass} meet them.
+              </div>
+              {open.violations.map((v) => (
+                <div key={v.applicationId} className="text-xs">
+                  <Link to="/applications/$id" params={{ id: v.applicationId }} className={cn('font-medium hover:underline', v.result === 'fail' ? 'text-destructive' : 'text-hot')}>
+                    {v.company} – {v.role}
+                  </Link>
+                  {v.overridden && <span className="text-muted-foreground"> (going ahead anyway)</span>}
+                  <span className="text-muted-foreground">: {v.findings.map((f) => f.reason).join('; ')}</span>
+                </div>
+              ))}
+            </>
+          )}
+        </div>
+      )}
+    </Card>
+  )
+}
+
 function YouSection() {
   const { v, set, save, saving, dirty } = useSection('you')
   return (
@@ -261,6 +349,8 @@ function SearchSection() {
           <ChipsInput value={s.dealbreakers} onChange={(dealbreakers) => search.set({ dealbreakers })} />
         </Field>
       </Card>
+
+      <RulesSection />
 
       <Card title="Scoring" desc="When a posting is worth your time." footer={<SaveBar dirty={triage.dirty} saving={triage.saving} onSave={() => void triage.save()} />}>
         <Row label="Prepare an application at" hint="Postings at or above this fit score go to your pipeline.">
