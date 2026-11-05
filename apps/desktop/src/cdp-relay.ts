@@ -80,11 +80,13 @@ export function createCdpRelay(target: CdpRelayTarget, write: (message: string) 
     }
   }
 
-  const pageCommand = (c: CdpCommand): Promise<unknown> => {
+  // async so a target that throws (Electron's debugger, once the window is gone) answers with an
+  // error instead of throwing out of receive() and crashing the main process.
+  const pageCommand = async (c: CdpCommand): Promise<unknown> => {
     const child = sessions.get(c.sessionId!) === 'page' ? undefined : c.sessionId
     // The page is already running; child frames are paused by Playwright's
     // waitForDebuggerOnStart until this reaches them, so only swallow it for the page.
-    if (c.method === 'Runtime.runIfWaitingForDebugger' && child === undefined) return Promise.resolve({})
+    if (c.method === 'Runtime.runIfWaitingForDebugger' && child === undefined) return {}
     return target.send(c.method, c.params ?? {}, child)
   }
 

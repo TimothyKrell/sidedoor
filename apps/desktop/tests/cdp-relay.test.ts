@@ -61,3 +61,16 @@ test('events reach the page session only once attached', async () => {
   relay.event('Page.loadEventFired', { timestamp: 1 }, undefined)
   expect(out.at(-1)).toEqual({ method: 'Page.loadEventFired', params: { timestamp: 1 }, sessionId: 'sidedoor-page' })
 })
+
+test('a target that throws (its window closed) answers with an error instead of throwing', async () => {
+  const out: Array<Record<string, unknown>> = []
+  const relay = createCdpRelay(
+    target(() => {
+      throw new TypeError('Object has been destroyed')
+    }),
+    (m) => out.push(JSON.parse(m)),
+  )
+  expect(() => relay.receive(JSON.stringify({ id: 9, method: 'Runtime.evaluate', sessionId: 'sidedoor-page' }))).not.toThrow()
+  await flush()
+  expect(out[0]).toEqual({ id: 9, sessionId: 'sidedoor-page', error: { code: -32000, message: 'Object has been destroyed' } })
+})

@@ -316,11 +316,12 @@ export const startBridge = async (o: { onNotifyClick: (path: string | undefined)
       return
     }
     wss.handleUpgrade(req, socket, head, (ws) => {
-      const wc = tab.win.webContents
+      const win = tab.win
+      const wc = win.webContents
       if (!wc.debugger.isAttached()) wc.debugger.attach('1.3')
       const relay = createCdpRelay(
         {
-          send: (method, params, sessionId) => wc.debugger.sendCommand(method, params, sessionId),
+          send: (method, params, sessionId) => (wc.isDestroyed() ? Promise.reject(new Error('The form window was closed.')) : wc.debugger.sendCommand(method, params, sessionId)),
           targetId: () => wc.debugger.sendCommand('Target.getTargetInfo').then((r: { targetInfo: { targetId: string } }) => r.targetInfo.targetId),
           url: () => wc.getURL(),
           title: () => wc.getTitle(),
@@ -330,8 +331,14 @@ export const startBridge = async (o: { onNotifyClick: (path: string | undefined)
       )
       const onMessage = (_e: unknown, method: string, params: unknown, sessionId: string) => relay.event(method, params, sessionId || undefined)
       wc.debugger.on('message', onMessage)
+      // The window can close (the user, or the fill ending) while the agent is still connected.
+      const onClosed = () => ws.close()
+      win.once('closed', onClosed)
       ws.on('message', (data) => relay.receive(data.toString()))
-      ws.on('close', () => wc.debugger.off('message', onMessage))
+      ws.on('close', () => {
+        if (!win.isDestroyed()) win.off('closed', onClosed)
+        if (!wc.isDestroyed()) wc.debugger.off('message', onMessage)
+      })
     })
   })
 
