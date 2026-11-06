@@ -16,6 +16,12 @@ export const TUNE_STOPS = ['target', 'no_gain', 'no_more_facts', 'limit'] as con
 export type TuneStop = (typeof TUNE_STOPS)[number]
 
 /** One pass of the AI working the resume up against the posting. */
+/** What a job is, in a line and a few things you'd do or build. */
+export interface JobBrief {
+  summary: string
+  highlights: string[]
+}
+
 export interface ResumeTune {
   at: string
   /** The match when it started, and when it finished. */

@@ -3,7 +3,7 @@ import { decisionsOf, setDecisionLine } from '@sidedoor/shared/decisions'
 import type { ResumeMatch } from '@sidedoor/shared/match'
 import { blockingFindings } from '@sidedoor/shared/rules'
 import { extractProseSections, replaceSections } from '@sidedoor/shared/package-sections'
-import { type ResumeTune, textMark } from '@sidedoor/shared/review'
+import { type JobBrief, type ResumeTune, textMark } from '@sidedoor/shared/review'
 import { logActivity } from '../activity'
 import { db, schema } from '../db/client'
 import { atomic } from '../db/tx'
@@ -89,6 +89,12 @@ export const updateApplication = atomic((id: string, patch: AppPatch) => {
 /** Store a resume match check. It's a reading of the resume, not activity, so lastActivityAt stays. */
 export const setResumeMatch = atomic((id: string, match: ResumeMatch | null) => {
   db.update(schema.applications).set({ matchJson: match, updatedAt: nowIso() }).where(eq(schema.applications.id, id)).run()
+  return getApplication(id)
+})
+
+/** Store what the job is, for the review card. Like a match check, it's a reading, not activity. */
+export const setBrief = atomic((id: string, brief: JobBrief) => {
+  db.update(schema.applications).set({ brief, updatedAt: nowIso() }).where(eq(schema.applications.id, id)).run()
   return getApplication(id)
 })
 

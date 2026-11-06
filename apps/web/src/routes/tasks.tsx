@@ -24,6 +24,7 @@ const KIND: Record<string, string> = {
   funding: 'Funding radar',
   'resume-notes': 'Resume notes',
   match: 'Match check',
+  brief: 'Job summary',
   'submit-assist': 'Form filling',
   'x-scout': 'X scout',
   'import-resume': 'Resume import',

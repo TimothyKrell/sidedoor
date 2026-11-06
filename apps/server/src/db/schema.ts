@@ -1,7 +1,7 @@
 import { sql } from 'drizzle-orm'
 import { index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
 import type { ResumeMatch } from '@sidedoor/shared/match'
-import type { ResumeTune } from '@sidedoor/shared/review'
+import type { JobBrief, ResumeTune } from '@sidedoor/shared/review'
 import type { RuleCheck } from '@sidedoor/shared/rules'
 import type { ResumeContent, ResumeNote, ThemeOptions } from '@sidedoor/shared/resume'
 
@@ -187,6 +187,8 @@ export const applications = sqliteTable(
     tuneJson: json<ResumeTune>('tune_json'),
     /** Written answers you've checked off: section key → the mark of the text you checked. */
     writingChecks: json<Record<string, string>>('writing_checks'),
+    /** What the job is, in a line and a few highlights, for the review card (jobs/brief.ts). */
+    brief: json<JobBrief>('brief'),
     /** The user's hard rules (remote, pay floor, citizenship, clearance) checked against the posting (services/rules.ts). */
     rulesJson: json<RuleCheck>('rules_json'),
     reviewNotes: text('review_notes'),
@@ -353,6 +355,7 @@ export const TASK_KINDS = [
   'x-scout',
   'import-resume',
   'stale-check',
+  'brief',
   'custom',
 ] as const
 export type TaskKind = (typeof TASK_KINDS)[number]

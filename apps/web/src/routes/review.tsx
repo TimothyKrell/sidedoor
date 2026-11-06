@@ -3,11 +3,12 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { ArrowLeft, ArrowRight, Check, CheckCircle2, ExternalLink, Loader2, Send, WandSparkles } from 'lucide-react'
 import { useState } from 'react'
 import { z } from 'zod'
+import { salaryRange } from '@sidedoor/shared/format'
 import { BUCKET_META, REVIEW_BUCKETS, type ReviewBucket, stillOpen } from '@sidedoor/shared/review'
-import { CompanyAvatar, Empty, PageHeader } from '~/components/app/bits'
+import { CompanyAvatar, Empty, Freshness, PageHeader, Salary } from '~/components/app/bits'
 import { usePageContext } from '~/components/app/chat'
 import { ApplicationQuestions } from '~/components/app/questions'
-import { Decisions, ListingGone, ResumeStep, type ReviewItem, ReviewStep, WritingChecklist } from '~/components/app/review'
+import { Decisions, JobSummary, ListingGone, ResumeStep, type ReviewItem, ReviewStep, WritingChecklist } from '~/components/app/review'
 import { Segmented } from '~/components/app/segmented'
 import { Button } from '~/components/ui/button'
 import { qo, rpc, setStageFn } from '~/lib/api'
@@ -105,6 +106,8 @@ function Application({ item, place, total, prev, next, go }: { item: ReviewItem;
   const writing = item.writing
   const written = writing.filter((w) => w.done).length
   const openAsks = f.openQuestions + f.openDecisions
+  const p = d.posting
+  const comp = salaryRange(a.compText, a.compMin, a.compMax) ? { text: a.compText, min: a.compMin, max: a.compMax } : { text: p?.compText, min: p?.compMin, max: p?.compMax }
   const tuning = d.tasks.some((t) => (t.kind === 'tune' || t.kind === 'prep' || t.kind === 'match') && (t.status === 'queued' || t.status === 'running'))
   return (
     <div className="min-w-0 space-y-3 pb-20 md:pb-16">
@@ -117,6 +120,10 @@ function Application({ item, place, total, prev, next, go }: { item: ReviewItem;
               {a.role}
             </Link>
           </h2>
+          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5">
+            {salaryRange(comp.text, comp.min, comp.max) ? <Salary {...comp} /> : <span className="text-xs text-muted-foreground">Pay not listed</span>}
+            {(a.postedAt || p) && <Freshness postedAt={a.postedAt ?? p?.postedAt ?? null} firstSeenAt={p?.firstSeenAt ?? a.createdAt} />}
+          </div>
           {a.shot != null && <div className="mt-1 text-xs text-muted-foreground">Your AI puts your odds of an interview at {a.shot}%</div>}
         </div>
         {(a.jobUrl || a.applyUrl) && (
@@ -127,6 +134,7 @@ function Application({ item, place, total, prev, next, go }: { item: ReviewItem;
           </Button>
         )}
       </div>
+      <JobSummary d={d} />
       <ListingGone d={d} />
 
       <ReviewStep n={1} title="Resume" done={f.tuned && !tuning} working={tuning}>

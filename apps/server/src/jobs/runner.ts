@@ -7,6 +7,7 @@ import { claimNextTask, executeTask, runTriage } from './tasks'
 import { db, schema } from '../db/client'
 import { nowIso, today } from '../ids'
 import { notify } from '../notify'
+import { queueBriefs } from '../review'
 import { activateFoundBoards } from '../scout/resolve'
 import { scan } from '../scout/scan'
 import { setStage } from '../services/applications'
@@ -167,6 +168,7 @@ const scheduleTick = Effect.gen(function* () {
     setMeta('lastDiscover', today())
     enqueueTask('discover', 'Discover new companies and job boards')
   }
+  if (aiReady) queueBriefs()
   // Listing checks call the ATSs' public APIs, a few each half hour; not AI work, so no AI needed.
   if (!refreshRunning() && due('lastListingCheck', 30 * 60_000)) {
     setMeta('lastListingCheck', nowIso())

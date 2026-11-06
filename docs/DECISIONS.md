@@ -547,3 +547,9 @@ current when making a non-obvious call. Open questions for the maintainer live i
   they didn't say makes it fail and leaves their text alone. A draft works from Experience and
   stories, so a number not found there is flagged rather than refused, along with what the facts
   didn't cover. Both are one text call with no tools: they can't touch anything.
+- **The review card has its own job summary, not triage's.** Triage's line is about fit, and more
+  than half of what's waiting has no linked posting, so it can't answer "what is this job?". A
+  small `brief` task reads the listing (the lookup tools, so it can't change anything) and writes a
+  sentence and a few highlights. The scheduler queues one for anything waiting without one, so
+  there's no separate path for new and existing applications. It gets one try each: a listing it
+  can't read shouldn't cost a call every minute, and Summarize on the card asks again.

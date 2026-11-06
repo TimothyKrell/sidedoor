@@ -666,6 +666,7 @@ export const RUNNERS: Partial<Record<schema.TaskKind, (t: schema.Task) => Promis
   'x-scout': (t) => import('./x-scout').then((m) => m.runXScout(t)),
   'import-resume': (t) => import('./import-resume').then((m) => m.runImportResume(t)),
   'stale-check': (t) => import('./stale-check').then((m) => m.runStaleCheck(t)),
+  brief: (t) => import('./brief').then((m) => m.runBrief(t)),
 }
 
 /** Claim the next runnable task (highest priority, oldest). Tasks sent to Grok Bot wait for it instead. */

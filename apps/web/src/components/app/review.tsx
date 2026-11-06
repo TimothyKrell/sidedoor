@@ -18,6 +18,32 @@ import { MatchRing } from './match'
 type Detail = ApplicationDetail
 export type ReviewItem = Awaited<ReturnType<typeof rpc.reviewQueue>>[number]
 
+/** What the job is, before you get into the steps. Written in the background once a package is ready. */
+export function JobSummary({ d }: { d: Detail }) {
+  const start = useAction((v: { kind: 'brief'; applicationId: string }) => startTaskFn({ data: v }), { success: 'Your AI is reading the listing' })
+  const a = d.application
+  if (a.brief)
+    return (
+      <div className="rounded-lg bg-muted/50 p-3 text-sm">
+        <p>{a.brief.summary}</p>
+        {a.brief.highlights.length > 0 && (
+          <ul className="mt-2 list-disc space-y-0.5 pl-4 text-muted-foreground">
+            {a.brief.highlights.map((h) => (
+              <li key={h}>{h}</li>
+            ))}
+          </ul>
+        )}
+      </div>
+    )
+  if (d.tasks.some((t) => t.kind === 'brief' && (t.status === 'queued' || t.status === 'running')))
+    return <p className="text-sm text-muted-foreground">Your AI is reading the listing for a summary of this job.</p>
+  return (
+    <Button size="sm" variant="ghost" disabled={start.pending} onClick={() => void start.run({ kind: 'brief', applicationId: a.id })}>
+      <Sparkles /> Summarize this job
+    </Button>
+  )
+}
+
 /** Open the application's own chat, with your AI's findings waiting in it. */
 export function useApplicationChat(id: string) {
   const chat = useChat()

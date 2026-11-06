@@ -14,6 +14,7 @@ import {
   getApplication,
   mergeApplications,
   rankApplications,
+  setBrief,
   setShot,
   setStage,
   STAGE_LABEL,
@@ -388,6 +389,7 @@ export const appTools = [
       notes: z.string().optional().describe('replaces all notes; prefer appendNote'),
       shot: z.number().min(0).max(100).nullable().optional().describe('your estimate (0-100) of the chance this application gets them an interview; null clears it'),
       shotWhy: z.string().optional().describe('one sentence on why, shown with the estimate'),
+      brief: z.object({ summary: z.string(), highlights: z.array(z.string()).max(4) }).optional().describe('what the job is, for its review card: one plain sentence and up to 4 things the user would do or build'),
     },
     safe((a) => {
       const cur = getApplication(a.id)
@@ -414,6 +416,7 @@ export const appTools = [
         patch.notesMd = `${base ? `${base}\n` : ''}- **${today()}:** ${a.appendNote}`
       }
       if (a.shot !== undefined || a.shotWhy !== undefined) setShot(a.id, a.shot === undefined ? cur.shot : a.shot, a.shotWhy ?? cur.shotWhy)
+      if (a.brief) setBrief(a.id, a.brief)
       const next = Object.keys(patch).length ? updateApplication(a.id, patch) : getApplication(a.id)
       return { ...appBrief(next!), applyUrl: next!.applyUrl, location: next!.location, comp: next!.compText }
     }),
@@ -621,9 +624,9 @@ export const appTools = [
 
   tool(
     'start_task',
-    'Queue background AI work: research (company + people + emails for an application), prep (tailored resume + application package), outreach (draft messages to linked people), tune (work the tailored resume up against the posting until the match stops rising, then ask the user what only they can answer), submit-assist (open the approved application form in Sidedoor\'s browser window on the user\'s desktop and fill it, stopping before submit; the user reviews and submits), discover (find new companies/boards), funding (scan funding news). Use instructions for specifics.',
+    'Queue background AI work: research (company + people + emails for an application), prep (tailored resume + application package), outreach (draft messages to linked people), tune (work the tailored resume up against the posting until the match stops rising, then ask the user what only they can answer), brief (read the listing and write the short summary of the job on its review card), submit-assist (open the approved application form in Sidedoor\'s browser window on the user\'s desktop and fill it, stopping before submit; the user reviews and submits), discover (find new companies/boards), funding (scan funding news). Use instructions for specifics.',
     {
-      kind: z.enum(['research', 'prep', 'outreach', 'discover', 'funding', 'custom', 'tune', 'submit-assist']),
+      kind: z.enum(['research', 'prep', 'outreach', 'discover', 'funding', 'custom', 'tune', 'brief', 'submit-assist']),
       applicationId: z.string().optional(),
       personId: z.string().optional(),
       instructions: z.string().optional(),

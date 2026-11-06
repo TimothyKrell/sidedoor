@@ -1,4 +1,4 @@
-import { and, inArray } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { decisionsOf } from '@sidedoor/shared/decisions'
 import { reviewBucket, type ReviewFacts, writingItems } from '@sidedoor/shared/review'
 import { db, schema } from './db/client'
@@ -76,6 +76,16 @@ export const tuneAll = () => {
   const todo = unsent().filter((a) => !a.tuneJson)
   for (const a of todo) enqueueTask('tune', `Tune resume: ${a.companyName} – ${a.role}`, { applicationId: a.id, priority: 1 })
   return { queued: todo.length }
+}
+
+/** Queue a job summary for everything waiting that has none. One try each: Summarize on the card asks again. */
+export const queueBriefs = () => {
+  const todo = unsent().filter((a) => !a.brief)
+  if (!todo.length) return { queued: 0 }
+  const tried = new Set(db.select({ applicationId: T.applicationId }).from(T).where(and(eq(T.kind, 'brief'), inArray(T.applicationId, todo.map((a) => a.id)))).all().map((t) => t.applicationId))
+  const fresh = todo.filter((a) => !tried.has(a.id))
+  for (const a of fresh) enqueueTask('brief', `Summarize job: ${a.companyName} – ${a.role}`, { applicationId: a.id, priority: 1 })
+  return { queued: fresh.length }
 }
 
 export type ReviewItem = ReturnType<typeof reviewQueue>[number]

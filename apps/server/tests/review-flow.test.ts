@@ -48,9 +48,9 @@ vi.mock('../src/services/resumes', async (orig) => ({ ...(await orig<typeof impo
 const { db, schema } = await import('../src/db/client')
 const { applicationThread } = await import('../src/chat')
 const { executeTask } = await import('../src/jobs/tasks')
-const { reviewQueue, tuneAll } = await import('../src/review')
+const { queueBriefs, reviewQueue, tuneAll } = await import('../src/review')
 const { toolsFor } = await import('../src/mcp/tools')
-const { createApplication, getApplication, requestSubmit, setResumeTune, setWriting, settleDecisions } = await import('../src/services/applications')
+const { createApplication, getApplication, requestSubmit, setBrief, setResumeTune, setWriting, settleDecisions } = await import('../src/services/applications')
 const { answerQuestions, askQuestions, listQuestions } = await import('../src/services/questions')
 const { baseResume, createResume, requireResume, saveContent, tailoredFor } = await import('../src/services/resumes')
 const { enqueueTask } = await import('../src/services/tasks')
@@ -266,6 +266,46 @@ describe('tuning the resume', () => {
     tuneAll()
     expect(db.select().from(schema.tasks).where(eq(schema.tasks.applicationId, a.id)).all()).toHaveLength(1)
     expect(db.select().from(schema.tasks).where(eq(schema.tasks.applicationId, b.id)).all()).toHaveLength(0)
+  })
+})
+
+describe('the job summary on a review card', () => {
+  const briefTasks = (id: string) => db.select().from(schema.tasks).where(eq(schema.tasks.applicationId, id)).all().filter((t) => t.kind === 'brief')
+
+  test('queued once for what has none, and not for what is done or not yet prepared', () => {
+    const a = app('NeedsOne')
+    const b = app('HasOne')
+    setBrief(b.id, { summary: 'Payments API team.', highlights: [] })
+    const c = app('Unprepared', { packageMd: null })
+    queueBriefs()
+    queueBriefs()
+    expect(briefTasks(a.id)).toHaveLength(1)
+    expect(briefTasks(b.id)).toHaveLength(0)
+    expect(briefTasks(c.id)).toHaveLength(0)
+  })
+
+  test('stores what the AI wrote, and keeps to four highlights', async () => {
+    const a = app('Summarized')
+    ai.replies = [{ summary: ' You would own the payments API. ', highlights: ['Build one', ' ', 'Build two', 'Build three', 'Build four', 'Build five'] }]
+    await executeTask(enqueueTask('brief', 'Summarize job', { applicationId: a.id }))
+    expect(getApplication(a.id)!.brief).toEqual({ summary: 'You would own the payments API.', highlights: ['Build one', 'Build two', 'Build three', 'Build four'] })
+  })
+
+  test('an unreadable listing stores nothing and is not retried on its own', async () => {
+    const a = app('Unreadable')
+    ai.replies = [{ summary: '', highlights: [] }]
+    const t = enqueueTask('brief', 'Summarize job', { applicationId: a.id })
+    await executeTask(t)
+    expect(task(t.id).status).toBe('done')
+    expect(getApplication(a.id)!.brief).toBeNull()
+    queueBriefs()
+    expect(briefTasks(a.id)).toHaveLength(1)
+  })
+
+  test('an AI working on the summary does not hold the application in the AI bucket', () => {
+    const a = app('StillYours')
+    enqueueTask('brief', 'Summarize job', { applicationId: a.id })
+    expect(item(a.id).facts.aiWorking).toBe(false)
   })
 })
 
