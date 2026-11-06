@@ -30,7 +30,7 @@ const MODE = { 'dry-run': 'Dry run', fill: 'Fill only', submit: 'Submit' } as co
 const tone = (s: Item['status']) =>
   s === 'submitted' || s === 'ready' || s === 'filled' ? 'secondary' : s === 'failed' || s === 'not_submitted' ? 'destructive' : s === 'blocked' || s === 'questions' ? 'default' : 'outline'
 
-/** Grok Bot's latest submit batch: one line per application, and pause, resume or cancel. */
+/** The latest submit batch, your AI's or Grok Bot's: one line per application, and pause, resume or cancel. */
 export function SubmitBatchCard() {
   const qc = useQueryClient()
   const { data: b } = useQuery(qo.submitBatch())

@@ -415,7 +415,7 @@ export const router = {
   approveAndSubmit: proc(id, async ({ id }) => {
     const a = (await apps()).getApplication(id)
     const limit = a ? (await import('../jobs/submit-batch')).companyLimitProblem(a) : null
-    if (limit) throw new Error(`Not sent. ${limit} Change the limit in Settings → AI → Grok Bot if you want it to go anyway.`)
+    if (limit) throw new Error(`Not sent. ${limit} Change the limit in Settings → AI if you want it to go anyway.`)
     const t = (await apps()).requestSubmit(id, { by: 'you' })
     return { taskId: t.id }
   }),

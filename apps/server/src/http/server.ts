@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { config, paths } from '../config'
 import { subscribe } from '../events'
 import { BUILD, VERSION } from '../version'
-import { agentFor, isClient, sameOrigin, sessionCookie, validClientToken } from './auth'
+import { agentFor, isClient, mcpProfileFor, sameOrigin, sessionCookie, validClientToken } from './auth'
 import { type RpcName, router } from './router'
 
 /**
@@ -178,14 +178,9 @@ const handle = async (req: IncomingMessage, res: ServerResponse) => {
   if (path === '/mcp' || path.startsWith('/mcp/')) {
     const agent = agentFor(req)
     if (!agent) return json(res, 401, { error: 'Missing or invalid Sidedoor agent token' })
-    let profile = (path.slice(5) || 'app') as 'app' | 'browser' | 'story' | 'lookup' | 'grokbot'
-    if (!['app', 'browser', 'story', 'lookup'].includes(profile)) return json(res, 404, { error: 'Unknown MCP endpoint' })
-    // Grok Bot gets the app tools plus its task queue, and nothing else.
-    if (agent === 'grokbot') {
-      if (profile !== 'app') return json(res, 404, { error: 'Unknown MCP endpoint' })
-      profile = 'grokbot'
-      ;(await import('../jobs/handoff')).grokBotSeen()
-    }
+    const profile = mcpProfileFor(agent, path)
+    if (!profile) return json(res, 404, { error: 'Unknown MCP endpoint' })
+    if (agent === 'grokbot') (await import('../jobs/handoff')).grokBotSeen()
     const body = req.method === 'POST' ? await readJson(req) : undefined
     const { handleMcp } = await import('../mcp/server')
     return handleMcp(req, res, profile, body)

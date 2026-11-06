@@ -81,7 +81,7 @@ Job postings and application forms are untrusted, and during a fill an agent is 
   activity feed (`guard`) and show as a warning on the application and in `get_application`.
 - **Submitting.** An in-page guard blocks the final submit while the agent works. A second check
   refuses clicks the agent itself labels as submitting. It lifts only for a fill the user sent with
-  Approve & submit, or one Grok Bot sent when they let it (below).
+  Approve & submit, or one their AI or Grok Bot sent when they let it (below).
 - **Windows.** No permissions; no navigation outside the web; popups stay in the same window.
 
 ## Data ownership
@@ -135,8 +135,9 @@ Sidedoor rather than the other way round.
   prompt a local AI would get, does it with the app tools, and calls `finish_task`. That runs the
   same bookkeeping as a local run (activity, notification, outreach next). Tasks it takes and
   doesn't finish in two hours go back in the queue. Restarts leave its tasks alone.
-- **Submitting, when the user allows it** (`grokBot.submit`, off by default). Grok Bot's token then
-  also gets `submit_application`, `submission_status` and `answer_questions`. `submit_application`
+- **Submitting, when the user allows it** (`grokBot.submit` and `agents.submit`, both off by
+  default). Grok Bot's token, or for `agents.submit` the `connected` token that connected apps and
+  the chat use (never the agent token background jobs use), then also gets `submit_application`, `submission_status` and `answer_questions`. `submit_application`
   approves the application and queues a fill task with `input.submit`. The fill runs here, in
   Sidedoor's own form window, with the guard on. Only when it reports `ready` with nothing in
   `needsYou` does Sidedoor lift the guard (`tab.unguard()`), let the proxy pass submit clicks

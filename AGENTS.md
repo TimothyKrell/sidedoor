@@ -14,8 +14,10 @@ current when making a non-obvious call.
 - Schema changes: edit `src/db/schema.ts`, then `pnpm --filter @sidedoor/server db:generate`;
   migrations run on boot. Live updates need the table in the triggers migration (see 0001).
 - Prompts live in `apps/server/prompts/`; never put a person's name, location or field in them.
-- Never let an agent send email or submit an application. Sidedoor itself fills and submits a form
-  (`jobs/fill-form.ts`) in two cases only: the user presses Approve & submit in the app (the
-  `approveAndSubmit` RPC, never an MCP tool), or, off by default, the user turns on "Grok Bot can
-  submit" and Grok Bot calls `submit_application`. Nothing else submits.
+- Never let an agent send email. Never let a background job submit an application. Sidedoor itself
+  fills and submits a form (`jobs/fill-form.ts`) in three cases only: the user presses Approve &
+  submit in the app (the `approveAndSubmit` RPC, never an MCP tool); or, off by default, the user
+  turns on "Let your AI submit" and the AI they talk to (a connected app or the chat, on the
+  `connected` token) calls the submit tools; or they turn on "Grok Bot can submit" and Grok Bot does.
+  Background jobs use the agent token, which never reaches those tools. Nothing else submits.
 - Don't run Electron on the user's display while testing: `env -u WAYLAND_DISPLAY -u DISPLAY xvfb-run -a …`.

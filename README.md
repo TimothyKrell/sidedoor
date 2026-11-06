@@ -31,8 +31,8 @@ are due?" from your terminal.
 | **Chat** | Ask about anything ("Sarah from Ramp replied, call Thursday") and it updates the right records. |
 
 Nothing is ever sent or submitted without you. An application goes in when you press Approve &
-submit on it, and Sidedoor stops and asks if the form wants anything you haven't confirmed. The one
-exception is one you turn on yourself: you can let Grok Bot submit applications (below).
+submit on it, and Sidedoor stops and asks if the form wants anything you haven't confirmed. The
+exception is one you turn on yourself: you can let your AI or Grok Bot submit when you ask (below).
 
 ## Install
 
@@ -77,6 +77,11 @@ local command, as Claude does; one on Grok Bot's own computer needs a public add
 Funnel works). Either way it gets its own token. You can send it company research and research on
 X, and a Grok Bot routine picks those up.
 
+You can let your AI submit too (Settings → AI → Submitting for you). Then tell a connected app, or
+the chat in Sidedoor, to "go through what's waiting and submit it": it triages the list and Sidedoor
+sends each form, one at a time. Anything with an open question, an open decision or a written answer
+you haven't checked off stays with you, and background work can never submit.
+
 You can also let Grok Bot submit your applications (Settings → AI → Grok Bot → Let it submit). Ask
 it to "submit my approved applications": Sidedoor fills each form in its own window on your
 computer and submits it once every required question has an answer. Questions the package doesn't
@@ -87,7 +92,7 @@ batch skips a company you've already applied to enough; you can pause or cancel 
 
 Agents can read your pipeline, edit your resume line by line (you review each change), draft
 messages, log touchpoints, look up job boards and read JavaScript-heavy job pages. They can't send
-email or submit applications (except Grok Bot, when you let it submit).
+email, and they submit applications only if you let them.
 
 ## Your data
 

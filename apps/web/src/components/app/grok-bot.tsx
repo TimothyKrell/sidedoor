@@ -4,7 +4,6 @@ import { type ReactNode, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { timeAgo } from '@sidedoor/shared/format'
 import { CopyCommand } from '~/components/app/ai-connect'
-import { CompanyLimits, SubmitBatchCard } from '~/components/app/submit-batch'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Switch } from '~/components/ui/switch'
@@ -118,7 +117,6 @@ export function GrokBotRow() {
         )}
       </div>
 
-      {data.on && <SubmitBatchCard />}
 
       {showSetup && (
         <div className="mt-3 space-y-5 border-t pt-3">
@@ -199,8 +197,6 @@ export function GrokBotRow() {
               <>
                 <Hint>Give your Bot these instructions (as a skill or saved instructions), then ask it to “submit my approved applications”.</Hint>
                 <CopyBox text={data.submitRoutine} label="Copy submit instructions" />
-                <Hint>Company limits for batches: one per line, like “Acme 3/60” for at most 3 applications to Acme in 60 days; “* 2/30” for every other company. Counted from what actually went in.</Hint>
-                <CompanyLimits limits={data.settings.companyLimits} onSave={(companyLimits) => run('limits', () => rpc.saveGrokBot({ companyLimits }), 'Limits saved')} />
               </>
             )}
           </Step>

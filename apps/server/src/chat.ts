@@ -4,7 +4,7 @@ import { chatCwd, mcpFor, resolveJobAi, runJob } from './ai'
 import { logActivity } from './activity'
 import { db, schema } from './db/client'
 import { newId, nowIso } from './ids'
-import { context, render, userName } from './prompts'
+import { agentSubmitNote, context, render, userName } from './prompts'
 import { getApplication } from './services/applications'
 import { listQuestions } from './services/questions'
 import { clip, truncate } from './text'
@@ -129,9 +129,9 @@ export const startTurn = (v: { threadId?: string; message: string; pageContext?:
         model: ai.model,
         cwd: chatCwd(threadId),
         prompt,
-        system: story ? render('story-interview', {}) : `${render('system', { CRITERIA: clip(context.criteria(), 4000, "get_profile_doc 'search' with offset") })}${forApplication(thread.context?.applicationId)}`,
+        system: story ? render('story-interview', {}) : `${render('system', { CRITERIA: clip(context.criteria(), 4000, "get_profile_doc 'search' with offset") })}${forApplication(thread.context?.applicationId)}${agentSubmitNote()}`,
         web: !story,
-        mcp: mcpFor(story ? 'story' : 'app'),
+        mcp: mcpFor(story ? 'story' : 'connected'),
         maxTurns: 60,
         resume,
         signal: turn.abort.signal,

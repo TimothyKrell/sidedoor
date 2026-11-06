@@ -2,7 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { resolve } from 'node:path'
 import { config } from '../config'
-import { agentToken } from '../secrets'
+import { connectedToken } from '../secrets'
 import { PROVIDERS } from './index'
 import type { ProviderId, ProviderStatus } from './types'
 import { capture } from './util'
@@ -118,6 +118,6 @@ export const connectInfo = () => {
   return {
     stdio: { command: b.command, args: b.args, env: b.env },
     json: JSON.stringify({ mcpServers: { [NAME]: { command: b.command, args: b.args, ...(Object.keys(b.env).length ? { env: b.env } : {}) } } }, null, 2),
-    http: { url: `${config.localUrl}/mcp`, header: `Authorization: Bearer ${agentToken()}` },
+    http: { url: `${config.localUrl}/mcp`, header: `Authorization: Bearer ${connectedToken()}` },
   }
 }

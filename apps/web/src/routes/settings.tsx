@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { AiConnections, CopyCommand } from '~/components/app/ai-connect'
 import { ChipsInput, PillSelect } from '~/components/app/chips'
 import { GrokBotRow } from '~/components/app/grok-bot'
+import { CompanyLimits, SubmitBatchCard } from '~/components/app/submit-batch'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Switch } from '~/components/ui/switch'
@@ -436,6 +437,7 @@ function AiSection() {
       <Card title="Your AI" desc="Sidedoor runs on the AI tools you already use. Pick a default; you can send particular jobs to another one below.">
         <AiConnections extra={<GrokBotRow />} />
       </Card>
+      <AgentSubmit />
       {data && ready.length > 1 && (
         <Card title="Who does what" desc="Every job uses your default AI unless you send it elsewhere here.">
           <details>
@@ -519,6 +521,29 @@ function AiSection() {
       </Card>
       <OtherAgents />
     </>
+  )
+}
+
+function AgentSubmit() {
+  const { data } = useSuspenseQuery(qo.settings())
+  const qc = useQueryClient()
+  const save = async (fn: () => Promise<unknown>) => {
+    try {
+      await fn()
+      await qc.invalidateQueries({ queryKey: ['settings'] })
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e))
+    }
+  }
+  return (
+    <Card title="Submitting for you" desc="When you ask, your AI can triage what’s waiting and submit it. That means connected apps and the chat here, never background work.">
+      <Row label="Let your AI approve and submit applications" hint="Sidedoor fills each form here, one at a time. Anything with an unanswered question, an open decision or a written answer you haven’t checked off stays with you.">
+        <Switch checked={data.settings.agents.submit} onCheckedChange={(submit) => void save(() => rpc.updateSettings({ section: 'agents', patch: { submit } }))} />
+      </Row>
+      <p className="text-xs text-muted-foreground">Company limits: one per line, like “Acme 3/60” for at most 3 applications to Acme in 60 days; “* 2/30” for every other company. Counted from what actually went in.</p>
+      <CompanyLimits limits={data.settings.grokBot.companyLimits} onSave={(companyLimits) => save(() => rpc.saveGrokBot({ companyLimits }))} />
+      <SubmitBatchCard />
+    </Card>
   )
 }
 

@@ -197,6 +197,15 @@ export const AppSettings = z.object({
       opencode: z.object({ path: z.string().default('') }).prefault({}),
     })
     .prefault({}),
+  agents: z
+    .object({
+      /**
+       * Let the AI the user talks to (connected apps, the chat in the app) approve and submit
+       * applications when they ask it to. Off by default; background jobs never can.
+       */
+      submit: z.boolean().default(false),
+    })
+    .prefault({}),
   /**
    * xAI's Grok Bot, an agent that runs on a cloud computer: it reaches Sidedoor's MCP endpoint at a
    * public address, and takes the jobs sent to it from a queue (a routine webhook wakes it).
@@ -213,7 +222,7 @@ export const AppSettings = z.object({
       x: z.boolean().default(false),
       /**
        * Let Grok Bot approve and submit applications: Sidedoor fills the form in its own window and
-       * submits it once nothing is left unanswered. Off by default; nothing else ever submits.
+       * submits it once nothing is left unanswered. Off by default.
        */
       submit: z.boolean().default(false),
       /**

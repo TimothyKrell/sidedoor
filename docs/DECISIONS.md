@@ -392,6 +392,23 @@ current when making a non-obvious call. Open questions for the maintainer live i
   a per-application decision by the user, in the app, so it needs no setting. Agents still can't do
   it: `by: 'you'` is set only by the `approveAndSubmit` RPC, and no MCP tool reaches it. An agent can
   relay an answer that lets a submit the user started carry on, but can't start one.
+- **The AI the user talks to may submit, when they turn it on and ask.** Pressing the button on 47
+  applications was the slow part they wanted gone, so "Let your AI submit" (off by default) gives
+  connected apps and the chat the same tools Grok Bot has. This supersedes "agents can't start one"
+  above for those two only.
+- **Background jobs can't submit, and the token enforces it.** Prep, tune and research read postings
+  and web pages unattended, so a line in a posting mustn't be able to reach a form. They shared a
+  token and endpoint with connected apps, so a tool-list check couldn't tell them apart: connected
+  apps and the chat now have their own token, and the tools hang off that. An HTTP client set up with
+  the old token keeps working without the submit tools until it's given the new one. The tool
+  descriptions also say a request must come from the user, but that's a request to the model, and
+  a connected agent that reads an injected posting while the switch is on is the remaining risk.
+  What bounds it: only finished packages can go, and every check below still runs.
+- **An AI can't stand in for the review.** Steps warn the user but block their AI: an unchecked
+  written answer, an open question or decision, or a package or resume still being worked on keeps
+  an application out of its submit (`reviewHold`), reported as `blockedBy: 'review'`. The user clears
+  these, or tells the AI to. An untuned resume with no tuning queued doesn't hold it back, since
+  that costs fit, not accuracy. Grok Bot's path is unchanged. No agent can change the switch itself.
 - **Tuning is measured by Sidedoor, not reported by the AI.** The start and finish scores come from
   the match check itself, and a pass that ends lower is undone, so "raised from 80 to 91" can be
   trusted. The AI stops at 95, or when two rounds don't beat the noise margin, and after 4 rounds at

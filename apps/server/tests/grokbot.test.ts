@@ -7,7 +7,7 @@ import { finishTask, grokBotKinds, grokBotSeen, grokBotStatus, grokBotTick, STAL
 import { claimNextTask } from '../src/jobs/tasks'
 import { bridgeTarget } from '../src/mcp/bridge'
 import { toolsFor } from '../src/mcp/tools'
-import { agentToken, grokBotToken, setSecret } from '../src/secrets'
+import { agentToken, connectedToken, grokBotToken, setSecret } from '../src/secrets'
 import { createApplication } from '../src/services/applications'
 import { linkPerson, upsertPerson } from '../src/services/people'
 import { enqueueTask } from '../src/services/tasks'
@@ -35,6 +35,7 @@ describe('Grok Bot connects with its own token', () => {
     expect(agentFor(req())).toBeNull()
     expect(agentFor(req('sdg_guess'))).toBeNull()
     expect(agentFor(req(agentToken()))).toBe('agent')
+    expect(agentFor(req(connectedToken()))).toBe('connected')
     const t = grokBotToken(true)
     expect(agentFor(req(t))).toBe('grokbot')
     setSecret('grokbot-token', '')
@@ -46,7 +47,7 @@ describe('Grok Bot connects with its own token', () => {
     const t = grokBotToken(true)
     expect(bridgeTarget('grokbot')).toEqual({ path: '/mcp', token: t })
     expect(agentFor(req(bridgeTarget('grokbot').token))).toBe('grokbot')
-    expect(bridgeTarget('')).toEqual({ path: '/mcp', token: agentToken() })
+    expect(bridgeTarget('')).toEqual({ path: '/mcp', token: connectedToken() })
   })
 
   test('Settings can tell once Grok Bot has connected', () => {

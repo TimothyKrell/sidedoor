@@ -6,7 +6,7 @@ import { atomic } from '../db/tx'
 import { isDemographic } from '../form-answers'
 import { newId, nowIso } from '../ids'
 import { getMeta, getSettings, setMeta } from '../settings'
-import { getApplication, requestChanges, requestSubmit, updateApplication } from './applications'
+import { getApplication, requestChanges, requestSubmit, submitByOf, submitterAllowed, updateApplication } from './applications'
 import { type DocKey, getDoc, setDoc } from './documents'
 
 /**
@@ -293,8 +293,8 @@ const continueSubmit = (applicationId: string) => {
   const T = schema.tasks
   const last = db.select().from(T).where(and(eq(T.kind, 'submit-assist'), eq(T.applicationId, applicationId))).orderBy(desc(T.createdAt)).get()
   if (!last || last.input.submit !== true || last.status !== 'done' || !last.output) return false
-  const by = last.input.by === 'you' ? 'you' : 'grokbot'
-  if (by === 'grokbot' && !getSettings().grokBot.submit) return false
+  const by = submitByOf(last.input)
+  if (!submitterAllowed(by)) return false
   let waiting = false
   try {
     const o = JSON.parse(last.output) as { outcome?: string; submit?: { problems?: unknown[] } | null }
@@ -498,7 +498,7 @@ export interface FormAnswer {
  * package; reusable ones are kept for every application, in Standard answers. Then the application
  * is sent to be filled again: submitted, or another dry run when that's what it was last sent for.
  */
-export const answerFormQuestions = atomic((id: string, answers: FormAnswer[]) => {
+export const answerFormQuestions = atomic((id: string, answers: FormAnswer[], from: 'agent' | 'grokbot' = 'grokbot') => {
   const a = getApplication(id)
   if (!a) throw new Error(`No application ${id}`)
   const given = answers.map((x) => ({ ...x, question: x.question.trim(), answer: x.answer.trim() })).filter((x) => x.question && x.answer)
@@ -511,9 +511,9 @@ export const answerFormQuestions = atomic((id: string, answers: FormAnswer[]) =>
     if (!asked || (asked.status === 'answered' && asked.answer === x.answer)) continue
     items.push({ id: asked.id, answer: x.answer, allApplications: reusable, ...(reusable ? { saveTo: 'answers' as const } : {}) })
   }
-  if (items.length) answerQuestions(items, 'grokbot', { continueSubmit: false })
+  if (items.length) answerQuestions(items, from, { continueSubmit: false })
   const T = schema.tasks
   const last = db.select().from(T).where(and(eq(T.kind, 'submit-assist'), eq(T.applicationId, id))).orderBy(desc(T.createdAt)).get()
   // The fill checks the rules again before it clicks submit; failing here would lose the answers.
-  return requestSubmit(id, { dryRun: last?.input.dryRun === true, by: last?.input.by === 'you' ? 'you' : 'grokbot', skipRuleCheck: true, closeWhenDone: last?.input.closeWhenDone === true })
+  return requestSubmit(id, { dryRun: last?.input.dryRun === true, by: last?.input.by === 'you' ? 'you' : from, skipRuleCheck: true, closeWhenDone: last?.input.closeWhenDone === true })
 })

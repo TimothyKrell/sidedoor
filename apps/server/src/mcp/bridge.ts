@@ -4,7 +4,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js'
 import { paths } from '../config'
-import { agentToken, grokBotToken } from '../secrets'
+import { agentToken, connectedToken, grokBotToken } from '../secrets'
 
 /**
  * `sidedoor mcp`: a stdio MCP server that forwards to the running app's `/mcp` endpoint. This is
@@ -16,7 +16,8 @@ export const runtimeFile = () => resolve(paths.state, 'server-runtime.json')
 
 /** Where the bridge connects for a profile, and with which token. */
 export const bridgeTarget = (profile: string) => {
-  if (profile !== 'grokbot') return { path: `/mcp${profile ? `/${profile}` : ''}`, token: agentToken() }
+  if (!profile) return { path: '/mcp', token: connectedToken() }
+  if (profile !== 'grokbot') return { path: `/mcp/${profile}`, token: agentToken() }
   const token = grokBotToken()
   if (!token) throw new Error('Grok Bot is turned off. Turn it on in Sidedoor: Settings → AI → Grok Bot.')
   return { path: '/mcp', token }

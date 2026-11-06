@@ -20,6 +20,9 @@ export const template = (name: string) => {
   return t
 }
 
+/** What the AI the user talks to is told about submitting, while they let it. */
+export const agentSubmitNote = () => (getSettings().agents.submit ? template('agent-submit') : '')
+
 export const userName = () => getSettings().you.name.trim() || 'the user'
 export const firstName = () => userName().split(/\s+/)[0] ?? userName()
 

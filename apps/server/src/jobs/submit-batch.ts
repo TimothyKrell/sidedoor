@@ -1,10 +1,12 @@
 import { and, desc, eq, gte, inArray, isNotNull } from 'drizzle-orm'
+import { decisionsOf } from '@sidedoor/shared/decisions'
+import { stillOpen, writingItems } from '@sidedoor/shared/review'
 import { logActivity } from '../activity'
 import { db, schema } from '../db/client'
 import { newId, nowIso } from '../ids'
 import { notifyPromise } from '../notify'
-import { grokBotToken } from '../secrets'
-import { getApplication, requestSubmit, updateApplication } from '../services/applications'
+import { forWhom, getApplication, requestSubmit, submitterAllowed, updateApplication } from '../services/applications'
+import { listQuestions } from '../services/questions'
 import { getResume } from '../services/resumes'
 import { cancelTask, enqueueTask } from '../services/tasks'
 import { getMeta, getSettings, setMeta } from '../settings'
@@ -24,7 +26,8 @@ export const BATCH_MODES = ['dry-run', 'fill', 'submit'] as const
 export type BatchMode = (typeof BATCH_MODES)[number]
 export const BATCH_ORDERS = ['given', 'priority', 'score', 'posted'] as const
 export type BatchOrder = (typeof BATCH_ORDERS)[number]
-export type BlockedBy = 'login' | 'captcha' | 'limit' | 'rule' | 'email' | 'other'
+export type BlockedBy = 'login' | 'captcha' | 'limit' | 'rule' | 'review' | 'email' | 'other'
+export type BatchBy = 'agent' | 'grokbot'
 export type ItemStatus = 'pending' | Submission['status']
 
 export interface CompanyLimit {
@@ -53,6 +56,8 @@ interface BatchItem {
 export interface SubmitBatch {
   id: string
   mode: BatchMode
+  /** Who started it. Batches from before your AI could submit have none: they were Grok Bot's. */
+  by?: BatchBy
   order: BatchOrder
   status: 'running' | 'paused' | 'done' | 'cancelled'
   /** Send more than one role at the same company in this batch. */
@@ -161,6 +166,8 @@ export interface BatchFilter {
 
 export interface StartBatch {
   mode: BatchMode
+  /** Default: grokbot. */
+  by?: BatchBy
   applicationIds?: string[]
   filter?: BatchFilter
   /** Default: given for a list of ids, priority for a filter. */
@@ -171,13 +178,18 @@ export interface StartBatch {
 }
 
 const UNSENT: schema.ApplicationStage[] = ['interested', 'review', 'approved']
-const canSubmit = () => getSettings().grokBot.submit && !!grokBotToken()
+const byOf = (b: Pick<SubmitBatch, 'by'>): BatchBy => b.by ?? 'grokbot'
+const SUBMIT_OFF: Record<BatchBy, { who: string; where: string }> = {
+  agent: { who: 'your AI', where: 'Settings → AI' },
+  grokbot: { who: 'Grok Bot', where: 'Settings → AI → Grok Bot' },
+}
 
 /** Start a batch. One at a time: a batch that is running or paused has to finish or be cancelled first. */
 export const startBatch = (o: StartBatch) => {
   const open = listBatches().find((b) => b.status === 'running' || b.status === 'paused')
   if (open) throw new Error(`Batch ${open.id} is ${open.status}. Cancel it (or let it finish) before starting another.`)
-  if (o.mode === 'submit' && !canSubmit()) throw new Error('Letting Grok Bot submit is turned off (Settings → AI → Grok Bot). Run a dry run, or ask the user to turn it on.')
+  const by = o.by ?? 'grokbot'
+  if (o.mode === 'submit' && !submitterAllowed(by)) throw new Error(`Letting ${SUBMIT_OFF[by].who} submit is turned off (${SUBMIT_OFF[by].where}). Run a dry run, or ask the user to turn it on.`)
   const A = schema.applications
   let apps: schema.Application[]
   if (o.applicationIds?.length) {
@@ -213,6 +225,7 @@ export const startBatch = (o: StartBatch) => {
   const b: SubmitBatch = {
     id: newId('batch_'),
     mode: o.mode,
+    by,
     order,
     status: 'running',
     allowSameCompany: o.allowSameCompany === true,
@@ -225,7 +238,7 @@ export const startBatch = (o: StartBatch) => {
     items: sorted.map((a) => ({ applicationId: a.id, application: `${a.companyName} – ${a.role}`, companyId: a.companyId, company: a.companyName })),
   }
   save(b)
-  logActivity('application', `${o.mode === 'submit' ? 'Submitting' : o.mode === 'fill' ? 'Filling' : 'Dry run of'} ${b.items.length} application${b.items.length === 1 ? '' : 's'} for Grok Bot, one at a time`, { link: '/settings?section=ai' })
+  logActivity('application', `${o.mode === 'submit' ? 'Submitting' : o.mode === 'fill' ? 'Filling' : 'Dry run of'} ${b.items.length} application${b.items.length === 1 ? '' : 's'}${forWhom(by)}, one at a time`, { link: '/settings?section=ai' })
   return b
 }
 
@@ -246,7 +259,7 @@ export const pauseBatch = (id: string, paused: boolean) =>
   change(id, (b) => {
     if (b.status === 'done' || b.status === 'cancelled') throw new Error(`Batch ${id} is ${b.status}.`)
     if (paused) holdCurrent(b)
-    if (!paused && b.mode === 'submit' && !canSubmit()) throw new Error('Letting Grok Bot submit is turned off (Settings → AI → Grok Bot).')
+    if (!paused && b.mode === 'submit' && !submitterAllowed(byOf(b))) throw new Error(`Letting ${SUBMIT_OFF[byOf(b)].who} submit is turned off (${SUBMIT_OFF[byOf(b)].where}).`)
     b.status = paused ? 'paused' : 'running'
     b.note = null
   })
@@ -281,15 +294,36 @@ export const ruleProblem = (b: Pick<SubmitBatch, 'allowBaseResume'>, a: schema.A
   return null
 }
 
+/**
+ * What's left of the review before your AI may send this, or null. Your own press only warns
+ * about these (they're your call), but an AI can't read for you: an essay nobody checked or a
+ * question nobody answered waits for you, and a resume still being edited waits to be done.
+ */
+export const reviewHold = (a: schema.Application): string | null => {
+  const T = schema.tasks
+  const working = db.select({ id: T.id }).from(T).where(and(eq(T.applicationId, a.id), inArray(T.kind, ['prep', 'tune']), inArray(T.status, ['queued', 'running']))).get()
+  if (working) return 'Your AI is still working on its package or resume. Send it once that is done.'
+  const open = stillOpen({
+    tuned: true,
+    openQuestions: listQuestions({ status: 'open', applicationId: a.id }).length,
+    openDecisions: decisionsOf(a.packageMd).filter((d) => !d.done).length,
+    writingLeft: writingItems(a.packageMd, a.writingChecks).filter((w) => !w.done).length,
+  })
+  return open.length ? `Waiting on the user: ${open.join(', ')}.` : null
+}
+
+/** Why your AI can't send this one on its own right now, or null. A batch checks the same on each turn. */
+export const agentSubmitProblem = (a: schema.Application) => ruleProblem({ allowBaseResume: false }, a) ?? reviewHold(a) ?? companyLimitProblem(a)
+
 /** Give the next item its turn. Returns true when one was sent to be filled. */
 const takeTurn = async (id: string, resolve: typeof resolveApplyTarget): Promise<boolean> => {
   const b = getBatch(id)
   const item = b?.items.find((i) => !i.startedAt && !i.done)
   if (!b || !item) return false
-  if (b.mode === 'submit' && !canSubmit()) {
+  if (b.mode === 'submit' && !submitterAllowed(byOf(b))) {
     change(id, (x) => {
       x.status = 'paused'
-      x.note = 'Paused: letting Grok Bot submit was turned off. Turn it on and resume, or cancel.'
+      x.note = `Paused: letting ${SUBMIT_OFF[byOf(b)].who} submit was turned off. Turn it on and resume, or cancel.`
     })
     return false
   }
@@ -298,6 +332,11 @@ const takeTurn = async (id: string, resolve: typeof resolveApplyTarget): Promise
   const rule = ruleProblem(b, a)
   if (rule || !a) {
     finish((i) => stop(i, 'blocked', rule ?? 'Not found.', 'rule'))
+    return false
+  }
+  const hold = b.mode === 'submit' && byOf(b) === 'agent' ? reviewHold(a) : null
+  if (hold) {
+    finish((i) => stop(i, 'blocked', hold, 'review'))
     return false
   }
   const limit = limitProblem(b, item)
@@ -329,9 +368,9 @@ const takeTurn = async (id: string, resolve: typeof resolveApplyTarget): Promise
     const t =
       b.mode === 'fill'
         ? enqueueTask('submit-assist', `Fill form: ${a.companyName} – ${a.role}`, { applicationId: a.id, priority: 10, input: { batchId: id } })
-        : requestSubmit(a.id, { dryRun: b.mode === 'dry-run', batchId: id, closeWhenDone: b.mode === 'dry-run' })
+        : requestSubmit(a.id, { dryRun: b.mode === 'dry-run', by: byOf(b), batchId: id, closeWhenDone: b.mode === 'dry-run' })
     // A fill-only turn that found a submit already waiting for it must not become that submit.
-    if (b.mode === 'fill' && t.input.submit === true && t.input.dryRun !== true) throw new Error('Grok Bot already sent this one to be submitted; that fill is waiting its turn.')
+    if (b.mode === 'fill' && t.input.submit === true && t.input.dryRun !== true) throw new Error('This one was already sent to be submitted; that fill is waiting its turn.')
     finish((i) => Object.assign(i, { startedAt: nowIso(), taskId: t.id, ...(target.resolved ? { note: `Apply link found on the job page: ${target.url}` } : {}) }))
     return true
   } catch (e) {
@@ -378,7 +417,7 @@ const finishBatch = async (b: SubmitBatch) => {
   const line = Object.entries(r.counts)
     .map(([k, n]) => `${n} ${k.replace('_', ' ')}`)
     .join(', ')
-  logActivity('application', `Grok Bot's batch is done: ${line}`, { link: '/settings?section=ai' })
+  logActivity('application', `${byOf(b) === 'agent' ? 'Your AI' : 'Grok Bot'}'s batch is done: ${line}`, { link: '/settings?section=ai' })
   await notifyPromise({ kind: 'agent', title: `Batch done (${b.mode})`, body: line, path: '/settings?section=ai', priority: 3 })
 }
 

@@ -50,10 +50,14 @@ const { executeTask } = await import('../src/jobs/tasks')
 const { resumePdfFor } = await import('../src/jobs/fill-form')
 const { applyLinkIn, resolveApplyTarget } = await import('../src/jobs/apply-url')
 const batch = await import('../src/jobs/submit-batch')
-const { toolsFor } = await import('../src/mcp/tools')
+const { serverInstructions, toolsFor } = await import('../src/mcp/tools')
+const { mcpProfileFor } = await import('../src/http/auth')
+const { mcpFor } = await import('../src/ai')
+const { agentToken, connectedToken } = await import('../src/secrets')
+const { askQuestions } = await import('../src/services/questions')
 const { grokBotToken, setSecret } = await import('../src/secrets')
 const { createApplication, getApplication } = await import('../src/services/applications')
-const { updateSettings } = await import('../src/settings')
+const { setMeta, updateSettings } = await import('../src/settings')
 
 const allow = (submit = true) => {
   grokBotToken(true)
@@ -83,7 +87,9 @@ afterEach(() => {
   for (const b of batch.listBatches()) if (b.status === 'running' || b.status === 'paused') batch.cancelBatch(b.id)
   setSecret('grokbot-token', '')
   updateSettings('grokBot', { submit: false, companyLimits: [] })
+  updateSettings('agents', { submit: false })
   db.delete(schema.tasks).run()
+  db.delete(schema.questions).run()
   db.delete(schema.applications).run()
   ai.replies = []
   ai.prompts = []
@@ -223,7 +229,7 @@ describe('modes', () => {
     batch.startBatch({ mode: 'fill', applicationIds: [a.id] })
     await advance()
     expect(itemOf(a.id)).toMatchObject({ status: 'failed' })
-    expect(itemOf(a.id).summary).toMatch(/already sent this one to be submitted/)
+    expect(itemOf(a.id).summary).toMatch(/already sent to be submitted/)
   })
 
   test('submit: filled, submitted once, with the evidence in the report', async () => {
@@ -429,5 +435,130 @@ describe('MCP', () => {
     expect(started).toMatchObject({ mode: 'dry-run', status: 'running', items: [{ applicationId: a.id }] })
     expect((await call('submit_batch_status', {})).id).toBe(started.id)
     expect((await call('cancel_submit_batch', { batchId: started.id })).status).toBe('cancelled')
+  })
+})
+
+describe('your AI submits when you ask it to', () => {
+  const on = (submit = true) => updateSettings('agents', { submit })
+  const SUBMIT = ['submit_application', 'start_submit_batch', 'answer_questions', 'settle_decisions']
+  const names = (p: Parameters<typeof toolsFor>[0]) => toolsFor(p).map((t) => t.name)
+  const call = async (name: string, args: Record<string, unknown>) => (await toolsFor('connected').find((t) => t.name === name)!.handler(args)).content[0]!.text
+  const ESSAY = '# Package\n\n## Cover letter\n\nDear team, I would like to work with you.\n'
+
+  test('only the AI you talk to gets the tools, and only while you let it', () => {
+    expect(names('connected')).not.toEqual(expect.arrayContaining(SUBMIT.slice(0, 1)))
+    expect(serverInstructions('connected')).not.toContain('start_submit_batch')
+    on()
+    expect(names('connected')).toEqual(expect.arrayContaining(SUBMIT))
+    expect(serverInstructions('connected')).toContain('start_submit_batch')
+    for (const p of ['app', 'story', 'lookup'] as const) for (const t of SUBMIT) expect(names(p)).not.toContain(t)
+    expect(names('grokbot')).not.toContain('submit_application')
+  })
+
+  test('background jobs can never reach them: their token gets the plain tools, whatever the path', () => {
+    expect(mcpProfileFor('agent', '/mcp')).toBe('app')
+    expect(mcpProfileFor('agent', '/mcp/connected')).toBeNull()
+    expect(mcpProfileFor('agent', '/mcp/grokbot')).toBeNull()
+    expect(mcpProfileFor('connected', '/mcp')).toBe('connected')
+    expect(mcpProfileFor('connected', '/mcp/browser')).toBeNull()
+    expect(mcpFor('app').token).toBe(agentToken())
+    expect(mcpFor('connected').token).toBe(connectedToken())
+    expect(connectedToken()).not.toBe(agentToken())
+  })
+
+  test('no tool argument can pass for your own press', () => {
+    on()
+    for (const name of ['submit_application', 'start_submit_batch']) expect(Object.keys(toolsFor('connected').find((t) => t.name === name)!.inputSchema)).not.toContain('by')
+  })
+
+  test('a batch goes through and says it was for your AI; turning it off stops the next form', async () => {
+    on()
+    const a = app('Sent', { stage: 'review' })
+    const b = app('Next')
+    await call('start_submit_batch', { mode: 'submit', applicationIds: [a.id, b.id] })
+    await advance()
+    const t = task(itemOf(a.id).taskId!)
+    expect(t.input).toMatchObject({ submit: true, by: 'agent' })
+    expect(getApplication(a.id)!.stage).toBe('approved')
+    ai.replies = [filled, { outcome: 'submitted', summary: 'Thanks page.', problems: [] }]
+    await run(t.id)
+    expect(getApplication(a.id)!.stage).toBe('applied')
+    on(false)
+    await advance()
+    expect(report()).toMatchObject({ status: 'paused', note: expect.stringContaining('your AI') })
+    expect(itemOf(b.id).status).toBe('pending')
+  })
+
+  test('turned off after the form was queued, it fills but does not submit', async () => {
+    on()
+    const a = app('Late')
+    await call('start_submit_batch', { mode: 'submit', applicationIds: [a.id] })
+    await advance()
+    on(false)
+    ai.replies = [filled]
+    await run(itemOf(a.id).taskId!)
+    expect(getApplication(a.id)!.appliedAt).toBeNull()
+  })
+
+  test('off, it is refused at the start', () => {
+    const a = app('Off')
+    expect(() => batch.startBatch({ mode: 'submit', by: 'agent', applicationIds: [a.id] })).toThrow(/your AI submit is turned off \(Settings → AI\)/)
+  })
+
+  test('an essay you have not checked or an open question stays with you', async () => {
+    on()
+    const essay = app('Essay', { packageMd: ESSAY })
+    const asked = app('Asked')
+    askQuestions(asked.id, 'fill', [{ question: 'Are you authorized to work here?' }])
+    const busy = app('Busy')
+    db.insert(schema.tasks).values({ id: 'task_tune', kind: 'tune', title: 'Tune', status: 'queued', applicationId: busy.id, input: {} }).run()
+    const clear = app('Clear')
+    await call('start_submit_batch', { mode: 'submit', applicationIds: [essay.id, asked.id, busy.id, clear.id] })
+    await advance()
+    expect(itemOf(essay.id)).toMatchObject({ status: 'blocked', blockedBy: 'review', summary: expect.stringContaining('1 written answer not checked off') })
+    expect(itemOf(asked.id)).toMatchObject({ status: 'blocked', blockedBy: 'review', summary: expect.stringContaining('1 open question') })
+    expect(itemOf(busy.id)).toMatchObject({ status: 'blocked', blockedBy: 'review', summary: expect.stringContaining('still working') })
+    expect(task(itemOf(clear.id).taskId!).input).toMatchObject({ submit: true, by: 'agent' })
+  })
+
+  test('checked off, it goes; a dry run never waits for the review', async () => {
+    on()
+    const a = app('Checked', { packageMd: ESSAY })
+    await expect(call('submit_application', { applicationId: a.id })).resolves.toMatch(/Not sent\. Waiting on the user: 1 written answer/)
+    await call('check_off_writing', { applicationId: a.id, key: 'cover-letter' })
+    await expect(call('submit_application', { applicationId: a.id, dryRun: true })).resolves.toContain('taskId')
+    db.delete(schema.tasks).run()
+    await expect(call('submit_application', { applicationId: a.id })).resolves.toContain('taskId')
+  })
+
+  test('sent on its own, it still stops at a company limit', async () => {
+    on()
+    updateSettings('grokBot', { companyLimits: [{ company: 'Capped', max: 1, days: 60 }] })
+    app('Capped', { stage: 'applied', appliedAt: new Date().toISOString() })
+    const a = app('Capped')
+    await expect(call('submit_application', { applicationId: a.id })).resolves.toMatch(/Not sent\. Capped limit/)
+    expect(getApplication(a.id)!.stage).toBe('approved')
+  })
+
+  test('your answers carry its submit on as your AI, not as Grok Bot', async () => {
+    on()
+    const a = app('Answered')
+    await call('submit_application', { applicationId: a.id })
+    const first = db.select().from(schema.tasks).where(eq(schema.tasks.applicationId, a.id)).get()!
+    ai.replies = [{ ...filled, outcome: 'needs_you', needsYou: [{ field: 'Salary?', why: 'Not in the package' }] }]
+    await run(first.id)
+    await call('answer_questions', { applicationId: a.id, answers: [{ question: 'Salary?', answer: 'Market rate' }] })
+    const tasks = db.select().from(schema.tasks).where(eq(schema.tasks.applicationId, a.id)).all()
+    expect(tasks.find((t) => t.id !== first.id)!.input).toMatchObject({ submit: true, by: 'agent' })
+  })
+
+  test('a batch stored before this keeps counting as Grok Bot', async () => {
+    allow()
+    const a = app('Old')
+    batch.startBatch({ mode: 'dry-run', applicationIds: [a.id] })
+    setMeta('submitBatches', batch.listBatches().map(({ by: _by, ...b }) => b))
+    expect(batch.listBatches()[0]).not.toHaveProperty('by')
+    await advance()
+    expect(task(itemOf(a.id).taskId!).input.by).toBe('grokbot')
   })
 })

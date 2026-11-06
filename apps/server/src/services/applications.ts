@@ -8,6 +8,7 @@ import { logActivity } from '../activity'
 import { db, schema } from '../db/client'
 import { atomic } from '../db/tx'
 import { addDays, newId, nowIso, today } from '../ids'
+import { grokBotToken } from '../secrets'
 import { getSettings } from '../settings'
 import { checkApplicationRules } from './rules'
 import { enqueueTask } from './tasks'
@@ -208,13 +209,22 @@ export const settleDecisions = atomic((id: string) => {
   return open.length
 })
 
-export type SubmitBy = 'you' | 'grokbot'
+export type SubmitBy = 'you' | 'agent' | 'grokbot'
+
+/** Who a submit was for, as a task's input records it. */
+export const submitByOf = (input: { by?: unknown }): SubmitBy => (input.by === 'you' || input.by === 'agent' ? input.by : 'grokbot')
+
+/** " for your AI", for the lines that say who a submit was for. Your own press needs no note. */
+export const forWhom = (by: SubmitBy) => ({ you: '', agent: ' for your AI', grokbot: ' for Grok Bot' })[by]
+
+/** You can always send your own. An agent can only while you let it, and that's checked again before the click. */
+export const submitterAllowed = (by: SubmitBy) => by === 'you' || (by === 'agent' ? getSettings().agents.submit : getSettings().grokBot.submit && !!grokBotToken())
 
 /** Stages an application is still waiting to go in. */
 const UNSENT: schema.ApplicationStage[] = ['interested', 'review', 'approved']
 
 /**
- * You press Approve & submit, or Grok Bot asks for an application to go in: approve it if it isn't
+ * You press Approve & submit, or your AI or Grok Bot asks for an application to go in: approve it if it isn't
  * yet, and queue the fill that submits it (jobs/fill-form.ts). A fill already waiting for it becomes
  * the one that submits. A dry run fills and reports the questions without approving or submitting
  * anything. `by: 'you'` comes only from the app's own button; no agent tool can set it.
@@ -240,14 +250,14 @@ export const requestSubmit = atomic((id: string, o: { dryRun?: boolean; skipRule
         `Not submitting ${a.companyName} – ${a.role}: it breaks the user's rules. ${block.map((f) => `${f.reason}${f.quote ? ` ("${f.quote}")` : ''}`).join('; ')}. ${by === 'you' ? 'Open the application and choose Go ahead anyway if you want it sent.' : 'Ask the user; only if they want it anyway, call override_rules, then submit again.'}`,
       )
   }
-  if (!dryRun && a.stage !== 'approved') setStage(id, 'approved', { note: by === 'you' ? 'You approved it to submit' : 'Approved by Grok Bot to submit' })
+  if (!dryRun && a.stage !== 'approved') setStage(id, 'approved', { note: by === 'you' ? 'You approved it to submit' : `Approved${forWhom(by)} to submit` })
   const input = { submit: true, by, dryRun, ...(o.batchId ? { batchId: o.batchId } : {}), ...(o.closeWhenDone ? { closeWhenDone: true } : {}) }
   let task: schema.Task
   if (open) {
     db.update(T).set({ input: { ...open.input, ...input } }).where(eq(T.id, open.id)).run()
     task = { ...open, input: { ...open.input, ...input } }
   } else task = enqueueTask('submit-assist', `${dryRun ? 'Dry run' : 'Submit'}: ${a.companyName} – ${a.role}`, { applicationId: id, priority: 10, input })
-  const forWho = by === 'you' ? '' : ' for Grok Bot'
+  const forWho = forWhom(by)
   updateApplication(id, { nextAction: dryRun ? `Sidedoor is filling this${forWho} (dry run: no submit)` : `Sidedoor is filling and submitting this${forWho}` })
   return task
 })

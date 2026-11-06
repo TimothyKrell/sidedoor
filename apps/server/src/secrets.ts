@@ -7,7 +7,7 @@ import { paths } from './config'
  * Secrets live one per file in userdata/secrets (0600), never in the settings table, and are never
  * sent to clients (T3 Code stores its secrets the same way).
  */
-export const SECRET_NAMES = ['agent-token', 'access-token', 'hunter-api-key', 'ntfy-token', 'grokbot-token', 'grokbot-webhook-key'] as const
+export const SECRET_NAMES = ['agent-token', 'connected-token', 'access-token', 'hunter-api-key', 'ntfy-token', 'grokbot-token', 'grokbot-webhook-key'] as const
 export type SecretName = (typeof SECRET_NAMES)[number]
 
 const file = (name: SecretName) => resolve(paths.secrets, `${name}.bin`)
@@ -36,8 +36,8 @@ export const setSecret = (name: SecretName, value: string) => {
 export const hasSecret = (name: SecretName) => getSecret(name) !== ''
 
 /**
- * The token agents present to Sidedoor's MCP endpoint: agents Sidedoor launches, and the user's
- * own Claude Code / Codex / Grok / OpenCode once connected. Rotating it disconnects all of them.
+ * The token the agents Sidedoor launches for background work present to its MCP endpoint. Those
+ * read postings and web pages with nobody watching, so this token never reaches the submit tools.
  */
 export const agentToken = () => {
   let t = getSecret('agent-token')
@@ -48,8 +48,23 @@ export const agentToken = () => {
   return t
 }
 
+/**
+ * The token for AI the user talks to: their own Claude Code / Codex / Grok / OpenCode once connected,
+ * and the chat in the app. It can reach the submit tools, while they let their AI submit.
+ */
+export const connectedToken = () => {
+  let t = getSecret('connected-token')
+  if (!t) {
+    t = `sdc_${randomBytes(24).toString('base64url')}`
+    setSecret('connected-token', t)
+  }
+  return t
+}
+
+/** Disconnects every agent. */
 export const rotateAgentToken = () => {
   setSecret('agent-token', '')
+  setSecret('connected-token', '')
   return agentToken()
 }
 

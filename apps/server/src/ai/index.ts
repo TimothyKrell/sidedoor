@@ -3,7 +3,7 @@ import { resolve } from 'node:path'
 import type { z } from 'zod'
 import { config, paths } from '../config'
 import { newId } from '../ids'
-import { agentToken } from '../secrets'
+import { agentToken, connectedToken } from '../secrets'
 import { getSettings, JOB_TIERS, type JobKind, type Tier } from '../settings'
 import { claude } from './claude'
 import { codex } from './codex'
@@ -65,10 +65,10 @@ export const resolveJobAi = (job: JobKind, override?: { provider?: ProviderId | 
   return { provider, model }
 }
 
-/** Sidedoor's MCP endpoint for agents we launch. `browser` adds the form-filling browser tools. */
-export const mcpFor = (profile: 'app' | 'browser' | 'story' | 'lookup' = 'app') => ({
-  url: `${config.localUrl}/mcp${profile === 'app' ? '' : `/${profile}`}`,
-  token: agentToken(),
+/** Sidedoor's MCP endpoint for agents we launch. `browser` adds the form-filling browser tools; `connected` is for the chat, where the user is the one asking. */
+export const mcpFor = (profile: 'app' | 'browser' | 'story' | 'lookup' | 'connected' = 'app') => ({
+  url: `${config.localUrl}/mcp${profile === 'app' || profile === 'connected' ? '' : `/${profile}`}`,
+  token: profile === 'connected' ? connectedToken() : agentToken(),
 })
 
 export interface JobOptions<S extends z.ZodType | undefined> extends Omit<AgentRun<S>, 'cwd' | 'model'> {
