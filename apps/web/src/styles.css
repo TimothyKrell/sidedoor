@@ -43,6 +43,12 @@
   --success: oklch(0.55 0.13 155);
   --info: oklch(0.52 0.13 255);
   --hot: oklch(0.6 0.17 45);
+  /* How an application stands, on Stats. Checked for color blindness as a set, in this order. */
+  --viz-offer: oklch(0.55 0.13 155);
+  --viz-talking: oklch(0.56 0.14 250);
+  --viz-waiting: oklch(0.58 0.12 75);
+  --viz-quiet: oklch(0.6 0.15 330);
+  --viz-rejected: oklch(0.55 0.2 27);
   color-scheme: light;
 }
 
@@ -81,6 +87,11 @@
   --success: oklch(0.72 0.14 155);
   --info: oklch(0.7 0.12 250);
   --hot: oklch(0.7 0.19 40);
+  --viz-offer: oklch(0.65 0.14 155);
+  --viz-talking: oklch(0.65 0.14 250);
+  --viz-waiting: oklch(0.66 0.13 85);
+  --viz-quiet: oklch(0.65 0.15 330);
+  --viz-rejected: oklch(0.6 0.2 25);
   color-scheme: dark;
 }
 

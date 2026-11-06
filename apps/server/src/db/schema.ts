@@ -216,6 +216,18 @@ export const applications = sqliteTable(
   (t) => [index('applications_stage').on(t.stage), index('applications_company').on(t.companyId)],
 )
 
+/** Every move between stages, so "rejected this week" and "ever reached a screen" have an answer. */
+export const stageChanges = sqliteTable(
+  'stage_changes',
+  {
+    id: id(),
+    applicationId: text('application_id').notNull(),
+    stage: text('stage').$type<ApplicationStage>().notNull(),
+    at: text('at').notNull(),
+  },
+  (t) => [index('stage_changes_app').on(t.applicationId, t.at)],
+)
+
 export const PERSON_KINDS = ['recruiter', 'hiring-manager', 'founder', 'referral', 'network', 'interviewer', 'other'] as const
 export type PersonKind = (typeof PERSON_KINDS)[number]
 export const RELATIONSHIP_STAGES = ['not-contacted', 'contacted', 'replied', 'engaged', 'dormant'] as const
@@ -575,6 +587,7 @@ export type Company = typeof companies.$inferSelect
 export type Source = typeof sources.$inferSelect
 export type Posting = typeof postings.$inferSelect
 export type Application = typeof applications.$inferSelect
+export type StageChange = typeof stageChanges.$inferSelect
 export type Person = typeof people.$inferSelect
 export type Interaction = typeof interactions.$inferSelect
 export type Draft = typeof drafts.$inferSelect

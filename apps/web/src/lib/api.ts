@@ -1,4 +1,4 @@
-import { queryOptions } from '@tanstack/react-query'
+import { keepPreviousData, queryOptions } from '@tanstack/react-query'
 import { rpc } from './rpc'
 
 export { rpc }
@@ -7,6 +7,7 @@ export { rpc }
 const live = { refetchInterval: 60_000, staleTime: 5_000 } as const
 
 type PostingFilters = Parameters<typeof rpc.postings>[0]
+export type StatsWindow = Parameters<typeof rpc.stats>[0]['window']
 type PeopleFilters = Parameters<typeof rpc.people>[0]
 
 /** Query options shared by route loaders and components. Keys line up with lib/live.ts. */
@@ -14,6 +15,7 @@ export const qo = {
   today: () => queryOptions({ queryKey: ['today'], queryFn: () => rpc.today(), ...live }),
   postings: (f: PostingFilters) => queryOptions({ queryKey: ['postings', f], queryFn: () => rpc.postings(f), ...live }),
   posting: (id: string) => queryOptions({ queryKey: ['posting', id], queryFn: () => rpc.posting({ id }) }),
+  stats: (window: StatsWindow) => queryOptions({ queryKey: ['stats', window], queryFn: () => rpc.stats({ window }), placeholderData: keepPreviousData, ...live }),
   applications: () => queryOptions({ queryKey: ['applications'], queryFn: () => rpc.applications(), ...live }),
   reviewQueue: () => queryOptions({ queryKey: ['reviewQueue'], queryFn: () => rpc.reviewQueue(), ...live }),
   application: (id: string) => queryOptions({ queryKey: ['application', id], queryFn: () => rpc.application({ id }), ...live }),
@@ -94,5 +96,6 @@ export const listRadarFn = wrap0(rpc.radar)
 export const getPersonFn = wrap(rpc.person)
 export const getApplicationFn = wrap(rpc.application)
 
+export type Stats = Awaited<ReturnType<typeof rpc.stats>>
 export type Today = Awaited<ReturnType<typeof rpc.today>>
 export type ApplicationDetail = NonNullable<Awaited<ReturnType<typeof rpc.application>>>

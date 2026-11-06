@@ -84,6 +84,7 @@ export const router = {
     async (f) => (await qs()).listQuestions({ status: f.status ?? 'open', ...(f.applicationId ? { applicationId: f.applicationId } : {}), ...(f.about ? { about: f.about } : {}) }),
   ),
   questionCount: proc(none, async () => (await qs()).openQuestionCount()),
+  stats: proc(z.object({ window: z.enum(['24h', '7d', '30d', 'all']) }), async ({ window }) => (await import('../stats')).getStats(window)),
   reviewQueue: proc(none, async () => (await import('../review')).reviewQueue()),
   search: proc(z.object({ q: z.string() }), async ({ q: s }) => (await q()).searchAll(s)),
   tellRules: proc(none, async () => (await import('../writing/tells')).loadTellRules()),

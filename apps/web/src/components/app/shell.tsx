@@ -10,6 +10,7 @@ import {
   ListTodo,
   Menu,
   type LucideIcon,
+  ChartColumn,
   ClipboardCheck,
   MessageCircleQuestion,
   MessageSquare,
@@ -47,6 +48,7 @@ const NAV: NavItem[] = [
   { to: '/jobs', label: 'Jobs', icon: Briefcase, mobile: true },
   { to: '/review', label: 'Review', icon: ClipboardCheck, mobile: true },
   { to: '/pipeline', label: 'Pipeline', icon: KanbanSquare, mobile: true },
+  { to: '/stats', label: 'Stats', icon: ChartColumn },
   { to: '/questions', label: 'Questions', icon: MessageCircleQuestion },
   { to: '/people', label: 'People', icon: Users, mobile: true },
   { to: '/resume', label: 'Resume', icon: FileText },
@@ -202,8 +204,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [searchOpen, setSearchOpen] = useState(false)
   const onChatPage = path.startsWith('/chat')
   const fullBleed = path.startsWith('/resume/')
-  // The pipeline board and the review queue need the whole width, not the reading column.
-  const wide = path === '/pipeline' || path === '/review'
+  // The pipeline board, the review queue and the charts need the whole width, not the reading column.
+  const wide = path === '/pipeline' || path === '/review' || path === '/stats'
   useLiveUpdates()
   const navigate = useNavigate()
   // In a browser, notifications show as toasts (the desktop app shows native ones instead).

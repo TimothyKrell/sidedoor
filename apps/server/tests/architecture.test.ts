@@ -8,7 +8,7 @@ import { expect, test } from 'vitest'
  * person contacted, schedules the follow-up, logs history) and run atomically. A direct
  * db.update(schema.people) elsewhere skips all of that.
  */
-const DOMAIN = /\.(insert|update|delete)\(\s*schema\.(people|interactions|drafts|applications|applicationPeople|questions|staleFlags)\b/
+const DOMAIN = /\.(insert|update|delete)\(\s*schema\.(people|interactions|drafts|applications|applicationPeople|questions|staleFlags|stageChanges)\b/
 const ALLOWED = ['src/services/']
 
 const files = (dir: string): string[] =>

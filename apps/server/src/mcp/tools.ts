@@ -24,6 +24,7 @@ import {
   setWriting,
 } from '../services/applications'
 import { findEmailFor } from '../services/email-finder'
+import { getStats, STATS_WINDOWS } from '../stats'
 import {
   createDraft,
   deleteInteraction,
@@ -172,6 +173,14 @@ const boardBehind = async (url: string, companyName?: string): Promise<{ kind: s
 }
 
 export const appTools = [
+  tool(
+    'job_search_stats',
+    "The numbers on the Stats page for a period: applications submitted, rejections, response rate, how far they got, why things closed, how fit and pay fared, the scout, outreach, and AI work. Rejections count what the company said, even when the application closed with no reason. Use this when asked how the search is going in numbers.",
+    { window: z.enum(STATS_WINDOWS).default('all').describe('24h, 7d, 30d or all') },
+    safe(({ window }) => getStats(window)),
+    ro,
+  ),
+
   tool(
     'pipeline_overview',
     "Snapshot of the user's whole job hunt: applications by stage, follow-ups due, packages awaiting review, newest strong postings, running AI tasks. Call this first when asked what's going on.",
@@ -379,7 +388,7 @@ export const appTools = [
       nextAction: z.string().optional(),
       nextActionDate: z.string().nullable().optional().describe('YYYY-MM-DD or null'),
       appendNote: z.string().optional(),
-      closedReason: z.string().optional(),
+      closedReason: z.string().optional().describe('why it closed, whenever it closes; start with "Rejected by <company>" when they said no, so it counts as a rejection in Stats'),
       role: z.string().optional(),
       location: z.string().optional(),
       compText: z.string().optional().describe('pay as listed, e.g. "$200K – $300K + equity"; min/max are parsed from it'),

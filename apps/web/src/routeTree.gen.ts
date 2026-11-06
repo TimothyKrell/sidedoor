@@ -17,6 +17,7 @@ import { Route as RadarRouteImport } from './routes/radar'
 import { Route as ReviewRouteImport } from './routes/review'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SourcesRouteImport } from './routes/sources'
+import { Route as StatsRouteImport } from './routes/stats'
 import { Route as StoriesRouteImport } from './routes/stories'
 import { Route as TasksRouteImport } from './routes/tasks'
 import { Route as WelcomeRouteImport } from './routes/welcome'
@@ -70,6 +71,11 @@ const SettingsRoute = SettingsRouteImport.update({
 const SourcesRoute = SourcesRouteImport.update({
   id: '/sources',
   path: '/sources',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StatsRoute = StatsRouteImport.update({
+  id: '/stats',
+  path: '/stats',
   getParentRoute: () => rootRouteImport,
 } as any)
 const StoriesRoute = StoriesRouteImport.update({
@@ -152,6 +158,7 @@ export interface FileRoutesByFullPath {
   '/review': typeof ReviewRoute
   '/settings': typeof SettingsRoute
   '/sources': typeof SourcesRoute
+  '/stats': typeof StatsRoute
   '/stories': typeof StoriesRoute
   '/tasks': typeof TasksRoute
   '/welcome': typeof WelcomeRoute
@@ -176,6 +183,7 @@ export interface FileRoutesByTo {
   '/review': typeof ReviewRoute
   '/settings': typeof SettingsRoute
   '/sources': typeof SourcesRoute
+  '/stats': typeof StatsRoute
   '/stories': typeof StoriesRoute
   '/tasks': typeof TasksRoute
   '/welcome': typeof WelcomeRoute
@@ -201,6 +209,7 @@ export interface FileRoutesById {
   '/review': typeof ReviewRoute
   '/settings': typeof SettingsRoute
   '/sources': typeof SourcesRoute
+  '/stats': typeof StatsRoute
   '/stories': typeof StoriesRoute
   '/tasks': typeof TasksRoute
   '/welcome': typeof WelcomeRoute
@@ -227,6 +236,7 @@ export interface FileRouteTypes {
     | '/review'
     | '/settings'
     | '/sources'
+    | '/stats'
     | '/stories'
     | '/tasks'
     | '/welcome'
@@ -251,6 +261,7 @@ export interface FileRouteTypes {
     | '/review'
     | '/settings'
     | '/sources'
+    | '/stats'
     | '/stories'
     | '/tasks'
     | '/welcome'
@@ -275,6 +286,7 @@ export interface FileRouteTypes {
     | '/review'
     | '/settings'
     | '/sources'
+    | '/stats'
     | '/stories'
     | '/tasks'
     | '/welcome'
@@ -300,6 +312,7 @@ export interface RootRouteChildren {
   ReviewRoute: typeof ReviewRoute
   SettingsRoute: typeof SettingsRoute
   SourcesRoute: typeof SourcesRoute
+  StatsRoute: typeof StatsRoute
   StoriesRoute: typeof StoriesRoute
   TasksRoute: typeof TasksRoute
   WelcomeRoute: typeof WelcomeRoute
@@ -372,6 +385,13 @@ declare module '@tanstack/react-router' {
       path: '/sources'
       fullPath: '/sources'
       preLoaderRoute: typeof SourcesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/stats': {
+      id: '/stats'
+      path: '/stats'
+      fullPath: '/stats'
+      preLoaderRoute: typeof StatsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/stories': {
@@ -484,6 +504,7 @@ const rootRouteChildren: RootRouteChildren = {
   ReviewRoute: ReviewRoute,
   SettingsRoute: SettingsRoute,
   SourcesRoute: SourcesRoute,
+  StatsRoute: StatsRoute,
   StoriesRoute: StoriesRoute,
   TasksRoute: TasksRoute,
   WelcomeRoute: WelcomeRoute,

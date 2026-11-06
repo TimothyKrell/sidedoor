@@ -74,15 +74,20 @@ export const trackPosting = atomic((postingId: string, o: { prep?: boolean; rese
   return getApplication(id)!
 })
 
+const recordStage = (applicationId: string, stage: schema.ApplicationStage) => db.insert(schema.stageChanges).values({ id: newId('stg_'), applicationId, stage, at: nowIso() }).run()
+
 export const createApplication = atomic((v: Omit<typeof schema.applications.$inferInsert, 'id'>) => {
   const id = newId('app_')
   db.insert(schema.applications).values({ ...v, id, lastActivityAt: nowIso() }).run()
+  if (v.stage) recordStage(id, v.stage)
   logActivity('application', `Added ${v.companyName} – ${v.role}`, { link: `/applications/${id}` })
   return getApplication(id)!
 })
 
 export const updateApplication = atomic((id: string, patch: AppPatch) => {
+  const moved = patch.stage && patch.stage !== getApplication(id)?.stage
   db.update(schema.applications).set({ ...patch, updatedAt: nowIso(), lastActivityAt: nowIso() }).where(eq(schema.applications.id, id)).run()
+  if (moved) recordStage(id, patch.stage!)
   return getApplication(id)
 })
 

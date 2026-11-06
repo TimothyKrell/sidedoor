@@ -553,3 +553,12 @@ current when making a non-obvious call. Open questions for the maintainer live i
   sentence and a few highlights. The scheduler queues one for anything waiting without one, so
   there's no separate path for new and existing applications. It gets one try each: a listing it
   can't read shouldn't cost a call every minute, and Summarize on the card asks again.
+- **Stats counts what happened, not what the columns say.** Stage history lives in `stage_changes`,
+  written by `updateApplication` (so every path records it) and backfilled from the activity log.
+  A move put right within the hour doesn't count, because clicking through the stages left false
+  Offers and a false `appliedAt` behind. A rejection is read from `closedReason`, falling back to the
+  latest note when it's blank, since agents often closed one with no reason and noted the email
+  instead; `update_application` now asks for the reason. A submission is anything in Applied or
+  later, or closed after going in, so moved-back cards drop out and a recruiter's role counts.
+  The funnel and Heard back follow the applications sent in the period; Rejected counts rejections
+  that arrived in it, so a recent period can show rejections and 0% heard back at once.

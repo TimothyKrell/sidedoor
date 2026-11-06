@@ -52,7 +52,7 @@ export const ageHours = (postedAt: string | null | undefined, firstSeenAt: strin
   return Number.isNaN(ts) ? null : (Date.now() - ts) / 3600_000
 }
 
-const localDay = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+export const localDay = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 export const todayStr = () => localDay(new Date())
 export const plusDays = (n: number) => {
   const d = new Date()
