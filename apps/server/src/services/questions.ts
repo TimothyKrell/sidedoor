@@ -1,11 +1,12 @@
 import { and, desc, eq, inArray, isNull, ne, or } from 'drizzle-orm'
-import { packageQuestions } from '@sidedoor/shared/questions'
+import { holdsApplication, packageQuestions } from '@sidedoor/shared/questions'
 import { logActivity } from '../activity'
 import { db, schema } from '../db/client'
 import { atomic } from '../db/tx'
 import { isDemographic } from '../form-answers'
 import { newId, nowIso } from '../ids'
 import { getMeta, getSettings, setMeta } from '../settings'
+import { truncate } from '../text'
 import { getApplication, requestChanges, requestSubmit, submitByOf, submitterAllowed, updateApplication } from './applications'
 import { type DocKey, getDoc, setDoc } from './documents'
 
@@ -43,7 +44,7 @@ const ABOUT_PAST = /\b(did|have|had|were|was)\s+you\b|\b(your|you) (role|experie
 
 /** A first guess at what a question is about, for questions asked without saying. */
 export const guessAbout = (text: string): { about: About; saveTo: SaveTo | null } =>
-  FORM_ANSWER.test(text) ? { about: 'you', saveTo: 'answers' } : ABOUT_PAST.test(text) ? { about: 'you', saveTo: 'experience' } : { about: 'application', saveTo: null }
+  FORM_ANSWER.test(text) || isDemographic(text) ? { about: 'you', saveTo: 'answers' } : ABOUT_PAST.test(text) ? { about: 'you', saveTo: 'experience' } : { about: 'application', saveTo: null }
 
 // ------------------------------------------------------------------ markdown sections
 
@@ -148,10 +149,14 @@ const byId = (id: string) => db.select().from(Q).where(eq(Q.id, id)).get()
 /** The answer the user gave for every application, if they've answered this question before. */
 const knownForAll = (key: string) => db.select().from(Q).where(and(eq(Q.key, key), eq(Q.scope, 'global'), eq(Q.status, 'answered'))).orderBy(desc(Q.answeredAt)).get()
 
+/** The user marked this question not needed, on any application. */
+const passedOn = (key: string) => db.select({ id: Q.id }).from(Q).where(and(eq(Q.key, key), eq(Q.status, 'dismissed'))).get()
+
 /**
  * Ask the user some questions, for one application or (applicationId null) in general. A question
  * already answered for every application isn't asked again: it's recorded as answered here too,
- * and its answer comes back. One asked again for the same application keeps its row.
+ * and its answer comes back. One asked again for the same application keeps its row. A fact the
+ * user already said wasn't needed isn't asked of another application, unless a form needs it.
  */
 export const askQuestions = atomic((applicationId: string | null, askedBy: string, qs: AskInput[]): Asked[] => {
   if (applicationId && !getApplication(applicationId)) throw new Error(`No application ${applicationId}`)
@@ -178,6 +183,14 @@ export const askQuestions = atomic((applicationId: string | null, askedBy: strin
     }
     const guess = guessAbout(text)
     const about = x.about ?? guess.about
+    const saveTo = x.saveTo ?? (about === 'you' ? (guess.saveTo ?? 'answers') : null)
+    if (!known && !holdsApplication({ about, saveTo, askedBy })) {
+      const passed = passedOn(key)
+      if (passed) {
+        out.push({ id: passed.id, question: text, status: 'dismissed', answer: null, known: false })
+        continue
+      }
+    }
     const at = nowIso()
     const row: typeof Q.$inferInsert = {
       id: newId('q_'),
@@ -189,7 +202,7 @@ export const askQuestions = atomic((applicationId: string | null, askedBy: strin
       key,
       why: x.why ?? null,
       options: x.options ?? [],
-      saveTo: x.saveTo ?? (about === 'you' ? (guess.saveTo ?? 'answers') : null),
+      saveTo,
       askedBy,
       createdAt: at,
       updatedAt: at,
@@ -375,6 +388,25 @@ export const reviseWithAnswers = atomic((applicationId: string) => {
 
 // ------------------------------------------------------------------ reads
 
+/**
+ * What's been put to the user about themselves and not answered, for an AI about to ask: what they
+ * passed on first, so a long list keeps those. Words differ from job to job, so `askQuestions` can
+ * only catch the same wording; the AI has to see the rest to leave the topic alone.
+ */
+export const askedBefore = () => {
+  const rows = db
+    .select({ text: Q.text, key: Q.key, status: Q.status })
+    .from(Q)
+    .where(and(eq(Q.about, 'you'), ne(Q.askedBy, 'fill'), inArray(Q.status, ['dismissed', 'open'])))
+    .orderBy(desc(Q.updatedAt))
+    .all()
+  const seen = new Set<string>()
+  return [...rows.filter((r) => r.status === 'dismissed'), ...rows.filter((r) => r.status === 'open')]
+    .filter((r) => !seen.has(r.key) && seen.add(r.key))
+    .map((r) => `- ${r.status === 'dismissed' ? 'Passed on' : 'Waiting'}: ${truncate(r.text, 120)}`)
+    .join('\n')
+}
+
 /** Answers the user gave that prep should use: for every application, and for this one. */
 export const answersFor = (applicationId: string | null) => {
   const rows = db
@@ -422,6 +454,8 @@ export interface QuestionGroup {
   askedAt: string
   /** Answered since the package was last sent to be revised. */
   unrevised: boolean
+  /** Could make the application stronger, but nothing waits on it (see `holdsApplication`). */
+  optional: boolean
   applications: { id: string; name: string; stage: schema.ApplicationStage }[]
 }
 
@@ -467,10 +501,12 @@ export const listQuestions = (f: QuestionFilter = {}): QuestionGroup[] => {
         askedBy: q.askedBy,
         askedAt: q.createdAt,
         unrevised: false,
+        optional: true,
         applications: [],
       }
       groups.set(k, g)
     }
+    if (holdsApplication(q)) g.optional = false
     g.ids.push(q.id)
     if (q.status === 'answered' && !q.revisedAt && q.answeredBy !== 'package') g.unrevised = true
     if (!g.why && q.why) g.why = q.why
@@ -481,7 +517,7 @@ export const listQuestions = (f: QuestionFilter = {}): QuestionGroup[] => {
   return f.limit ? out.slice(0, f.limit) : out
 }
 
-export const openQuestionCount = () => listQuestions({ status: 'open' }).length
+export const openQuestionCount = () => listQuestions({ status: 'open' }).filter((q) => !q.optional).length
 
 // ------------------------------------------------------------------ Grok Bot's answer_questions
 

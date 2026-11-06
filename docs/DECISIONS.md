@@ -409,6 +409,30 @@ current when making a non-obvious call. Open questions for the maintainer live i
   an application out of its submit (`reviewHold`), reported as `blockedBy: 'review'`. The user clears
   these, or tells the AI to. An untuned resume with no tuning queued doesn't hold it back, since
   that costs fit, not accuracy. Grok Bot's path is unchanged. No agent can change the switch itself.
+- **Only what something waits on holds an application.** An audit on 2026-11-05 found 39 of 40
+  applications parked on "Questions": 161 open questions and 174 open decisions. 130 of the
+  questions were the AI asking whether the user had done something a posting named. Of the 36 such
+  questions the user had dealt with, half were dismissed, and only 6 answers ever reached a
+  revision. Those questions can't make an application wrong, because nothing unconfirmed is claimed,
+  so a fact about past work that no form asked for is optional (`holdsApplication`). This is worked
+  out from the question, not stored, so it applied to the backlog with no migration. It's the one
+  exception to the rule above: an open optional question doesn't stop their AI either. A form's own
+  question always holds, even when it reads like a fact about the past.
+- **Tuning's limit is in code.** The prompt said "at most 5" and got exactly 5 on about half the
+  applications, including ones already at 93. The AI now proposes questions in its output and
+  `worthAsking` keeps two at most, tied to a must-have that's still short, and none at 90 or above.
+  The number is a judgment call: past 90 the resume is good enough that a few more points don't
+  repay the interruption.
+- **Passing on a question is remembered.** Keys match wording only, and the wording changes with
+  each posting, so the same few topics came back (meetup talks four times, GCP and BigQuery four
+  times, and topics already dismissed). Prep and tuning now see what's been asked and not answered,
+  and a fact dismissed on one application isn't asked of another in the same words. A form still
+  can, since it has a field to fill.
+- **A decision is a required answer or a real call, nothing else.** Most of the 174 were notes, or
+  sign-offs on wording built from confirmed facts, or restated Standard answers. Those now go under
+  "Changes vs. main resume" or "Submission notes", which hold nothing up.
+- **Self-identification answers are about the user.** They were kept per application, so each form
+  asked again. "Man" on a form also now matches "Male" in Standard answers, as a whole answer only.
 - **Tuning is measured by Sidedoor, not reported by the AI.** The start and finish scores come from
   the match check itself, and a pass that ends lower is undone, so "raised from 80 to 91" can be
   trusted. The AI stops at 95, or when two rounds don't beat the noise margin, and after 4 rounds at

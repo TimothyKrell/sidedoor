@@ -27,7 +27,11 @@ export const reviewQueue = () => {
   const ids = apps.map((a) => a.id)
   const active = ids.length ? db.select({ applicationId: T.applicationId, kind: T.kind }).from(T).where(and(inArray(T.applicationId, ids), inArray(T.status, ['queued', 'running']))).all() : []
   const asked = new Map<string, number>()
-  for (const q of listQuestions({ status: 'open' })) for (const x of q.applications) asked.set(x.id, (asked.get(x.id) ?? 0) + 1)
+  const optional = new Map<string, number>()
+  for (const q of listQuestions({ status: 'open' })) {
+    const counts = q.optional ? optional : asked
+    for (const x of q.applications) counts.set(x.id, (counts.get(x.id) ?? 0) + 1)
+  }
   const sent = new Map(submissions().map((s) => [s.applicationId, s]))
   const closedAt = new Map(db.select({ id: schema.postings.id, closedAt: schema.postings.closedAt }).from(schema.postings).where(inArray(schema.postings.id, apps.flatMap((a) => (a.postingId ? [a.postingId] : [])))).all().map((p) => [p.id, p.closedAt]))
 
@@ -59,6 +63,7 @@ export const reviewQueue = () => {
       tune: a.tuneJson,
       facts,
       bucket: reviewBucket(facts),
+      optionalQuestions: optional.get(a.id) ?? 0,
       writing: writing.map((w) => ({ key: w.key, title: w.title, blank: w.blank, done: w.done })),
       listingClosed: !!(a.listingClosedAt || (a.postingId && closedAt.get(a.postingId))),
       submission: s && { status: s.status, dryRun: s.dryRun, summary: s.summary },

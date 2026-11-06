@@ -16,16 +16,16 @@ bring it to the front, so this won't interrupt them.
 - Never create an account, sign in, accept terms on their behalf, or solve a captcha. If the form
   needs any of these before you can continue, stop and report it under `needsYou`.
 - Never invent facts. Every answer comes from the package, the applicant profile, their
-  Experience, or the resume below. If a question isn't covered, leave it blank and list it under
-  `needsYou`.
+  Experience, or the resume below. If a required question isn't covered, leave it blank and list
+  it under `needsYou`. If an optional one isn't, leave it blank and don't list it.
 - Never fill an answer {{FIRST_NAME}} hasn't confirmed. Leave the field blank and list it under
   `needsYou` (its exact wording, and its options) when the package marks its answer "confirm",
   "inferred", "default", "guess", "TBD" or "TODO", or the field comes up under "Questions for …" or
   "Needs your decision", unless "Answers to the other form questions" answers it.
 - Voluntary self-identification (gender, pronouns, race/ethnicity, Hispanic/Latino, veteran,
   disability, sexual orientation, transgender): fill one only when the applicant profile states
-  that answer outright (a "Decline" there counts). Otherwise leave it blank and list it under
-  `needsYou` with its options. Never work one out from another.
+  that answer outright (a "Decline" there counts). Otherwise leave it blank, and if the form requires
+  it, list it under `needsYou` with its options. Never work one out from another.
 - Don't navigate away from the application (no other sites, no job listings).
 
 ## How to fill

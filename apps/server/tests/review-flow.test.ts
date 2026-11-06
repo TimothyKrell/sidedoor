@@ -30,11 +30,11 @@ vi.mock('../src/mcp/playwright', () => ({ withBrowserTools: (_e: string, _d: str
 vi.mock('../src/mcp/server', async (orig) => ({ ...(await orig<typeof import('../src/mcp/server')>()), browserSnapshot: async () => 'Page URL: https://x/thanks' }))
 vi.mock('../src/notify', async (orig) => ({ ...(await orig<typeof import('../src/notify')>()), notifyPromise: async () => undefined }))
 // Scores come from the test: each match check reads the next one.
-const scores = vi.hoisted(() => ({ next: [] as number[] }))
+const scores = vi.hoisted(() => ({ next: [] as number[], requirements: [] as unknown[] }))
 vi.mock('../src/match', async (orig) => ({
   ...(await orig<typeof import('../src/match')>()),
   runMatch: async (id: string) => {
-    const match = { score: scores.next.shift() ?? 0, requirements: [], summary: '', at: '', model: 'm', doc: '', resumeVersion: '1' } as unknown as ResumeMatch
+    const match = { score: scores.next.shift() ?? 0, requirements: scores.requirements, summary: '', at: '', model: 'm', doc: '', resumeVersion: '1' } as unknown as ResumeMatch
     const { setResumeMatch } = await import('../src/services/applications')
     setResumeMatch(id, match)
     return { match, reused: false, costUsd: 0, log: [] }
@@ -109,7 +109,7 @@ describe('the step an application is on', () => {
   test('the queue counts what is open, and a dry run that stopped short is not stuck', () => {
     const a = app('Queue')
     tune(a.id)
-    askQuestions(a.id, 'agent', [{ question: 'Have you used Rust in production?' }])
+    askQuestions(a.id, 'fill', [{ question: 'Have you used Rust in production?' }])
     const i = item(a.id)
     expect(i.facts).toMatchObject({ openQuestions: 1, openDecisions: 2, writingLeft: 2, tuned: true })
     expect(i.bucket).toBe('answers')
@@ -141,6 +141,16 @@ describe('written answers', () => {
     expect(after.writingChecks?.['q:2']).toBe(textMark('The hard call was shutting down our own product.'))
   })
 
+  test('an optional question leaves the application where it is, and shows how many there are', () => {
+    const a = app('Optional')
+    settleDecisions(a.id)
+    const before = item(a.id).bucket
+    askQuestions(a.id, 'tune', [{ question: 'Have you used Fastify?', about: 'you', saveTo: 'experience' }])
+    expect(item(a.id)).toMatchObject({ bucket: before, optionalQuestions: 1, facts: { openQuestions: 0 } })
+    askQuestions(a.id, 'fill', [{ question: 'Desired salary' }])
+    expect(item(a.id).facts.openQuestions).toBe(1)
+  })
+
   test('all fine as is settles every open decision', () => {
     const a = app('Settle')
     expect(settleDecisions(a.id)).toBe(2)
@@ -160,6 +170,52 @@ describe('tuning the resume', () => {
     await executeTask(t)
     return task(t.id)
   }
+
+  describe('what it asks', () => {
+    const asks = (n: number, requirement = 'r1') => Array.from({ length: n }, (_, i) => ({ question: `Have you done thing ${i}?`, why: 'It would close the gap.', requirement }))
+    const reply = (questions: unknown[]) => [{ summary: 'Done.', rounds: 1, stopped: 'no_more_facts', questions }]
+    const need = (id: string, kind: string, level: string) => ({ id, kind, level, short: id, quote: '', evidence: [], note: '', fix: null })
+    const tuneAsked = (id: string) => listQuestions({ status: 'open', applicationId: id })
+    const finished = async (id: string) => expect((await run(id)).status).toBe('done')
+    afterEach(() => void (scores.requirements = []))
+
+    test('two at most, optional, for a must-have that is short', async () => {
+      const a = ready('Asks')
+      scores.requirements = [need('r1', 'must', 'partial')]
+      scores.next = [70, 80]
+      ai.replies = reply(asks(5))
+      await finished(a.id)
+      expect(tuneAsked(a.id).map((q) => [q.askedBy, q.optional])).toEqual([['tune', true], ['tune', true]])
+      expect(item(a.id).facts.openQuestions).toBe(0)
+    })
+
+    test('nothing for a nice-to-have, a must-have already strong, or a requirement it made up', async () => {
+      const a = ready('Nice')
+      scores.requirements = [need('r1', 'nice', 'missing'), need('r2', 'must', 'strong')]
+      scores.next = [70, 80]
+      ai.replies = reply([...asks(1, 'r1'), ...asks(1, 'r2'), ...asks(1, 'r9')])
+      await finished(a.id)
+      expect(tuneAsked(a.id)).toHaveLength(0)
+    })
+
+    test('nothing once the match is good enough', async () => {
+      const a = ready('Good enough')
+      scores.requirements = [need('r1', 'must', 'partial')]
+      scores.next = [80, 90]
+      ai.replies = reply(asks(2))
+      await finished(a.id)
+      expect(tuneAsked(a.id)).toHaveLength(0)
+    })
+
+    test('it sees what was already asked', async () => {
+      const a = ready('Knows')
+      askQuestions(a.id, 'agent', [{ question: 'Have you used Azure?', about: 'you', saveTo: 'experience' }])
+      scores.next = [80, 80]
+      ai.replies = reply([])
+      await finished(a.id)
+      expect(ai.prompts.at(-1)).toContain('- Waiting: Have you used Azure?')
+    })
+  })
 
   test('records where it started and finished, measured by Sidedoor', async () => {
     const a = ready('Tuned')

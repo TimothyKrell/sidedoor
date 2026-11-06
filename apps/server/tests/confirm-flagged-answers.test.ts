@@ -195,6 +195,14 @@ describe('the Acmepay dry run', () => {
 })
 
 describe('self-identification questions', () => {
+  test('a form saying Man matches Standard answers saying Male, but only as the whole answer', () => {
+    const r = check([
+      { field: 'Gender identity', value: 'Man', source: 'standard_answer' },
+      { field: 'How would you describe your gender?', value: 'Woman', source: 'standard_answer' },
+    ], '# Package\n')
+    expect(r.audit.map((e) => e.confirmed)).toEqual([true, false])
+  })
+
   test('filled from an explicit Standard answer: confirmed', () => {
     const r = check([
       { field: 'Gender', value: 'Male', source: 'standard_answer', options: ['Male', 'Female', 'Decline to self-identify'] },

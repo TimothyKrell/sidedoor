@@ -13,7 +13,7 @@ import { cn } from '~/lib/utils'
 export type QuestionGroup = Awaited<ReturnType<typeof rpc.questions>>[number]
 
 const BY: Record<string, string> = { you: 'You', grokbot: 'Grok Bot, from you', package: 'In the package', agent: 'Your AI, from you' }
-const ASKED_BY: Record<string, string> = { prep: 'prep', fill: 'the form', package: 'the package', agent: 'your AI' }
+const ASKED_BY: Record<string, string> = { prep: 'prep', tune: 'tuning', fill: 'the form', package: 'the package', agent: 'your AI' }
 const KEPT_IN = { answers: 'Standard answers', experience: 'Experience' } as const
 
 /**
@@ -145,17 +145,24 @@ function QuestionRow({ g, showApplications }: { g: QuestionGroup; showApplicatio
 export function ApplicationQuestions({ applicationId, groups, hasPackage }: { applicationId: string; groups: QuestionGroup[]; hasPackage: boolean }) {
   const revise = useAction(() => rpc.reviseWithAnswers({ applicationId }), { success: 'Sent to your AI. It updates only what your answers change.' })
   const [showDone, setShowDone] = useState(false)
-  const open = groups.filter((g) => g.status === 'open')
+  const [showOptional, setShowOptional] = useState(false)
+  const open = groups.filter((g) => g.status === 'open' && !g.optional)
+  const optional = groups.filter((g) => g.status === 'open' && g.optional)
   const done = groups.filter((g) => g.status !== 'open')
   const fresh = groups.filter((g) => g.unrevised).length
   if (!groups.length) return null
   return (
     <section className="space-y-2">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-1">
-        <h3 className="text-sm font-semibold">{open.length ? `${open.length} question${open.length === 1 ? '' : 's'} for you` : 'Questions answered'}</h3>
+        <h3 className="text-sm font-semibold">{open.length ? `${open.length} question${open.length === 1 ? '' : 's'} for you` : optional.length ? 'No questions need you' : 'Questions answered'}</h3>
         {done.length > 0 && (
           <button type="button" className="text-xs text-muted-foreground hover:text-foreground" onClick={() => setShowDone(!showDone)}>
             {showDone ? 'Hide' : 'Show'} {done.length} answered
+          </button>
+        )}
+        {optional.length > 0 && (
+          <button type="button" className="text-xs text-muted-foreground hover:text-foreground" onClick={() => setShowOptional(!showOptional)}>
+            {showOptional ? 'Hide' : 'Show'} {optional.length} optional
           </button>
         )}
         {hasPackage && fresh > 0 && (
@@ -164,7 +171,13 @@ export function ApplicationQuestions({ applicationId, groups, hasPackage }: { ap
           </Button>
         )}
       </div>
-      {(showDone || open.length > 0) && <QuestionList groups={showDone ? groups : open} showApplications={false} />}
+      {(showDone ? open.length + done.length > 0 : open.length > 0) && <QuestionList groups={showDone ? [...open, ...done] : open} showApplications={false} />}
+      {showOptional && (
+        <>
+          <p className="px-1 text-xs text-muted-foreground">These could strengthen it, but it can go without them.</p>
+          <QuestionList groups={optional} showApplications={false} />
+        </>
+      )}
     </section>
   )
 }

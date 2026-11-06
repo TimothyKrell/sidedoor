@@ -305,7 +305,7 @@ export const reviewHold = (a: schema.Application): string | null => {
   if (working) return 'Your AI is still working on its package or resume. Send it once that is done.'
   const open = stillOpen({
     tuned: true,
-    openQuestions: listQuestions({ status: 'open', applicationId: a.id }).length,
+    openQuestions: listQuestions({ status: 'open', applicationId: a.id }).filter((q) => !q.optional).length,
     openDecisions: decisionsOf(a.packageMd).filter((d) => !d.done).length,
     writingLeft: writingItems(a.packageMd, a.writingChecks).filter((w) => !w.done).length,
   })

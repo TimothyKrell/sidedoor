@@ -10,6 +10,13 @@ export interface PackageQuestion {
   answer: string | null
 }
 
+/**
+ * Does an open question hold its application back? A fact about past work doesn't: nothing
+ * unconfirmed is claimed, so an answer can only make the application stronger. Those stay optional,
+ * unless a form asked, since then a field is waiting on it.
+ */
+export const holdsApplication = (q: { about: string; saveTo: string | null; askedBy: string }) => q.askedBy === 'fill' || q.about !== 'you' || q.saveTo !== 'experience'
+
 const HEADING = /^##\s+questions for\b/i
 
 const section = (md: string | null | undefined) => {

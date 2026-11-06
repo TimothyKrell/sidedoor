@@ -6,6 +6,12 @@ import { extractProseSections } from './package-sections'
 /** The AI stops working a resume up once the match reaches this. */
 export const TUNE_TARGET = 95
 
+/** Tuning asks you nothing once the match reaches this: a few more points aren't worth your time. */
+export const TUNE_ASK_BELOW = 90
+
+/** The most questions one tuning pass may ask. */
+export const TUNE_MAX_QUESTIONS = 2
+
 export const TUNE_STOPS = ['target', 'no_gain', 'no_more_facts', 'limit'] as const
 export type TuneStop = (typeof TUNE_STOPS)[number]
 
@@ -66,7 +72,7 @@ export type ReviewBucket = (typeof REVIEW_BUCKETS)[number]
 export const BUCKET_META: Record<ReviewBucket, { label: string; hint: string }> = {
   ai: { label: 'AI working', hint: 'Your AI is on it. Nothing for you yet.' },
   tune: { label: 'Not tuned yet', hint: 'Your AI hasn’t pushed the resume as far as it can.' },
-  answers: { label: 'Questions', hint: 'Answer these so the AI can go further.' },
+  answers: { label: 'Questions', hint: 'Only what the form or the application needs from you.' },
   writing: { label: 'Writing', hint: 'Essays and letters to write or check off.' },
   ready: { label: 'Ready to send', hint: 'Everything’s done. Approve and submit.' },
   sending: { label: 'Sending', hint: 'Sidedoor is filling and submitting the form.' },
@@ -78,6 +84,7 @@ export interface ReviewFacts {
   /** Prep, a match check or tuning is queued or running. */
   aiWorking: boolean
   tuned: boolean
+  /** Open questions that hold it back. Optional ones (see `holdsApplication`) don't count. */
   openQuestions: number
   openDecisions: number
   writingLeft: number

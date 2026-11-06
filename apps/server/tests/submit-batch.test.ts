@@ -505,7 +505,7 @@ describe('your AI submits when you ask it to', () => {
     expect(() => batch.startBatch({ mode: 'submit', by: 'agent', applicationIds: [a.id] })).toThrow(/your AI submit is turned off \(Settings → AI\)/)
   })
 
-  test('an essay you have not checked or an open question stays with you', async () => {
+  test('an essay you have not checked or an open question stays with you, but an optional one does not', async () => {
     on()
     const essay = app('Essay', { packageMd: ESSAY })
     const asked = app('Asked')
@@ -513,6 +513,7 @@ describe('your AI submits when you ask it to', () => {
     const busy = app('Busy')
     db.insert(schema.tasks).values({ id: 'task_tune', kind: 'tune', title: 'Tune', status: 'queued', applicationId: busy.id, input: {} }).run()
     const clear = app('Clear')
+    askQuestions(clear.id, 'tune', [{ question: 'Have you used Fastify?', about: 'you', saveTo: 'experience' }])
     await call('start_submit_batch', { mode: 'submit', applicationIds: [essay.id, asked.id, busy.id, clear.id] })
     await advance()
     expect(itemOf(essay.id)).toMatchObject({ status: 'blocked', blockedBy: 'review', summary: expect.stringContaining('1 written answer not checked off') })

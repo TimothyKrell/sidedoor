@@ -160,7 +160,8 @@ Prep, form fills and agents ask the user things only they can answer through one
 agents use `list_questions`, `answer_user_questions` and `dismiss_questions`. Answers go into the
 application's package, and those for every application also into one section of Standard answers
 or Experience, and are handed back instead of asking again. Prep is given every answer already
-given. "Update the package" sends a revision limited to the new answers.
+given. "Update the package" sends a revision limited to the new answers. Facts about past work
+that no form asked for are optional (`holdsApplication`): they're listed apart and hold nothing back.
 
 ## Getting an application out
 
@@ -169,9 +170,10 @@ order. `review.ts` works out each one's step, using `packages/shared/src/review.
 page and agents agree.
 
 1. **Resume.** A `tune` task (`jobs/tune.ts`, `prompts/tune.md`) runs after every prep, or from Tune
-   on the page. The AI edits and re-checks until the match reaches 95 or stops rising, then asks
-   for what only the user knows through `ask_questions`. Sidedoor measures the start and finish
-   itself and restores the resume if the pass left it lower.
+   on the page. The AI edits and re-checks until the match reaches 95 or stops rising, then may
+   propose questions in its output; `worthAsking` keeps at most two, on a must-have that's short,
+   and none at a match of 90 or more. Sidedoor measures the start and finish itself and restores
+   the resume if the pass left it lower.
 2. **Questions and decisions.** The question store, and the package's "Needs your decision" list.
    Talk it through opens the application's own chat (`applicationThread`), which starts with what
    the AI found and costs nothing until the user writes.

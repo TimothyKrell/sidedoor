@@ -1,5 +1,6 @@
 import { useSuspenseQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
+import { useState } from 'react'
 import { z } from 'zod'
 import { Empty, PageHeader } from '~/components/app/bits'
 import { QuestionList } from '~/components/app/questions'
@@ -24,7 +25,10 @@ function Questions() {
   const status = search.status ?? 'open'
   const about = search.about ?? 'all'
   const { data } = useSuspenseQuery(qo.questions({ status, ...(about !== 'all' ? { about } : {}) }))
+  const [showOptional, setShowOptional] = useState(false)
   usePageContext('/questions', `questions for the user (${status})`)
+  const needed = data.filter((g) => !(g.status === 'open' && g.optional))
+  const optional = data.filter((g) => g.status === 'open' && g.optional)
   return (
     <div>
       <PageHeader title="Questions" subtitle="Things only you can answer. Answers about you can count for every application, so they aren't asked again." />
@@ -48,7 +52,15 @@ function Questions() {
           ]}
         />
       </div>
-      {data.length ? <QuestionList groups={data} /> : <Empty>{status === 'open' ? 'Nothing to answer right now.' : 'None yet.'}</Empty>}
+      {needed.length ? <QuestionList groups={needed} /> : <Empty>{status === 'open' ? 'Nothing needs an answer right now.' : 'None yet.'}</Empty>}
+      {optional.length > 0 && (
+        <div className="mt-4 space-y-2">
+          <button type="button" className="text-sm text-muted-foreground hover:text-foreground" onClick={() => setShowOptional(!showOptional)}>
+            {showOptional ? 'Hide' : 'Show'} {optional.length} optional. They could strengthen an application, but nothing waits on them.
+          </button>
+          {showOptional && <QuestionList groups={optional} />}
+        </div>
+      )}
     </div>
   )
 }

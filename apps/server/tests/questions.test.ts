@@ -16,7 +16,7 @@ const { executeTask } = await import('../src/jobs/tasks')
 const { toolsFor } = await import('../src/mcp/tools')
 const { createApplication, getApplication } = await import('../src/services/applications')
 const { docBody, setDoc } = await import('../src/services/documents')
-const { answerQuestions, askQuestions, dismissQuestions, docWithAnswer, importPackageQuestions, listQuestions, packageWithAnswer, questionKey, reopenQuestion, reviseWithAnswers, savePackage } = await import('../src/services/questions')
+const { answerQuestions, askedBefore, askQuestions, dismissQuestions, docWithAnswer, importPackageQuestions, listQuestions, openQuestionCount, packageWithAnswer, questionKey, reopenQuestion, reviseWithAnswers, savePackage } = await import('../src/services/questions')
 const { enqueueTask } = await import('../src/services/tasks')
 const { setMeta } = await import('../src/settings')
 
@@ -50,6 +50,44 @@ describe('asking', () => {
     expect([row(salary!.id).about, row(salary!.id).saveTo, row(salary!.id).scope]).toEqual(['you', 'answers', 'global'])
     expect([row(past!.id).about, row(past!.id).saveTo]).toEqual(['you', 'experience'])
     expect([row(job!.id).about, row(job!.id).scope]).toEqual(['application', 'application'])
+  })
+
+  test('self-identification questions are about the user, so one answer covers every form', () => {
+    const [q] = askQuestions(app().id, 'fill', [{ question: 'Are you Hispanic/Latino? (optional)' }])
+    expect([row(q!.id).about, row(q!.id).saveTo, row(q!.id).scope]).toEqual(['you', 'answers', 'global'])
+  })
+
+  test('a fact about past work is optional, unless a form asked it or it is a form answer', () => {
+    const a = app()
+    askQuestions(a.id, 'agent', [{ question: 'Have you used Fastify?', about: 'you', saveTo: 'experience' }])
+    askQuestions(a.id, 'fill', [{ question: 'Have you worked at a startup?' }])
+    askQuestions(a.id, 'agent', [{ question: 'What salary should go on the form?' }, { question: 'Which office should I pick?', about: 'application' }])
+    const optional = (q: string) => listQuestions({ status: 'open' }).find((g) => g.question === q)?.optional
+    expect(optional('Have you used Fastify?')).toBe(true)
+    expect(optional('Have you worked at a startup?')).toBe(false)
+    expect(optional('What salary should go on the form?')).toBe(false)
+    expect(optional('Which office should I pick?')).toBe(false)
+    expect(openQuestionCount()).toBe(3)
+  })
+
+  test('a fact the user passed on is not asked of another application, unless a form needs it', () => {
+    const fact = { question: 'Have you used Helm?', about: 'you' as const, saveTo: 'experience' as const }
+    const [q] = askQuestions(app().id, 'agent', [fact])
+    dismissQuestions([q!.id], 'you')
+    const other = app()
+    expect(askQuestions(other.id, 'tune', [fact])[0]).toMatchObject({ status: 'dismissed', known: false })
+    expect(listQuestions({ status: 'open', applicationId: other.id })).toHaveLength(0)
+    expect(askQuestions(other.id, 'fill', [fact])[0]!.status).toBe('open')
+  })
+
+  test('what was asked and not answered is listed once, what they passed on first', () => {
+    const fact = (question: string) => ({ question, about: 'you' as const, saveTo: 'experience' as const })
+    askQuestions(app().id, 'agent', [fact('Have you used Azure?')])
+    askQuestions(app().id, 'agent', [fact('Have you used Azure?')])
+    const [gone] = askQuestions(app().id, 'agent', [fact('Have you used Helm?')])
+    dismissQuestions([gone!.id], 'you')
+    askQuestions(app().id, 'fill', [{ question: 'Desired salary' }])
+    expect(askedBefore().split('\n')).toEqual(['- Passed on: Have you used Helm?', '- Waiting: Have you used Azure?'])
   })
 
   test('open in several applications, it is listed once with each application', () => {

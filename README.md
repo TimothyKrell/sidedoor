@@ -79,8 +79,8 @@ X, and a Grok Bot routine picks those up.
 
 You can let your AI submit too (Settings → AI → Submitting for you). Then tell a connected app, or
 the chat in Sidedoor, to "go through what's waiting and submit it": it triages the list and Sidedoor
-sends each form, one at a time. Anything with an open question, an open decision or a written answer
-you haven't checked off stays with you, and background work can never submit.
+sends each form, one at a time. Anything with a question it needs answered, an open decision or a
+written answer you haven't checked off stays with you, and background work can never submit.
 
 You can also let Grok Bot submit your applications (Settings → AI → Grok Bot → Let it submit). Ask
 it to "submit my approved applications": Sidedoor fills each form in its own window on your

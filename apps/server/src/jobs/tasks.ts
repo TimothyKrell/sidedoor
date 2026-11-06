@@ -10,7 +10,7 @@ import { notifyPromise } from '../notify'
 import { ATS_LINK, detectAts, detectSource, fetchJson, fetchText, isAdapterKind, parseRss, probeBoard } from '../scout/adapters'
 import { resolveAggregatorPostings } from '../scout/resolve'
 import { getApplication, setStage, trackPosting, updateApplication } from '../services/applications'
-import { answersFor } from '../services/questions'
+import { answersFor, askedBefore } from '../services/questions'
 import { checkApplicationRules } from '../services/rules'
 import { enqueueTask, URGENT_PRIORITY } from '../services/tasks'
 import { getMeta, getSettings, setMeta } from '../settings'
@@ -293,6 +293,7 @@ const runPrep = async (task: schema.Task): Promise<TaskOutcome> => {
     SALARY: s.search.salaryMin ? `${s.search.salaryMin.toLocaleString('en-US')} ${s.search.currency}` : 'not set',
     FORM_QUESTIONS: qs ? JSON.stringify(qs, null, 1) : '(not pre-fetched; inspect the application page with read_page if possible, otherwise use the standard question set)',
     KNOWN_ANSWERS: truncate(answersFor(a.id).map((q) => `- ${q.text} → ${q.answer}`).join('\n'), 8000) || '(none yet)',
+    ASKED_BEFORE: truncate(askedBefore(), 16000) || '(nothing yet)',
     REVIEW_NOTES: [a.reviewNotes, typeof task.input.instructions === 'string' ? task.input.instructions : null].filter(Boolean).join('\n') || '(none: first preparation)',
   })
   const before = a.packageMd

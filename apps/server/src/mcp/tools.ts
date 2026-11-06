@@ -644,7 +644,7 @@ export const appTools = [
 
   tool(
     'review_queue',
-    "Every application waiting on the user before it goes out, in their order, with the step each is on (ai, tune, answers, writing, ready, sending, stuck), its match, how far tuning took it, and what's still open. Use it to tell them what's left. Only the user can approve and submit from here.",
+    "Every application waiting on the user before it goes out, in their order, with the step each is on (ai, tune, answers, writing, ready, sending, stuck), its match, how far tuning took it, what's still open, and how many optional questions could strengthen it (these don't hold it back). Use it to tell them what's left. Only the user can approve and submit from here.",
     {},
     safe(async () => (await import('../review')).reviewQueue()),
     ro,
@@ -960,7 +960,7 @@ export const appTools = [
 
   tool(
     'list_questions',
-    "Questions only the user can answer, asked by prep, form fills or agents: open ones by default (the same question asked by several applications shows once, with its applications). Each has the id to answer or dismiss it with, what it's about ('you': the user, 'application': this job only), whether an answer is meant for every application (scope 'global'), the choices if the form has a fixed set, and once answered the answer, when, and who gave it.",
+    "Questions only the user can answer, asked by prep, form fills or agents: open ones by default (the same question asked by several applications shows once, with its applications). Each has the id to answer or dismiss it with, what it's about ('you': the user, 'application': this job only), whether an answer is meant for every application (scope 'global'), whether it's optional (nothing waits on it, and an answer could only strengthen the application), the choices if the form has a fixed set, and once answered the answer, when, and who gave it.",
     {
       status: z.enum(['open', 'answered', 'dismissed', 'all']).optional().describe("default 'open'"),
       applicationId: z.string().optional(),
@@ -973,7 +973,7 @@ export const appTools = [
 
   tool(
     'ask_questions',
-    "Ask the user questions only they can answer: a fact about their past you couldn't confirm in Experience, a form answer not in Standard answers, or a choice about this application. Sidedoor lists them for the user to answer. Ones they already answered come back with known: true and the answer: use it and don't ask again. about: 'you' for anything about the user (saveTo 'experience' for facts about past work, 'answers' for form answers like salary, start date or work authorization), 'application' for this job only. Leave out applicationId for a question about the user in general.",
+    "Ask the user what only they can answer and something actually waits on: a required form answer not in Standard answers, or a choice about this application. Fewest possible: every question costs them time, so don't ask what you can leave out, and never fish for skills a posting mentions. A fact about their past (saveTo 'experience') is optional: it doesn't hold the application back, and isn't asked again once they pass on it. Sidedoor lists them for the user to answer. Ones they already answered come back with known: true and the answer: use it and don't ask again. about: 'you' for anything about the user (saveTo 'experience' for facts about past work, 'answers' for form answers like salary, start date or work authorization), 'application' for this job only. Leave out applicationId for a question about the user in general.",
     {
       applicationId: z.string().optional(),
       questions: z

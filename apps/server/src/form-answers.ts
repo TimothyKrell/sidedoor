@@ -198,9 +198,12 @@ export const standardStatements = (doc: string) => {
   return out.filter((s) => !EMPTY.test(s.answer.replace(/\*\*CONFIRM[^*]*\*\*/gi, '')))
 }
 
+/** Forms offer "Man" where Standard answers say "Male". Only the whole answer: "Trans man" isn't "Male". */
+const plainSex = (value: string) => value.trim().replace(/^man$/i, 'male').replace(/^woman$/i, 'female')
+
 /** Standard answers say this, in so many words, for this kind of question. */
 const explicitlyStandard = (kinds: string[], value: string, statements: { label: string; answer: string }[]) => {
-  const v = keyWords(value)
+  const v = keyWords(plainSex(value))
   return statements.some((s) => {
     if (!demographicKinds(s.label).some((k) => kinds.includes(k))) return false
     if (/\bconfirm\b/i.test(s.answer)) return false
