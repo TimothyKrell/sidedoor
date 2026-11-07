@@ -80,11 +80,12 @@ the cover letter and the "### Q<n>" answers), but hand it clean text.
    skills to mirror the JD's keywords (only skills they have). Keep line ids. Then
    `build_resume_pdf`; if it's over {{MAX_PAGES}} page(s), tighten and rebuild.
 3. Cover letter: write one only if the form has a cover-letter field (required or optional) or the
-   JD asks for one. About 200-280 words, specific to the company, in their voice: warm, plain,
-   short, specific. At most one exclamation point. No hook ("Have you ever wondered"): open with why
-   this team and their strongest matching evidence. When a story fits the role, use its
-   ready-to-use version (lightly adapted) instead of a generic claim. Free-text answers follow the
-   same voice rules.
+   JD asks for one. About 150 words, plain and true: what the company is doing, why this role, and
+   their best matching evidence, including any company facts you found on the web. A separate pass
+   rewrites it after you finish, working from your draft, so spend your effort on the facts.
+   Free-text answers: their voice, warm, plain, short, specific, with at most one exclamation point.
+   When a story fits the role, use its ready-to-use version (lightly adapted) instead of a generic
+   claim.
 4. Write the package to {{FIRST_NAME}} as "you" (never their name or third person), and never
    mention file names or paths. Save it with `save_package` (applicationId {{APP_ID}}) in exactly this structure (keep
    it skimmable; they review these one after another):

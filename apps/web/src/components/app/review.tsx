@@ -130,17 +130,26 @@ export function ResumeStep({ d, working }: { d: Detail; working: boolean }) {
   )
 }
 
+type Voice = 'mine' | 'spunky' | 'milady'
+type Help = 'draft' | 'cleanup' | Voice
+
+const VOICES: { voice: Voice; label: string; title: string }[] = [
+  { voice: 'mine', label: 'My voice', title: 'Rewrites it the way you sound' },
+  { voice: 'spunky', label: 'Spunky', title: 'Cheekier and more confident, with the same true story. Fine at most companies' },
+  { voice: 'milady', label: 'Milady', title: 'Lowercase, the way a long-time poster writes. For crypto companies only' },
+]
+
 function WritingRow({ id, item }: { id: string; item: WritingItem }) {
   const [text, setText] = useState(item.blank ? '' : item.text)
   const [open, setOpen] = useState(!item.done)
   const save = useAction((v: { done: boolean; text?: string }) => rpc.setWriting({ id, key: item.key, ...v }))
-  const assist = useAction((mode: 'draft' | 'cleanup') => rpc.assistWriting({ id, key: item.key, mode, text }))
+  const assist = useAction((mode: Help) => (mode === 'draft' || mode === 'cleanup' ? rpc.assistWriting({ id, key: item.key, mode, text }) : rpc.restyleCoverLetter({ id, voice: mode, text })))
   const [undo, setUndo] = useState<string | null>(null)
-  const [mode, setMode] = useState<'draft' | 'cleanup' | null>(null)
+  const [mode, setMode] = useState<Help | null>(null)
   const [note, setNote] = useState<string | null>(null)
   const changed = text.trim() !== item.text.trim()
   /** Fills the box and saves nothing. What was there stays one click away. */
-  const help = async (m: 'draft' | 'cleanup') => {
+  const help = async (m: Help) => {
     setMode(m)
     const r = await assist.run(m)
     setMode(null)
@@ -170,6 +179,12 @@ function WritingRow({ id, item }: { id: string; item: WritingItem }) {
             <Button size="sm" variant="outline" className="h-7 text-xs" disabled={assist.pending || !text.trim()} onClick={() => void help('cleanup')} title="Organizes what you wrote and tidies it up, without adding anything you didn't say">
               {mode === 'cleanup' ? <Loader2 className="animate-spin" /> : <Sparkles />} Clean up my answer
             </Button>
+            {item.key === 'cover-letter' &&
+              VOICES.map((v) => (
+                <Button key={v.voice} size="sm" variant="outline" className="h-7 text-xs" disabled={assist.pending} onClick={() => void help(v.voice)} title={v.title}>
+                  {mode === v.voice && <Loader2 className="animate-spin" />} {v.label}
+                </Button>
+              ))}
             {undo !== null && !assist.pending && (
               <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => { setText(undo); setUndo(null); setNote(null) }}>
                 <Undo2 /> Undo

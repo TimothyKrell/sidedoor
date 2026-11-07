@@ -6,9 +6,15 @@ document; this page is only about how to say them.
 
 ## Voice
 - Warm, plain, short, specific. Write the way you'd talk to a smart colleague.
-- Lead with the most relevant thing you've done, not with enthusiasm about the company.
 - One concrete example beats three adjectives. Numbers beat claims.
-- End with a clear, small ask or next step.
+- In a message, end with a clear, small ask or next step.
+
+## How I actually sound
+Paste a few things you wrote or said yourself, unpolished: a message you sent, a line from an email,
+how you'd describe your work to a friend. Agents learn your sound from these, and cover letters
+depend on them.
+
+- (your words here)
 
 ## Things that make writing read as AI-generated (avoid them)
 - **"Not just X, it's Y"** and "more than just". Say Y.

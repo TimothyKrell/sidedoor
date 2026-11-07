@@ -54,6 +54,7 @@ import { resolve } from 'node:path'
 import { STRONG_WEIGHT, strongHits } from '@sidedoor/shared/tells'
 import { rulesSummary } from '@sidedoor/shared/rules'
 import { checkApplicationRules, checkOpenApplications, clearRulesOverride, overrideRules } from '../services/rules'
+import { LETTER_VOICES, restyleCoverLetter } from '../writing/cover-letter'
 import { checkTells, loadTellRules } from '../writing/tells'
 import { appendStory } from '../writing/stories'
 import { profileTools } from './profile-tools'
@@ -727,6 +728,13 @@ export const appTools = [
       const r = await (await import('../services/resumes')).buildResumePdf(resumeId)
       return { pages: r.pages, file: r.file }
     }),
+  ),
+
+  tool(
+    'restyle_cover_letter',
+    "The application's cover letter rewritten in a voice, for the user to read: 'mine' (their own), 'spunky' (cheekier, fine at most companies) or 'milady' (lowercase, for crypto companies only). Returns text and saves nothing: when the user picks one, save it with save_package.",
+    { applicationId: z.string(), voice: z.enum(LETTER_VOICES), text: z.string().optional().describe('the letter to work from; defaults to the one in the package') },
+    safe(({ applicationId, voice, text }) => restyleCoverLetter(applicationId, voice, text)),
   ),
 
   tool(

@@ -23,5 +23,18 @@ export const checkTells = (text: string): TellReport => checkTellsWith(loadTellR
 
 export const writingRules = () => docBody('writing')
 
+const VOICE_HEADING = /^##[ \t]+How I actually sound[ \t]*$/im
+const NO_VOICE = "(none saved yet: go by anything in their own words in Experience)"
+
+/** The user's own unpolished lines from their writing style, for what has to sound like them. */
+export const voiceSamples = (rules = writingRules()) => {
+  const m = VOICE_HEADING.exec(rules)
+  if (!m) return NO_VOICE
+  const rest = rules.slice(m.index + m[0].length)
+  const next = rest.search(/^##[ \t]/m)
+  const lines = (next < 0 ? rest : rest.slice(0, next)).split('\n').filter((l) => /^\s*[-*]\s+\S/.test(l) && !l.includes('(your words here)'))
+  return lines.join('\n') || NO_VOICE
+}
+
 /** The figures in a text, to catch any that weren't in what it was written from. */
 export const numbersIn = (s: string) => s.match(/\d+(?:[.,]\d+)*/g) ?? []

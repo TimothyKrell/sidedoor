@@ -23,6 +23,7 @@ import { context, render, userName } from '../prompts'
 import { runFillForm } from './fill-form'
 import { grokBotKinds } from './handoff'
 import { buildResumePdf, tailoredFor } from '../services/resumes'
+import { writeCoverLetter } from '../writing/cover-letter'
 import { editDrafts, editPackage } from '../writing/editor'
 
 // ------------------------------------------------------------------------------------------------
@@ -279,6 +280,7 @@ const runPrep = async (task: schema.Task): Promise<TaskOutcome> => {
   const triage = p?.summary ? `${p.summary}\nReasons: ${(p.reasons ?? []).join('; ')}\nGaps: ${(p.gaps ?? []).join('; ')}${locationDoubt}${rulesNote}` : rulesNote.trim() || '(none)'
   // Experience goes in the prompt (the newest and best-matching sections when it's too long), so the facts don't depend on the agent paging.
   const experience = experienceContext(`${a.role}\n${p?.title ?? ''}\n${p?.jd ?? ''}\n${triage}`)
+  const notes = [a.reviewNotes, typeof task.input.instructions === 'string' ? task.input.instructions : null].filter(Boolean).join('\n')
   const prompt = render('prep', {
     APP_ID: a.id,
     EXPERIENCE: experience.text,
@@ -294,7 +296,7 @@ const runPrep = async (task: schema.Task): Promise<TaskOutcome> => {
     FORM_QUESTIONS: qs ? JSON.stringify(qs, null, 1) : '(not pre-fetched; inspect the application page with read_page if possible, otherwise use the standard question set)',
     KNOWN_ANSWERS: truncate(answersFor(a.id).map((q) => `- ${q.text} → ${q.answer}`).join('\n'), 8000) || '(none yet)',
     ASKED_BEFORE: truncate(askedBefore(), 16000) || '(nothing yet)',
-    REVIEW_NOTES: [a.reviewNotes, typeof task.input.instructions === 'string' ? task.input.instructions : null].filter(Boolean).join('\n') || '(none: first preparation)',
+    REVIEW_NOTES: notes || '(none: first preparation)',
   })
   const before = a.packageMd
   const r = await runJob({ job: 'prep', prompt, web: true, mcp: mcpFor('app'), schema: PrepOut, maxTurns: 80, timeoutMs: 45 * 60_000 })
@@ -311,6 +313,10 @@ const runPrep = async (task: schema.Task): Promise<TaskOutcome> => {
   // Keep what the AI said and did, so the failed task shows why.
   if (problems.length) throw Object.assign(new Error(`${problems.join('; ')}. The AI said: ${truncate(r.data.summary, 600)}`), { log: r.log })
   updateApplication(a.id, { packageOriginalMd: null, editorJson: null, reviewNotes: null })
+  // The letter gets its own pass, away from the resume work. Never fails the prep: their draft stands.
+  const cl = await writeCoverLetter(a.id, { notes, before }).catch((e: unknown) => ({ written: false, unsure: [], error: e instanceof Error ? e.message : String(e) }))
+  if ('error' in cl) r.log.push(`cover letter pass failed (${cl.error}); kept the first draft`)
+  else if (cl.written) r.log.push(`cover letter written${cl.unsure.length ? `; numbers not in the facts: ${cl.unsure.join(', ')}` : ''}`)
   // Separate editor pass over the cover letter and free-text answers. Never fails the prep.
   if (s.editor.enabled) {
     const ed = await editPackage(a.id).catch((e: unknown) => ({ edited: 0, error: e instanceof Error ? e.message : String(e) }))

@@ -104,7 +104,7 @@ export async function editDrafts(ids: string[]) {
 }
 
 const packagePurpose = () =>
-  `Parts of a job application ${userName()} will paste into the form themselves: a cover letter (about 200-280 words, for a named role, so no hook) and free-text answers to the form questions. Their voice is warm, plain and specific.`
+  `Parts of a job application ${userName()} will paste into the form themselves: a cover letter (about 160-220 words, for a named role, so no hook) and free-text answers to the form questions. Their voice is warm, plain and specific.`
 
 /**
  * Run the editor over a prep package's cover letter and free-text answers. The edited sections are

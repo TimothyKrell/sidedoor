@@ -322,6 +322,35 @@ current when making a non-obvious call. Open questions for the maintainer live i
   happened to a third of a max-match batch. A prep that saves nothing without saying it stopped still
   fails, and the failure now keeps what the AI said and its log.
 
+- **The cover letter gets its own pass.** After prep saves the package, `writing/cover-letter.ts`
+  rewrites prep's plain draft in one call with no tools, then the editor runs as usual. Tested blind
+  on real postings: letter instructions given alongside the writing style document came out at a
+  coin flip on sounding like the user, and without it they won every comparison. Prep has to read
+  that document for the resume and the answers, so the letter moved out. (A real prep run was never
+  compared: that its long resume work would hurt too is a guess.) The draft stays as the fallback
+  and carries the company facts prep found on the web. A revision that leaves the letter alone keeps it, so the user's edits survive.
+- **A cover letter is written to be spoken, and it doesn't recite the resume.** The reader has the
+  resume, and LLMs made tailoring free, so tailoring stopped signalling anything (Galdin & Silbert,
+  "Making Talk Cheap"). The prompt asks for what the person would say out loud to a friend who asked
+  "so why this job?": one episode, one line of what they like, at most two figures. Judged on
+  persuasion alone, the sharpest variant opened with a verdict on the company, and it lost every
+  comparison on sounding like the person, so anything changing this prompt needs both scores. The
+  writing style document isn't given to this pass: its rules (cut adverbs, every sentence carries a
+  fact) measurably flattened the letters. The tells still apply through the editor.
+- **A letter closes with thanks, and asks the reader nothing.** Ending on "what I wonder" or a
+  question read as an AI being open-ended, by the user's own read. The plain close scored the same
+  with judges, so it costs nothing.
+- **Other voices are a flip on the letter, never the default.** Spunky and Milady rewrite the letter
+  in the Review box, or through `restyle_cover_letter`, and save nothing. In testing, restraint
+  decided it: a Milady letter with scene slang throughout read as a costume to crypto-native readers
+  and cost screens, and at most two scene words with the style carried by lowercase and rhythm
+  fixed that. Slang stays out of Spunky outside crypto for the same reason. Milady still hurts with
+  a non-crypto reader, and a hardcore level hurt with both, so hardcore isn't offered.
+- **Voice comes from the user's own lines.** "How I actually sound" in the writing style holds
+  things they really said, and `voiceSamples` hands those to the letter. The letter with them beat
+  the letter without them. The editor pass stays as it was: telling it to leave the letter alone
+  was tried, and its few small edits scored better than none.
+
 ## Questions for you
 
 - **One row per question and application** (`questions` table, `services/questions.ts`). Prep
