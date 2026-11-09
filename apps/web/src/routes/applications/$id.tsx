@@ -198,25 +198,88 @@ const parseReport = (out: string | null): FillReport | null => {
   }
 }
 
-/** "Fill it for me": the AI fills the form in Sidedoor's browser window and stops before submit. */
+/**
+ * "Submit it for me": the same as Approve & submit on the Review page (the approveAndSubmit RPC).
+ * Sidedoor fills the form and submits only if every required answer is confirmed; otherwise it
+ * stops and asks. Open decisions get one confirm first, like Approve.
+ */
+function SubmitForMe({ d, variant = 'default', size = 'sm' }: { d: Detail; variant?: 'default' | 'outline'; size?: 'sm' | 'default' }) {
+  const a = d.application
+  const [confirming, setConfirming] = useState(false)
+  const send = useAction(() => rpc.approveAndSubmit({ id: a.id }), { success: 'Sidedoor is filling and submitting the form. It stops and asks you if the form wants anything new.' })
+  const openDecisions = decisionsOf(a.packageMd).filter((x) => !x.done).length
+  const go = async () => {
+    await send.run(undefined)
+    setConfirming(false)
+  }
+  if (!a.packageMd || !(a.applyUrl || a.jobUrl)) return null
+  if (confirming)
+    return (
+      <>
+        <span className="basis-full text-sm">{`${openDecisions} decision${openDecisions === 1 ? ' is' : 's are'} still open. Submit anyway? It stops and comes back to you if a required answer isn’t confirmed.`}</span>
+        <Button size={size} disabled={send.pending} onClick={() => void go()}>
+          <Send /> Submit anyway
+        </Button>
+        <Button size={size} variant="ghost" onClick={() => setConfirming(false)}>
+          Not yet
+        </Button>
+      </>
+    )
+  return (
+    <Button size={size} variant={variant} disabled={send.pending} onClick={() => (openDecisions ? setConfirming(true) : void go())}>
+      <Send /> Submit it for me
+    </Button>
+  )
+}
+
+/** Why the last submit didn't go in: the questions it stopped on, or what blocked it. */
+function SubmitResult({ s }: { s: NonNullable<Detail['submission']> }) {
+  if (s.status === 'questions')
+    return (
+      <div className="space-y-2 rounded-lg bg-hot/10 p-3 text-sm">
+        <div className="font-medium">Not submitted: the form asked things Sidedoor couldn’t answer for you.</div>
+        {s.questions.length > 0 && (
+          <ul className="space-y-1">
+            {s.questions.map((q, i) => (
+              <li key={i}>
+                <span className="font-medium">{q.question}</span> <span className="text-muted-foreground">: {q.why}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="text-muted-foreground">Answer them under Questions in the Package tab and Sidedoor fills and submits it again. The form is still open in the Sidedoor browser window if you’d rather finish it yourself.</div>
+      </div>
+    )
+  return <div className={cn('rounded-lg p-3 text-sm', s.status === 'submitted' ? 'bg-success/10' : 'bg-destructive/10')}>{s.summary}</div>
+}
+
+/** "Fill it for me": the AI fills the form in Sidedoor's browser window and stops before submit. Or "Submit it for me", which goes all the way. */
 function FillForm({ d }: { d: Detail }) {
   const a = d.application
   const t = d.tasks.find((x) => x.kind === 'submit-assist')
   const fill = useAction((v: { kind: 'submit-assist'; applicationId: string }) => startTaskFn({ data: v }), { success: 'Opening the form on your computer…' })
   const active = t?.status === 'queued' || t?.status === 'running'
-  const report = t?.status === 'done' ? parseReport(t.output) : null
+  // The latest run was a submit, not a fill for you: its result is the submission, not a fill report.
+  const submitting = t?.input.submit === true
+  const report = t?.status === 'done' && !submitting ? parseReport(t.output) : null
+  const submission = submitting && d.submission && !d.submission.dryRun && t.status !== 'failed' ? d.submission : null
   const start = () => void fill.run({ kind: 'submit-assist', applicationId: a.id })
 
   if (active)
     return (
       <div className="flex items-center gap-2 rounded-lg bg-muted/50 p-3 text-sm">
         <Loader2 className="size-4 animate-spin text-primary" />
-        {t.status === 'queued' ? 'Waiting to start…' : 'Your AI is filling the form in the Sidedoor browser window. It stops before submit.'}
+        {t.status === 'queued'
+          ? 'Waiting to start (one form at a time)…'
+          : submitting
+            ? 'Sidedoor is filling and submitting the form in its browser window. You’ll get a notification when it’s in, or if it needs you.'
+            : 'Your AI is filling the form in the Sidedoor browser window. It stops before submit.'}
       </div>
     )
 
   return (
     <div className="space-y-2">
+      {submission && <SubmitResult s={submission} />}
       {report && (
         <div className={cn('space-y-2 rounded-lg p-3 text-sm', report.outcome === 'ready' ? 'bg-success/10' : report.outcome === 'needs_you' ? 'bg-hot/10' : 'bg-destructive/10')}>
           <div className="font-medium">{report.outcome === 'ready' ? 'Filled. Review it in the browser window, then submit.' : report.outcome === 'needs_you' ? 'Mostly filled. A few things need you.' : 'Couldn’t fill the form.'}</div>
@@ -244,12 +307,13 @@ function FillForm({ d }: { d: Detail }) {
           )}
         </div>
       )}
-      {t?.status === 'failed' && <div className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">Form fill failed: {t.error}</div>}
+      {t?.status === 'failed' && <div className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{submitting ? 'Submit' : 'Form fill'} failed: {t.error}</div>}
       <div className="flex flex-wrap items-center gap-2">
-        <Button size="sm" onClick={start} disabled={fill.pending || !(a.applyUrl || a.jobUrl)}>
-          <WandSparkles /> {t ? 'Fill it again' : 'Fill it for me'}
+        <SubmitForMe d={d} />
+        <Button size="sm" variant="outline" onClick={start} disabled={fill.pending || !(a.applyUrl || a.jobUrl)}>
+          <WandSparkles /> {t && !submitting ? 'Fill it again' : 'Fill it for me'}
         </Button>
-        {!t && <span className="text-xs text-muted-foreground">Opens the form in a browser window on your computer and fills it. You review and submit.</span>}
+        {!t && <span className="text-xs text-muted-foreground">Submit fills the form and sends it, stopping to ask if it needs you. Fill stops before submit so you can check it.</span>}
       </div>
     </div>
   )
@@ -386,6 +450,7 @@ function NextStep({ d }: { d: Detail }) {
                 <CheckCircle2 /> Approve
               </Button>
             )}
+            {!confirmApprove && <SubmitForMe d={d} variant="outline" size="default" />}
             <Button variant="outline" onClick={() => setShowChanges(!showChanges)}>
               <Pencil /> Request changes
             </Button>

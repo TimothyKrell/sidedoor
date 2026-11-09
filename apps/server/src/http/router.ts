@@ -69,7 +69,13 @@ export const router = {
   postings: proc(PostingFilters, async (f) => (await q()).listPostings(f)),
   posting: proc(id, async ({ id }) => (await q()).getPosting(id)),
   applications: proc(none, async () => (await q()).listApplications()),
-  application: proc(id, async ({ id }) => (await q()).getApplicationDetail(id)),
+  /** With where its last submit stands, so the page can say it's sending or what it stopped on. */
+  application: proc(id, async ({ id }) => {
+    const d = (await q()).getApplicationDetail(id)
+    if (!d) return null
+    const s = (await import('../jobs/fill-form')).submissions(id)[0] ?? null
+    return { ...d, submission: s && { status: s.status, dryRun: s.dryRun, summary: s.summary, questions: s.questions.map((x) => ({ question: x.question, why: x.why })) } }
+  }),
   people: proc(PeopleFilters, async (f) => (await q()).listPeople(f as never)),
   person: proc(id, async ({ id }) => (await q()).getPersonDetail(id)),
   radar: proc(none, async () => (await q()).listRadar()),
