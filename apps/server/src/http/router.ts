@@ -412,9 +412,9 @@ export const router = {
   assistWriting: proc(z.object({ id: z.string(), key: z.string(), mode: z.enum(['draft', 'cleanup']), text: z.string().max(20_000) }), async ({ id, key, mode, text }) =>
     (await import('../writing/assist')).assistWriting(id, key, mode, text),
   ),
-  /** The cover letter in another voice. Returns text for the box, like assistWriting. */
-  restyleCoverLetter: proc(z.object({ id: z.string(), voice: z.enum(['mine', 'spunky', 'milady']), text: z.string().max(20_000) }), async ({ id, voice, text }) =>
-    (await import('../writing/cover-letter')).restyleCoverLetter(id, voice, text),
+  /** The cover letter in another voice, or from one of their templates. Returns text for the box, like assistWriting. */
+  restyleCoverLetter: proc(z.object({ id: z.string(), voice: z.enum(['mine', 'spunky', 'milady']).optional(), template: z.string().optional(), text: z.string().max(20_000) }), async ({ id, voice, template, text }) =>
+    (await import('../writing/cover-letter')).restyleCoverLetter(id, { ...(voice ? { voice } : {}), ...(template ? { template } : {}) }, text),
   ),
   settleDecisions: proc(id, async ({ id }) => ({ settled: (await apps()).settleDecisions(id) })),
   /** Your press of Approve & submit. No MCP tool reaches this: agents can't send an application for you. */

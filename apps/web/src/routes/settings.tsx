@@ -16,6 +16,7 @@ import { qo, rpc } from '~/lib/api'
 import { desktop, type UpdateState } from '~/lib/desktop'
 import { cn } from '~/lib/utils'
 import { COUNTRIES } from '@sidedoor/shared/countries'
+import { parseTemplate, slotCount } from '@sidedoor/shared/letter-template'
 import { timeAgo } from '@sidedoor/shared/format'
 
 type SettingsData = Awaited<ReturnType<typeof rpc.settings>>
@@ -25,6 +26,7 @@ const SECTIONS = [
   { id: 'you', label: 'You' },
   { id: 'search', label: 'Job search' },
   { id: 'ai', label: 'AI' },
+  { id: 'letters', label: 'Cover letters' },
   { id: 'notifications', label: 'Notifications' },
   { id: 'devices', label: 'Phone & other devices' },
   { id: 'integrations', label: 'Integrations' },
@@ -64,6 +66,7 @@ function SettingsPage() {
         {section === 'you' && <YouSection />}
         {section === 'search' && <SearchSection />}
         {section === 'ai' && <AiSection />}
+        {section === 'letters' && <LettersSection />}
         {section === 'notifications' && <NotifySection />}
         {section === 'devices' && <DevicesSection />}
         {section === 'integrations' && <IntegrationsSection />}
@@ -524,6 +527,81 @@ function AiSection() {
         </Row>
       </Card>
       <OtherAgents />
+    </>
+  )
+}
+
+const exampleTemplate = (name: string) => `Hi [the hiring manager's name if the posting gives one, otherwise "there"],
+
+[One or two sentences on what's actually hard about this job, from something I've lived.]
+
+{I've spent the last few years building tools other engineers rely on, and I like the part where the people using them stop noticing them.}
+
+[A short paragraph: one story from my story bank that fits this job.]
+
+Thanks for reading,
+${name}`
+
+/** Cover letter templates: their own text kept as is, with parts for the AI to write or adapt. */
+function LettersSection() {
+  const { v, set, save, saving, dirty, all } = useSection('coverLetters')
+  const add = () => {
+    const id = `tpl_${Date.now().toString(36)}`
+    set({ templates: [...v.templates, { id, name: v.templates.length ? 'New template' : 'My template', body: v.templates.length ? '' : exampleTemplate(all.settings.you.name.split(/\s+/)[0] || 'Your name') }] })
+  }
+  const edit = (id: string, patch: { name?: string; body?: string }) => set({ templates: v.templates.map((t) => (t.id === id ? { ...t, ...patch } : t)) })
+  return (
+    <>
+      <Card title="How templates work" desc="Write the letter the way you want it, and mark the parts that change from job to job.">
+        <ul className="space-y-1.5 text-sm">
+          <li>
+            <span className="font-medium">Plain text</span> <span className="text-muted-foreground">is yours and goes in exactly as written.</span>
+          </li>
+          <li>
+            <code className="rounded bg-muted px-1">[what to write]</code> <span className="text-muted-foreground">is an instruction: your AI writes that part for each job.</span>
+          </li>
+          <li>
+            <code className="rounded bg-muted px-1">{'{your words}'}</code> <span className="text-muted-foreground">is yours too, but your AI may adapt it a little to fit the job. It can hold a [hint] inside.</span>
+          </li>
+          <li className="text-xs text-muted-foreground">
+            Need a real bracket? Put a backslash in front: <code>\[</code> <code>\{'{'}</code>
+          </li>
+        </ul>
+      </Card>
+      <Card
+        title="Your templates"
+        desc="The default is what new packages use. On a letter in review you can rewrite it from any of them."
+        footer={<SaveBar dirty={dirty} saving={saving} onSave={() => void save()} />}
+      >
+        <label className="flex items-center gap-2 text-sm">
+          <input type="radio" name="default-template" checked={!v.defaultTemplate || !v.templates.some((t) => t.id === v.defaultTemplate)} onChange={() => set({ defaultTemplate: null })} />
+          No template: your AI writes each letter freely, in your voice
+        </label>
+        {v.templates.map((t) => {
+          const n = slotCount(parseTemplate(t.body))
+          return (
+            <div key={t.id} className="space-y-2 rounded-lg border p-3">
+              <div className="flex items-center gap-2">
+                <input type="radio" name="default-template" aria-label="Use as default" title="Use for new letters" checked={v.defaultTemplate === t.id} onChange={() => set({ defaultTemplate: t.id })} />
+                <Input className="h-8 flex-1" value={t.name} onChange={(e) => edit(t.id, { name: e.target.value })} />
+                {v.defaultTemplate === t.id && <span className="text-xs text-muted-foreground">default</span>}
+                <Button variant="ghost" size="sm" onClick={() => set({ templates: v.templates.filter((x) => x.id !== t.id), ...(v.defaultTemplate === t.id ? { defaultTemplate: null } : {}) })}>
+                  Remove
+                </Button>
+              </div>
+              <Textarea className="font-mono text-xs" rows={Math.min(22, Math.max(8, t.body.split('\n').length + 1))} value={t.body} onChange={(e) => edit(t.id, { body: e.target.value })} />
+              <p className={cn('text-xs', n.write + n.adapt ? 'text-muted-foreground' : 'text-hot')}>
+                {n.write + n.adapt
+                  ? `Your AI writes ${n.write} part${n.write === 1 ? '' : 's'} and adapts ${n.adapt}. Everything else stays as you wrote it.`
+                  : 'Nothing here for your AI to write: add a [part to write] or {part to adapt}.'}
+              </p>
+            </div>
+          )
+        })}
+        <Button variant="outline" size="sm" onClick={add}>
+          Add a template
+        </Button>
+      </Card>
     </>
   )
 }

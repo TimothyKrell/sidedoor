@@ -363,6 +363,18 @@ current when making a non-obvious call. Open questions for the maintainer live i
   and cost screens, and at most two scene words with the style carried by lowercase and rhythm
   fixed that. Slang stays out of Spunky outside crypto for the same reason. Milady still hurts with
   a non-crypto reader, and a hardcore level hurt with both, so hardcore isn't offered.
+- **Cover letter templates are filled slot by slot, and Sidedoor puts the user's text back.** The
+  user kept rewriting letters, so they can write their own (Settings → Cover letters): plain text
+  is theirs, `[instruction]` is a part the AI writes, `{their words}` is a part it may adapt a
+  little (it can hold a `[hint]`), `\[` keeps a bracket. Square and curly brackets because they're
+  easy to type and rarely appear in a letter; no existing template language had the "adapt"
+  idea. The AI sees the template with numbered slots and returns only the slots
+  (`prompts/cover-letter-template.md`); `fillTemplate` assembles the letter, so their own text is
+  exact by construction rather than by asking. A missing adapt keeps their words, a missing write
+  fails the pass. One template can be the default, and then prep's letter pass writes from it
+  instead of writing freely; any template can be used on a letter in review, and like the voices
+  that saves nothing. Templates live in settings (`coverLetters`), with MCP tools to list, save,
+  delete and set the default.
 - **Voice comes from the user's own lines.** "How I actually sound" in the writing style holds
   things they really said, and `voiceSamples` hands those to the letter. The letter with them beat
   the letter without them. The editor pass stays as it was: telling it to leave the letter alone

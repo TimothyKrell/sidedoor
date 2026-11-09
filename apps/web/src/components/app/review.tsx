@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { ArrowRight, Check, CheckCircle2, Circle, ListChecks, Loader2, MessageSquare, Sparkles, Undo2, WandSparkles } from 'lucide-react'
+import { ArrowRight, Check, CheckCircle2, Circle, FileText, ListChecks, Loader2, MessageSquare, Sparkles, Undo2, WandSparkles } from 'lucide-react'
 import { type ReactNode, useState } from 'react'
 import { toast } from 'sonner'
 import { decisionsOf } from '@sidedoor/shared/decisions'
@@ -131,7 +131,8 @@ export function ResumeStep({ d, working }: { d: Detail; working: boolean }) {
 }
 
 type Voice = 'mine' | 'spunky' | 'milady'
-type Help = 'draft' | 'cleanup' | Voice
+/** A template is `tpl:<id>`. */
+type Help = 'draft' | 'cleanup' | Voice | `tpl:${string}`
 
 const VOICES: { voice: Voice; label: string; title: string }[] = [
   { voice: 'mine', label: 'My voice', title: 'Rewrites it the way you sound' },
@@ -143,7 +144,16 @@ function WritingRow({ id, item }: { id: string; item: WritingItem }) {
   const [text, setText] = useState(item.blank ? '' : item.text)
   const [open, setOpen] = useState(!item.done)
   const save = useAction((v: { done: boolean; text?: string }) => rpc.setWriting({ id, key: item.key, ...v }))
-  const assist = useAction((mode: Help) => (mode === 'draft' || mode === 'cleanup' ? rpc.assistWriting({ id, key: item.key, mode, text }) : rpc.restyleCoverLetter({ id, voice: mode, text })))
+  const assist = useAction((mode: Help) =>
+    mode === 'draft' || mode === 'cleanup'
+      ? rpc.assistWriting({ id, key: item.key, mode, text })
+      : mode.startsWith('tpl:')
+        ? rpc.restyleCoverLetter({ id, template: mode.slice(4), text })
+        : rpc.restyleCoverLetter({ id, voice: mode as Voice, text }),
+  )
+  const { data: settings } = useQuery({ ...qo.settings(), enabled: item.key === 'cover-letter' })
+  const templates = settings?.settings.coverLetters.templates ?? []
+  const defaultTemplate = settings?.settings.coverLetters.defaultTemplate
   const [undo, setUndo] = useState<string | null>(null)
   const [mode, setMode] = useState<Help | null>(null)
   const [note, setNote] = useState<string | null>(null)
@@ -185,6 +195,20 @@ function WritingRow({ id, item }: { id: string; item: WritingItem }) {
                   {mode === v.voice && <Loader2 className="animate-spin" />} {v.label}
                 </Button>
               ))}
+            {item.key === 'cover-letter' &&
+              templates.map((t) => (
+                <Button key={t.id} size="sm" variant="outline" className="h-7 text-xs" disabled={assist.pending} onClick={() => void help(`tpl:${t.id}`)} title={`Writes it from your template "${t.name}", keeping your own text as you wrote it`}>
+                  {mode === `tpl:${t.id}` ? <Loader2 className="animate-spin" /> : <FileText />} {t.name}
+                  {t.id === defaultTemplate && <span className="text-muted-foreground">(default)</span>}
+                </Button>
+              ))}
+            {item.key === 'cover-letter' && settings && !templates.length && (
+              <Button asChild size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground">
+                <Link to="/settings" search={{ section: 'letters' }} title="Write your own letter with parts for your AI to fill in">
+                  <FileText /> Use a template
+                </Link>
+              </Button>
+            )}
             {undo !== null && !assist.pending && (
               <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => { setText(undo); setUndo(null); setNote(null) }}>
                 <Undo2 /> Undo

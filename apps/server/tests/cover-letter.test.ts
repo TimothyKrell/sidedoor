@@ -1,4 +1,4 @@
-import { afterEach, expect, test, vi } from 'vitest'
+import { afterEach, describe, expect, test, vi } from 'vitest'
 
 const ai = vi.hoisted(() => ({ reply: { letter: '' } as unknown, fail: false, prompts: [] as string[], opts: [] as Record<string, unknown>[] }))
 vi.mock('../src/ai', async (orig) => ({
@@ -14,6 +14,8 @@ vi.mock('../src/ai', async (orig) => ({
 const { restyleCoverLetter, writeCoverLetter } = await import('../src/writing/cover-letter')
 const { createApplication, getApplication } = await import('../src/services/applications')
 const { setDoc } = await import('../src/services/documents')
+const { deleteLetterTemplate, listLetterTemplates, saveLetterTemplate, setDefaultLetterTemplate } = await import('../src/writing/letter-templates')
+const { parseTemplate } = await import('@sidedoor/shared/letter-template')
 
 const DRAFT = 'Initech makes reports people dread, and I have built reporting tools for fourteen long years now.'
 const pkg = (letter: string) => `# Review\n\n## Application form\n\n### Q1: Why us?\nBecause I like the way your team writes about its work.\n\n## Cover letter\n${letter}\n\n## Uploads\n- [ ] Resume\n`
@@ -68,7 +70,7 @@ test('a failed or empty reply leaves the draft in place', async () => {
 test('another voice returns text with its style in the prompt and saves nothing', async () => {
   const a = app('Vehement')
   ai.reply = { letter: 'gm. i once spent a week inside a report nobody read.' }
-  const r = await restyleCoverLetter(a.id, 'milady', 'What is in the box right now.')
+  const r = await restyleCoverLetter(a.id, { voice: 'milady' }, 'What is in the box right now.')
   expect(r.text).toContain('gm.')
   expect(ai.prompts[0]).toContain('Style for this letter: milady')
   expect(ai.prompts[0]).toContain('What is in the box right now.')
@@ -78,7 +80,62 @@ test('another voice returns text with its style in the prompt and saves nothing'
 test("their own voice has no style laid over it, and an empty box falls back to the package's letter", async () => {
   const a = app('Massive Dynamic')
   ai.reply = { letter: 'Plain again.' }
-  await restyleCoverLetter(a.id, 'mine', '  ')
+  await restyleCoverLetter(a.id, { voice: 'mine' }, '  ')
   expect(ai.prompts[0]).not.toContain('Style for this letter')
   expect(ai.prompts[0]).toContain(DRAFT)
+})
+
+describe('templates', () => {
+  const TEMPLATE = 'Hi [who to greet],\n\n{I build tools for [their kind of team].} I keep \\[brackets\\] when asked.\n\n[A story that fits.]\n\nThanks,\nTim'
+
+  test('parsing keeps their text, numbers the slots, and an unclosed bracket stays text', () => {
+    const parts = parseTemplate(TEMPLATE)
+    expect(parts.filter((p) => p.kind !== 'text').map((p) => [p.kind, p.text])).toEqual([
+      ['write', 'who to greet'],
+      ['adapt', 'I build tools for [their kind of team].'],
+      ['write', 'A story that fits.'],
+    ])
+    expect(parts.map((p) => (p.kind === 'text' ? p.text : '')).join('')).toContain('I keep [brackets] when asked.')
+    expect(parseTemplate('a [b and {c')).toEqual([{ kind: 'text', text: 'a [b and {c' }])
+  })
+
+  test("the AI fills only the slots; the user's own text comes back exactly", async () => {
+    const t = saveLetterTemplate({ name: 'Startups', body: TEMPLATE })
+    const a = app('Pied Piper')
+    ai.reply = { slots: [{ n: 1, text: 'Monica' }, { n: 2, text: 'I build tools for small data teams.' }, { n: 3, text: 'Once I rewrote a report nobody read.' }] }
+    const r = await restyleCoverLetter(a.id, { template: 'startups' }, '')
+    expect(r.text).toBe('Hi Monica,\n\nI build tools for small data teams. I keep [brackets] when asked.\n\nOnce I rewrote a report nobody read.\n\nThanks,\nTim')
+    expect(ai.prompts[0]).toContain('⟦1 WRITE: who to greet⟧')
+    expect(ai.prompts[0]).toContain('⟦2 ADAPT: I build tools for [their kind of team].⟧')
+    expect(getApplication(a.id)!.packageMd).toContain(DRAFT)
+    deleteLetterTemplate(t.id)
+  })
+
+  test('a slot left empty: an adapt keeps their words, a write fails', async () => {
+    const t = saveLetterTemplate({ name: 'Short', body: 'Hello. {I like hard problems.} [Why this one.]' })
+    const a = app('Aviato')
+    ai.reply = { slots: [{ n: 2, text: 'Search is slow everywhere.' }] }
+    expect((await restyleCoverLetter(a.id, { template: t.id }, '')).text).toBe('Hello. I like hard problems. Search is slow everywhere.')
+    ai.reply = { slots: [{ n: 1, text: 'I like slow problems.' }] }
+    await expect(restyleCoverLetter(a.id, { template: t.id }, '')).rejects.toThrow('#2')
+    deleteLetterTemplate(t.id)
+  })
+
+  test('prep writes from the default template, and back to free writing without one', async () => {
+    const t = saveLetterTemplate({ name: 'Default one', body: 'Dear team, [why me].', makeDefault: true })
+    const a = app('Hooli XYZ')
+    ai.reply = { slots: [{ n: 1, text: 'I have shipped reporting tools for fourteen years' }] }
+    await writeCoverLetter(a.id)
+    expect(getApplication(a.id)!.packageMd).toContain('## Cover letter\nDear team, I have shipped reporting tools for fourteen years.\n')
+    setDefaultLetterTemplate(null)
+    ai.reply = { letter: 'Free again.' }
+    await writeCoverLetter(app('Endframe').id)
+    expect(ai.prompts[1]).not.toContain('⟦')
+    deleteLetterTemplate(t.id)
+    expect(listLetterTemplates()).toEqual([])
+  })
+
+  test('a template with nothing for the AI to do is refused', () => {
+    expect(() => saveLetterTemplate({ name: 'Flat', body: 'Just my letter.' })).toThrow('at least one')
+  })
 })

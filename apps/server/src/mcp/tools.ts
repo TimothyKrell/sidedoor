@@ -56,6 +56,7 @@ import { STRONG_WEIGHT, strongHits } from '@sidedoor/shared/tells'
 import { rulesSummary } from '@sidedoor/shared/rules'
 import { checkApplicationRules, checkOpenApplications, clearRulesOverride, overrideRules } from '../services/rules'
 import { LETTER_VOICES, restyleCoverLetter } from '../writing/cover-letter'
+import { deleteLetterTemplate, listLetterTemplates, saveLetterTemplate, setDefaultLetterTemplate } from '../writing/letter-templates'
 import { checkTells, loadTellRules } from '../writing/tells'
 import { appendStory } from '../writing/stories'
 import { profileTools } from './profile-tools'
@@ -744,9 +745,48 @@ export const appTools = [
 
   tool(
     'restyle_cover_letter',
-    "The application's cover letter rewritten in a voice, for the user to read: 'mine' (their own), 'spunky' (cheekier, fine at most companies) or 'milady' (lowercase, for crypto companies only). Returns text and saves nothing: when the user picks one, save it with save_package.",
-    { applicationId: z.string(), voice: z.enum(LETTER_VOICES), text: z.string().optional().describe('the letter to work from; defaults to the one in the package') },
-    safe(({ applicationId, voice, text }) => restyleCoverLetter(applicationId, voice, text)),
+    "The application's cover letter rewritten for the user to read, either in a voice ('mine' is their own, 'spunky' is cheekier and fine at most companies, 'milady' is lowercase, for crypto companies only) or written from one of their cover letter templates (template: its id or name, from list_cover_letter_templates; their own text in it is kept exactly). Returns text and saves nothing: when the user picks one, save it with save_package.",
+    {
+      applicationId: z.string(),
+      voice: z.enum(LETTER_VOICES).optional(),
+      template: z.string().optional().describe('a template id or name; overrides voice'),
+      text: z.string().optional().describe('the letter to work from; defaults to the one in the package'),
+    },
+    safe(({ applicationId, voice, template, text }) => restyleCoverLetter(applicationId, { ...(voice ? { voice } : {}), ...(template ? { template } : {}) }, text)),
+  ),
+
+  tool(
+    'list_cover_letter_templates',
+    "The user's cover letter templates (Settings → Cover letters) and which one prep writes from by default. In a template, plain text is theirs and kept exactly, [brackets] are instructions for a part the AI writes, {braces} are their words that the AI may adapt a little.",
+    {},
+    safe(() => listLetterTemplates()),
+  ),
+
+  tool(
+    'save_cover_letter_template',
+    'Add or change a cover letter template, the way the user can in Settings → Cover letters. Only what the user asked for. Pass id to change one. Plain text is kept exactly; [instruction] is a part the AI writes; {their words} is a part it may adapt; \\[ keeps a bracket literal. makeDefault: prep writes every new letter from it (false takes the default off it).',
+    { id: z.string().optional(), name: z.string(), body: z.string(), makeDefault: z.boolean().optional() },
+    safe((o) => saveLetterTemplate(o)),
+  ),
+
+  tool(
+    'delete_cover_letter_template',
+    'Delete a cover letter template, only when the user asks. If it was the default, new letters are written freely again.',
+    { id: z.string() },
+    safe(({ id }) => {
+      deleteLetterTemplate(id)
+      return 'Deleted.'
+    }),
+  ),
+
+  tool(
+    'set_default_cover_letter_template',
+    'Choose the template prep writes new cover letters from, when the user asks. id null: no template, the AI writes the letter freely in their voice.',
+    { id: z.string().nullable() },
+    safe(({ id }) => {
+      setDefaultLetterTemplate(id)
+      return id ? 'New letters will be written from it.' : 'New letters will be written freely.'
+    }),
   ),
 
   tool(

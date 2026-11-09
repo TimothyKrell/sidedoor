@@ -178,7 +178,9 @@ page and agents agree.
    Talk it through opens the application's own chat (`applicationThread`), which starts with what
    the AI found and costs nothing until the user writes.
 3. **Writing.** Every free-text answer and cover letter, to write or check off. A check-off is of
-   the exact text (`textMark`), so a later change reopens it.
+   the exact text (`textMark`), so a later change reopens it. The cover letter can be rewritten in
+   a voice or from one of the user's templates (`writing/letter-templates.ts`,
+   `@sidedoor/shared/letter-template`), filling the box and saving nothing.
 4. **Send.** Approve & submit calls `requestSubmit` with `by: 'you'`, the same path Grok Bot uses,
    with the same stops: nothing goes in on an answer the user hasn't confirmed.
 - **Batches** (`jobs/submit-batch.ts`, tools `start_submit_batch`, `submit_batch_status`,

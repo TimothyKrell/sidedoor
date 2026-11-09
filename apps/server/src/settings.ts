@@ -177,6 +177,13 @@ export const AppSettings = z.object({
       afterApplyDays: z.number().default(7),
     })
     .prefault({}),
+  /** Cover letter templates (writing/letter-templates.ts). No default: the AI writes the letter freely. */
+  coverLetters: z
+    .object({
+      templates: z.array(z.object({ id: z.string(), name: z.string(), body: z.string() })).default([]),
+      defaultTemplate: z.string().nullable().default(null),
+    })
+    .prefault({}),
   editor: z
     .object({
       /** A second, separate AI pass that lightly edits drafts against the writing rules. */
