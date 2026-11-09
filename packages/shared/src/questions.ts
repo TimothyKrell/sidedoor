@@ -38,6 +38,8 @@ export const packageQuestions = (md: string | null | undefined): PackageQuestion
       // The question ends at its last "?"; what follows says why it's asked, unless it's only a
       // short hint like "(yes/no)".
       const all = item[1]!.trim()
+      // A note left in the list ("**Answered Oct 30:** Rust."), not a question.
+      if (/^\*\*Answered\b/i.test(all)) continue
       const m = all.match(/^(.*\?)\s+(\S.*)$/)
       const split = m && !/^\([^)]{0,40}\)$/.test(m[2]!)
       out.push({ text: split ? m[1]! : all, why: split ? m[2]! : null, answer: null })

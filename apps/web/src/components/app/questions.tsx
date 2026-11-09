@@ -39,7 +39,9 @@ function QuestionRow({ g, showApplications }: { g: QuestionGroup; showApplicatio
   const save = useAction((v: { answer: string }) => rpc.answerQuestion({ ids: forAll ? [g.id] : g.ids, answer: v.answer, allApplications: forAll, ...(forAll ? { saveTo } : {}) }), {
     success: (r) => (r.resubmitted.length ? 'Saved. Sidedoor is filling the form again for Grok Bot.' : forAll ? `Saved for every application, in ${KEPT_IN[saveTo]}` : 'Saved'),
   })
-  const dismiss = useAction(() => rpc.dismissQuestion({ ids: g.ids }))
+  const dismiss = useAction(() => rpc.dismissQuestion({ ids: g.ids }), {
+    success: (r) => (r.resubmitted.length ? 'Sidedoor is filling the form again.' : 'Won’t ask this again'),
+  })
   const reopen = useAction(() => rpc.reopenQuestion({ id: g.id }))
   const open = g.status === 'open'
   const answering = open || editing
@@ -56,6 +58,11 @@ function QuestionRow({ g, showApplications }: { g: QuestionGroup; showApplicatio
         <div className="min-w-0 flex-1 space-y-1">
           <div className={cn(g.status === 'dismissed' && 'text-muted-foreground line-through')}>{g.question}</div>
           {g.why && <div className="text-xs text-muted-foreground">{g.why}</div>}
+          {open && g.filledValue && (
+            <div className="line-clamp-3 text-xs">
+              <span className="text-muted-foreground">Filled in on the form:</span> {g.filledValue}
+            </div>
+          )}
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
             <Badge variant="outline" className="h-5 text-[11px]">{g.about === 'you' ? 'About you' : 'About this application'}</Badge>
             {showApplications &&
@@ -125,8 +132,13 @@ function QuestionRow({ g, showApplications }: { g: QuestionGroup; showApplicatio
                   Cancel
                 </Button>
               ) : (
-                <Button size="sm" variant="ghost" className="h-7 text-xs" disabled={dismiss.pending} onClick={() => void dismiss.run(undefined)}>
+                <Button size="sm" variant="ghost" className="h-7 text-xs" disabled={dismiss.pending} onClick={() => void dismiss.run(undefined)} title={g.filledValue ? 'Stop asking. If only an open item held this field, what’s filled in goes in as it is' : undefined}>
                   Not needed
+                </Button>
+              )}
+              {open && g.filledValue && (
+                <Button size="sm" variant="outline" className="h-7 text-xs" disabled={save.pending} onClick={() => void submit(g.filledValue!)} title="Confirm what’s filled in on the form">
+                  Use this
                 </Button>
               )}
               <Button size="sm" className="h-7 text-xs" disabled={!answer.trim() || save.pending} onClick={() => void submit(answer)}>

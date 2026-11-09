@@ -484,6 +484,8 @@ export const questions = sqliteTable(
     key: text('key').notNull(),
     /** Why it's asked: what the answer changes. */
     why: text('why'),
+    /** What the fill put in the field it held back: shown with the question, and what "Not needed" lets through. */
+    filledValue: text('filled_value'),
     /** The choices, when the form offers a fixed set. */
     options: json<string[]>('options').notNull().default([]),
     /** Where an answer that holds for every application is kept: Standard answers, or Experience (facts about past work). */

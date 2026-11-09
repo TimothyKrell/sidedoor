@@ -7,6 +7,8 @@
  * any submit click (jobs/fill-form.ts).
  */
 
+import { truncate } from './text'
+
 /** Where a filled value came from, as the filler reports it. */
 export const FILL_SOURCES = ['standard_answer', 'package', 'profile', 'resume', 'ai_generated'] as const
 export type FillSource = (typeof FILL_SOURCES)[number]
@@ -57,6 +59,7 @@ export const readPackage = (md: string | null | undefined): PackageReview => {
   let h3: { question: string; body: string[] } | null = null
   let cols: Record<'question' | 'answer' | 'source' | 'required', number> | null = null
   let letter: string[] | null = null
+  let lastOpen = false
   const endLetter = () => {
     const body = letter?.join('\n').trim()
     if (body) out.answers.push({ question: 'Cover letter', answer: body, source: '', required: null, flag: body.match(STRONG_FLAG)?.[0] ?? null })
@@ -120,7 +123,15 @@ export const readPackage = (md: string | null | undefined): PackageReview => {
     if (PENDING_HEADING.test(h2)) {
       const item = line.match(/^\s*(?:[-*+]|\d+[.)])\s+(?:\[( |x|X)\]\s*)?(.*)$/)
       if (item) {
-        if (item[1]?.toLowerCase() !== 'x' && item[2]!.trim()) out.pending.push(item[2]!.trim())
+        const text = item[2]!.trim()
+        // "**Answered …**" is a note, not an item. Indented under a question, it closes that question.
+        if (/^\*\*Answered\b/i.test(text)) {
+          if (/^\s/.test(line) && lastOpen) out.pending.pop()
+          lastOpen = false
+          continue
+        }
+        lastOpen = item[1]?.toLowerCase() !== 'x' && !!text
+        if (lastOpen) out.pending.push(text)
       } else if (line.trim() && out.pending.length && /^\s{2,}/.test(line)) out.pending[out.pending.length - 1] += ` ${line.trim()}`
     }
   }
@@ -135,12 +146,14 @@ const STOP = new Set(
   ),
 )
 
-/** The words of a label or sentence that say what it's about. */
-export const keyWords = (s: string, drop: ReadonlySet<string> = new Set()) => {
+const wordList = (s: string, drop: ReadonlySet<string>) => {
   const all = (s.toLowerCase().match(/[a-z0-9]+/g) ?? []).filter((w) => w.length > 1 && !STOP.has(w)).map((w) => (w.length > 4 && w.endsWith('s') ? w.slice(0, -1) : w))
   const kept = all.filter((w) => !drop.has(w))
-  return new Set(kept.length ? kept : all)
+  return kept.length ? kept : all
 }
+
+/** The words of a label or sentence that say what it's about. */
+export const keyWords = (s: string, drop: ReadonlySet<string> = new Set()) => new Set(wordList(s, drop))
 
 /** Most of what `label` is about appears in `text`. */
 const covers = (label: Set<string>, text: Set<string>) => label.size > 0 && [...label].filter((w) => text.has(w)).length / label.size >= 0.6
@@ -150,6 +163,32 @@ export const sameQuestion = (a: string, b: string, drop?: ReadonlySet<string>) =
   const A = keyWords(a, drop)
   const B = keyWords(b, drop)
   return covers(A, B) || covers(B, A)
+}
+
+/**
+ * The user's answer to `given` confirms this field. Stricter than `sameQuestion`, because it lets a
+ * value through: an answer to "Name" doesn't confirm "Emergency contact name". A question of three
+ * or more words is specific enough to count inside a longer label.
+ */
+const confirmsField = (given: string, field: string, drop: ReadonlySet<string>) => {
+  const g = keyWords(given, drop)
+  const f = keyWords(field, drop)
+  return covers(f, g) || (g.size >= 3 && covers(g, f))
+}
+
+/** Name, email and phone: only an explicit mark in the package holds these, never a word in an open item ("project name"). */
+const CONTACT = /^((full|first|last|legal)\s+)?name$|^e-?mail(\s+address)?$|^(phone|mobile)(\s+number)?$/i
+const isContact = (field: string) => CONTACT.test(field.replace(/[*:]/g, '').trim())
+
+/**
+ * An open item is about this field. A short label has to appear as a phrase: its words scattered
+ * through a sentence ("the first stack the JD names") aren't "First Name".
+ */
+const mentions = (field: string, item: string, drop: ReadonlySet<string>) => {
+  const label = wordList(field, drop)
+  if (label.length >= 3) return covers(new Set(label), keyWords(item, drop))
+  const words = wordList(item, drop)
+  return words.some((_, i) => label.every((w, j) => words[i + j] === w))
 }
 
 /** Voluntary self-identification questions, which only an explicit Standard answer (or the user) may answer. */
@@ -220,6 +259,14 @@ export interface FilledField {
   options?: string[]
 }
 
+/** What the user has already dealt with on this application, which the package text may not show yet. */
+export interface Settled {
+  /** This open item's question was answered or dropped. */
+  item: (text: string) => boolean
+  /** They said this field needs no question while it held this value. */
+  passed: (field: string, value: string) => boolean
+}
+
 export interface FillCheck {
   audit: AuditEntry[]
   /** What the user has to answer before it can go in: each held-back field, as a question with its options. */
@@ -231,15 +278,18 @@ export interface FillCheck {
  * marks unconfirmed or lists as an open question, a self-identification question Standard answers
  * don't answer outright, or anything the filler made up is unconfirmed and comes back as a
  * question. So does a required question the package marks unconfirmed that the filler left out.
+ * Open items the user has settled don't count, and "Not needed" lets a value through only for a
+ * hold that came from an open item: never for a marked, self-identification or made-up answer.
  */
-export const checkFill = (o: { filled: FilledField[]; needsYou: { field: string }[]; packageMd: string | null; standardAnswers: string; company?: string }): FillCheck => {
+export const checkFill = (o: { filled: FilledField[]; needsYou: { field: string }[]; packageMd: string | null; standardAnswers: string; company?: string; settled?: Settled }): FillCheck => {
   const pkg = readPackage(o.packageMd)
+  const open = pkg.pending.filter((p) => !o.settled?.item(p))
   const std = standardStatements(o.standardAnswers)
   const drop = keyWords(o.company ?? '')
   const same = (a: string, b: string) => sameQuestion(a, b, drop)
   const audit = o.filled.map((f): AuditEntry => {
     const base = { field: f.field, value: f.value }
-    if (pkg.given.some((g) => same(g.question, f.field))) return { ...base, source: 'user_answer', confirmed: true }
+    if (pkg.given.some((g) => confirmsField(g.question, f.field, drop))) return { ...base, source: 'user_answer', confirmed: true }
     const kinds = demographicKinds(f.field)
     if (kinds.length)
       return explicitlyStandard(kinds, f.value, std)
@@ -247,9 +297,9 @@ export const checkFill = (o: { filled: FilledField[]; needsYou: { field: string 
         : { ...base, source: 'unconfirmed', confirmed: false, why: 'A self-identification question your Standard answers don’t answer in so many words.' }
     const row = pkg.answers.find((r) => r.flag && same(r.question, f.field))
     if (row) return { ...base, source: 'unconfirmed', confirmed: false, why: `The package marks its answer “${row.answer || row.source}” as not confirmed (${row.flag}).` }
-    const label = keyWords(f.field, drop)
     // The resume file itself: open items about its wording aren't about this field.
-    if (f.source !== 'resume' && pkg.pending.some((p) => covers(label, keyWords(p, drop)))) return { ...base, source: 'unconfirmed', confirmed: false, why: 'The package lists it as a question for you.' }
+    const item = f.source === 'resume' || isContact(f.field) ? undefined : open.find((p) => mentions(f.field, p, drop))
+    if (item && !o.settled?.passed(f.field, f.value)) return { ...base, source: 'unconfirmed', confirmed: false, why: `Held for this open item in the package: “${truncate(item, 200)}”` }
     const source = f.source ?? 'ai_generated'
     if (source === 'ai_generated') return { ...base, source, confirmed: false, why: 'Not from the package, Standard answers, profile or resume.' }
     return { ...base, source, confirmed: true }
@@ -259,7 +309,7 @@ export const checkFill = (o: { filled: FilledField[]; needsYou: { field: string 
   for (const [i, e] of audit.entries()) if (!e.confirmed && !asked(e.field)) questions.push({ field: e.field, why: e.why ?? 'Not confirmed.', options: o.filled[i]!.options ?? [] })
   for (const r of pkg.answers) {
     if (!r.flag || r.required === false || r.source === '' || asked(r.question)) continue
-    if (pkg.given.some((g) => same(g.question, r.question)) || o.filled.some((f) => same(f.field, r.question))) continue
+    if (pkg.given.some((g) => confirmsField(g.question, r.question, drop)) || o.filled.some((f) => same(f.field, r.question))) continue
     questions.push({ field: r.question, why: `The package marks its answer “${r.answer}” as not confirmed (${r.flag}).`, options: [] })
   }
   return { audit, questions }

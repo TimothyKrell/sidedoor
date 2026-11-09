@@ -3,7 +3,7 @@ import { holdsApplication, packageQuestions } from '@sidedoor/shared/questions'
 import { logActivity } from '../activity'
 import { db, schema } from '../db/client'
 import { atomic } from '../db/tx'
-import { isDemographic } from '../form-answers'
+import { isDemographic, type Settled } from '../form-answers'
 import { newId, nowIso } from '../ids'
 import { getMeta, getSettings, setMeta } from '../settings'
 import { truncate } from '../text'
@@ -131,6 +131,8 @@ export interface AskInput {
   about?: About
   why?: string | null
   options?: string[]
+  /** What the fill put in the field it held back. */
+  filledValue?: string | null
   /** For questions about the user: where an answer for every application is kept. */
   saveTo?: SaveTo | null
 }
@@ -157,6 +159,8 @@ const passedOn = (key: string) => db.select({ id: Q.id }).from(Q).where(and(eq(Q
  * already answered for every application isn't asked again: it's recorded as answered here too,
  * and its answer comes back. One asked again for the same application keeps its row. A fact the
  * user already said wasn't needed isn't asked of another application, unless a form needs it.
+ * A fill asking comes back even after a "Not needed": it's still waiting on the field, and the
+ * user has to see that, or the form stops with nothing to answer.
  */
 export const askQuestions = atomic((applicationId: string | null, askedBy: string, qs: AskInput[]): Asked[] => {
   if (applicationId && !getApplication(applicationId)) throw new Error(`No application ${applicationId}`)
@@ -172,8 +176,14 @@ export const askQuestions = atomic((applicationId: string | null, askedBy: strin
       .orderBy(desc(Q.createdAt))
       .get()
     if (here) {
-      if (here.status === 'open' && (x.why || x.options?.length)) db.update(Q).set({ why: x.why ?? here.why, options: x.options?.length ? x.options : here.options, updatedAt: nowIso() }).where(eq(Q.id, here.id)).run()
-      out.push({ id: here.id, question: here.text, status: here.status, answer: here.answer, known: here.status !== 'open' })
+      const back = here.status === 'dismissed' && askedBy === 'fill'
+      if (back || (here.status === 'open' && (x.why || x.options?.length || x.filledValue)))
+        db.update(Q)
+          .set({ why: x.why ?? here.why, options: x.options?.length ? x.options : here.options, filledValue: x.filledValue ?? here.filledValue, updatedAt: nowIso(), ...(back ? { status: 'open' as const, answer: null, answeredAt: null, answeredBy: null } : {}) })
+          .where(eq(Q.id, here.id))
+          .run()
+      const status = back ? 'open' : here.status
+      out.push({ id: here.id, question: here.text, status, answer: here.answer, known: status !== 'open' })
       continue
     }
     const known = knownForAll(key)
@@ -201,6 +211,7 @@ export const askQuestions = atomic((applicationId: string | null, askedBy: strin
       text,
       key,
       why: x.why ?? null,
+      filledValue: x.filledValue ?? null,
       options: x.options ?? [],
       saveTo,
       askedBy,
@@ -272,16 +283,39 @@ export const answerQuestions = atomic((items: AnswerInput[], by: string, o: { co
   return { answered: [...new Set(answered)], applications: [...touched], resubmitted }
 })
 
-/** Not to be asked: no answer goes anywhere, and an answer given before is taken back out. */
+/**
+ * Not to be asked: no answer goes anywhere, and an answer given before is taken back out. When the
+ * user passes on the last question a form was waiting for, the fill is queued again, as it is for
+ * an answer.
+ */
 export const dismissQuestions = atomic((ids: string[], by: string) => {
+  const waiting = new Set<string>()
   for (const id of ids) {
     const q = byId(id)
     if (!q) throw new Error(`No question ${id}`)
     if (q.status === 'answered') takeBack(q)
+    if (by === 'you' && q.status === 'open' && q.askedBy === 'fill' && q.applicationId) waiting.add(q.applicationId)
     db.update(Q).set({ status: 'dismissed', answer: null, answeredAt: nowIso(), answeredBy: by, updatedAt: nowIso() }).where(eq(Q.id, id)).run()
   }
-  return { dismissed: ids }
+  return { dismissed: ids, resubmitted: [...waiting].filter(continueSubmit) }
 })
+
+/**
+ * What the form check should treat as dealt with, from the question rows: the package keeps an
+ * item's text after its question is answered or dropped. Only the user's own "Not needed" lets a
+ * held value through, and only the value they saw: agents answer instead.
+ */
+export const settledFor = (applicationId: string): Settled => {
+  const rows = db.select().from(Q).where(and(eq(Q.applicationId, applicationId), inArray(Q.status, ['answered', 'dismissed']))).all()
+  // Dropping a field a form held settles only that value (`passed`), not the item behind it.
+  const keys = new Set(rows.filter((r) => r.status === 'answered' || (r.askedBy !== 'fill' && r.filledValue == null)).map((r) => r.key))
+  const passed = new Set(rows.filter((r) => r.status === 'dismissed' && r.answeredBy === 'you' && r.filledValue != null).map((r) => `${r.key}\n${r.filledValue!.trim()}`))
+  return {
+    // As a package item becomes a question: what follows its last "?" is why it's asked.
+    item: (text) => keys.has(questionKey(text)) || keys.has(questionKey(text.replace(/\?[^?]*$/, '?'))),
+    passed: (field, value) => passed.has(`${questionKey(field)}\n${value.trim()}`),
+  }
+}
 
 const takeBack = (q: Question) => {
   if (q.applicationId) putInPackage(q.applicationId, q.text, null)
@@ -445,6 +479,8 @@ export interface QuestionGroup {
   scope: Question['scope']
   saveTo: Question['saveTo']
   why: string | null
+  /** What the fill put in the field it held back. */
+  filledValue: string | null
   options: string[]
   status: schema.QuestionStatus
   answer: string | null
@@ -482,7 +518,7 @@ export const listQuestions = (f: QuestionFilter = {}): QuestionGroup[] => {
   const groups = new Map<string, QuestionGroup>()
   for (const { q, companyName, role, stage } of rows) {
     // Answered for every application: one entry. Otherwise one per answer, open ones by question.
-    const k = q.status === 'open' ? `open:${q.key}` : q.scope === 'global' && q.status === 'answered' ? `all:${q.key}` : q.id
+    const k = q.status === 'open' ? `open:${q.key}:${q.filledValue ?? ''}` : q.scope === 'global' && q.status === 'answered' ? `all:${q.key}` : q.id
     let g = groups.get(k)
     if (!g) {
       g = {
@@ -493,6 +529,7 @@ export const listQuestions = (f: QuestionFilter = {}): QuestionGroup[] => {
         scope: q.scope,
         saveTo: q.saveTo,
         why: q.why,
+        filledValue: q.filledValue,
         options: q.options,
         status: q.status,
         answer: q.answer,

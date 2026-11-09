@@ -60,12 +60,16 @@ Return the structured result:
   details, "resume" for the upload or a fact from it, "ai_generated" for anything else), and
   `options` the choices it offered when it has a fixed set.
 - `needsYou`: each field or step they must handle, and why. For a question, put its exact wording
-  in `field`, and its choices in `options` when it has a fixed set.
+  in `field`, and its choices in `options` when it has a fixed set. Open a dropdown or autocomplete
+  to read them: they can't pick from a list they can't see. When there are too many to list, give
+  the closest ones and say so in `why`.
 
 {{SUBMIT_NOTE}}
 
 ## Application package (they reviewed and approved this)
 {{PACKAGE}}
+
+{{SETTLED}}
 
 ## Applicant profile
 {{PROFILE}}

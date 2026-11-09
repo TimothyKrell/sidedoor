@@ -980,7 +980,7 @@ export const appTools = [
 
   tool(
     'list_questions',
-    "Questions only the user can answer, asked by prep, form fills or agents: open ones by default (the same question asked by several applications shows once, with its applications). Each has the id to answer or dismiss it with, what it's about ('you': the user, 'application': this job only), whether an answer is meant for every application (scope 'global'), whether it's optional (nothing waits on it, and an answer could only strengthen the application), the choices if the form has a fixed set, and once answered the answer, when, and who gave it.",
+    "Questions only the user can answer, asked by prep, form fills or agents: open ones by default (the same question asked by several applications shows once, with its applications). Each has the id to answer or dismiss it with, what it's about ('you': the user, 'application': this job only), whether an answer is meant for every application (scope 'global'), whether it's optional (nothing waits on it, and an answer could only strengthen the application), the choices if the form has a fixed set, what a fill put in the field it held back (filledValue), and once answered the answer, when, and who gave it.",
     {
       status: z.enum(['open', 'answered', 'dismissed', 'all']).optional().describe("default 'open'"),
       applicationId: z.string().optional(),
@@ -1032,7 +1032,7 @@ export const appTools = [
 
   tool(
     'dismiss_questions',
-    "Drop questions the user doesn't need to answer (no longer relevant, or they said to skip it). An answer given before is taken back out of the package and their documents.",
+    "Drop questions the user doesn't need to answer (no longer relevant, or they said to skip it). An answer given before is taken back out of the package and their documents. This doesn't release a form field a fill held back: if the user says what's filled is fine, answer the question with filledValue.",
     { ids: z.array(z.string()).min(1) },
     safe(({ ids }) => dismissQuestions(ids, 'agent')),
   ),

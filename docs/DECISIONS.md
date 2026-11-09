@@ -107,6 +107,23 @@ current when making a non-obvious call. Open questions for the maintainer live i
   `answer_questions`), so a stored flag would go stale, and the user's answers in "Answers to the
   other form questions" confirm a field even while the table still says "(confirm)". Matching form
   labels to package wording is by key words, so it errs toward asking.
+- **An open item holds only the field it's about, and the question rows decide what's still open.**
+  Key-word matching held `Name` on one form for "(yes/no + project name)" and `First Name` on
+  another for "the first stack the JD names": 5 of the 7 holds of this kind in 66 audited fills were
+  false. So name, email and phone are held only by an explicit mark, and a label of one or two key
+  words has to appear as a phrase. Labels of three or more keep the looser match, which still errs
+  toward asking. The package keeps an item's text after its question is answered or dropped, so the
+  check also reads the question rows (`settledFor`), and the filler is told which items are settled.
+- **"Not needed" lets a held value through only for a hold from an open item, only for the value
+  shown, and only from the user.** Without it, dismissing left the field held with no question
+  open: one form's `Name` stopped the form until a revision happened to drop the item. A marked,
+  self-identification or made-up answer still needs an answer, a different value asks again
+  (`filledValue` on the row), and an agent's dismissal releases nothing, since agents read postings:
+  it answers with the value instead. A fill still waiting on a dismissed question reopens it, so a
+  form never stops with nothing to answer.
+- **An answer confirms a field more strictly than a mark holds one.** Holding errs toward asking,
+  so `sameQuestion` matches either way round. Confirming lets a value through, so an answer to
+  "Name" doesn't confirm "Emergency contact name" (`confirmsField`).
 - **Self-identification answers come only from the user.** Gender, pronouns, race/ethnicity,
   Hispanic/Latino, veteran, disability, orientation: filled only when Standard answers state that
   answer for that kind of question (a "decline" there covers a decline option), or the user

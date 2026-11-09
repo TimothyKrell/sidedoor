@@ -31,7 +31,7 @@ const { checkFill, readPackage, submitRefusal } = await import('../src/form-answ
 const { grokBotToken, setSecret } = await import('../src/secrets')
 const { createApplication, getApplication, requestSubmit } = await import('../src/services/applications')
 const { docBody, setDoc } = await import('../src/services/documents')
-const { answerFormQuestions } = await import('../src/services/questions')
+const { answerFormQuestions, answerQuestions, askQuestions, dismissQuestions, listQuestions, settledFor } = await import('../src/services/questions')
 const { updateSettings } = await import('../src/settings')
 
 // Shaped like the package behind the Acmepay dry run on 2026-10-30 (personal details replaced).
@@ -282,6 +282,135 @@ describe('open questions in the package', () => {
   test('a required unconfirmed answer the filler skipped without listing is still asked', () => {
     const r = check([{ field: 'First Name', value: 'Sam', source: 'standard_answer' }])
     expect(r.questions.map((q) => q.field)).toEqual(['Pronouns', 'How did you first learn about Acmepay as an employer?'])
+  })
+})
+
+// Shaped like real packages: a stray word in an open item held a contact field.
+const STRAY = `## Questions for Sam
+1. Do you have one backend hot-path story? One line, with before/after numbers if you have them.
+2. Which Solana project did you deploy programs for, and were they written in Rust/Anchor? (yes/no + project name)
+3. What did you build in Rails, and for how long? (Rails is the first stack the JD names.)
+
+- **Answered Oct 30, 2026 (saved in Experience):** Rust. You've used Rust in the indexers.
+
+## Needs your decision
+- [ ] The cover letter says "I still write code most of the week." Confirm it still holds.
+- [ ] Open to relocating to Austin? You said no last time.
+
+## Application form
+| # | Question | Required | Answer | Source |
+|---|---|---|---|---|
+| 1 | Name | Yes | Sam Example | Answers |
+| 2 | Email | Yes | sam@example.com | Answers |
+`
+const field = (name: string, value: string, source: 'standard_answer' | 'package' | 'profile' | 'ai_generated' = 'package') => ({ field: name, value, source })
+const held = (r: ReturnType<typeof check>) => r.audit.filter((e) => !e.confirmed).map((e) => e.field)
+
+describe('open items only hold the field they are about', () => {
+  test('a stray word in an item holds no contact field, and scattered words are not a label', () => {
+    const r = check([field('Name', 'Sam Example'), field('Name*', 'Sam Example'), field('First Name', 'Sam'), field('Email', 'sam@example.com'), field('Phone Number', '555-0100')], STRAY)
+    expect(held(r)).toEqual([])
+    expect(r.questions).toEqual([])
+  })
+
+  test('a field an item really is about stays held, and the question quotes the item', () => {
+    const r = check([field('Cover Letter', 'Dear team'), field('Open to relocating to Austin, TX?', 'No')], STRAY)
+    expect(held(r)).toEqual(['Cover Letter', 'Open to relocating to Austin, TX?'])
+    expect(r.questions[0]!.why).toContain('The cover letter says')
+  })
+
+  test('a short label that is not contact details still matches as a phrase', () => {
+    const r = check([field('Preferred Name', 'Sam')], '## Needs your decision\n- [ ] Preferred name: should it be Sam or Samuel?\n')
+    expect(held(r)).toEqual(['Preferred Name'])
+  })
+
+  test('an explicit mark in the package still holds a contact field', () => {
+    const r = check([field('Email', 'sam@example.com')], '## Application form\n| Question | Required | Answer | Source |\n|---|---|---|---|\n| Email | Yes | sam@example.com (confirm) | Answers |\n')
+    expect(held(r)).toEqual(['Email'])
+  })
+
+  test('an "Answered" note is not an open item, and closes the question it sits under', () => {
+    const p = readPackage('## Questions for Sam\n1. Did you use Rust?\n   - **Answered Oct 30:** Yes.\n2. Did you use Kafka?\n\n- **Answered Oct 30, 2026:** Rust, in the indexers.\n')
+    expect(p.pending).toEqual(['Did you use Kafka?'])
+  })
+
+  test('an answer to a short question confirms that field, not every longer label around it', () => {
+    const pkg = '## Your answers to questions\n\n### Name\nSam Example\n\n### How did you first learn about Acmepay\nA friend\n'
+    const r = check([field('Name*', 'Sam Example'), field('Emergency contact name', 'Sam Example', 'ai_generated'), field('How did you first learn about Acmepay as an employer?', 'A friend')], pkg)
+    expect(r.audit.map((e) => [e.field, e.source])).toEqual([
+      ['Name*', 'user_answer'],
+      ['Emergency contact name', 'ai_generated'],
+      ['How did you first learn about Acmepay as an employer?', 'user_answer'],
+    ])
+  })
+})
+
+describe('what the user already settled', () => {
+  const ITEM = '## Questions for Sam\n1. Are you open to relocating to Austin? It decides the location line.\n'
+  const fill = (id: string, value = 'No') => checkFill({ filled: [field('Open to relocating to Austin?', value)], needsYou: [], packageMd: ITEM, standardAnswers: STANDARD, company: 'Acme', settled: settledFor(id) })
+
+  test('a dropped question stops holding its field, though its text is still in the package', () => {
+    const a = app('Settled1', ITEM)
+    const [q] = askQuestions(a.id, 'package', [{ question: 'Are you open to relocating to Austin?' }])
+    expect(fill(a.id).audit[0]!.confirmed).toBe(false)
+    dismissQuestions([q!.id], 'agent')
+    expect(fill(a.id).audit[0]!.confirmed).toBe(true)
+  })
+
+  test('your Not needed lets through the value you saw, and a different value asks again', () => {
+    const a = app('Settled2', '## Needs your decision\n- [ ] Open to relocating to Austin? Check this still holds.\n')
+    const md = getApplication(a.id)!.packageMd
+    const check2 = (value: string) => checkFill({ filled: [field('Open to relocating to Austin?', value)], needsYou: [], packageMd: md, standardAnswers: STANDARD, company: 'Acme', settled: settledFor(a.id) })
+    const [q] = askQuestions(a.id, 'fill', [{ question: 'Open to relocating to Austin?', filledValue: 'No' }])
+    dismissQuestions([q!.id], 'you')
+    expect(check2('No').audit[0]!.confirmed).toBe(true)
+    expect(check2('Yes').audit[0]!.confirmed).toBe(false)
+  })
+
+  test("an agent's dismissal doesn't let a held value through", () => {
+    const a = app('Settled3', '## Needs your decision\n- [ ] Open to relocating to Austin? Check this still holds.\n')
+    const [q] = askQuestions(a.id, 'fill', [{ question: 'Open to relocating to Austin?', filledValue: 'No' }])
+    dismissQuestions([q!.id], 'agent')
+    const r = checkFill({ filled: [field('Open to relocating to Austin?', 'No')], needsYou: [], packageMd: getApplication(a.id)!.packageMd, standardAnswers: STANDARD, company: 'Acme', settled: settledFor(a.id) })
+    expect(r.audit[0]!.confirmed).toBe(false)
+  })
+
+  test("Not needed never passes a marked, self-identification or made-up answer", () => {
+    const a = app('Settled4', ACMEPAY)
+    const fields = [field('Pronouns', 'He/him/his'), field('Veteran status', 'Yes'), field('Favorite color', 'Blue', 'ai_generated')]
+    for (const f of fields) dismissQuestions([askQuestions(a.id, 'fill', [{ question: f.field, filledValue: f.value }])[0]!.id], 'you')
+    const r = checkFill({ filled: fields, needsYou: [], packageMd: ACMEPAY, standardAnswers: STANDARD, company: 'Acmepay', settled: settledFor(a.id) })
+    expect(r.audit.every((e) => !e.confirmed)).toBe(true)
+  })
+
+  test('a form still waiting on a question you passed on shows it again, with what was filled', () => {
+    const a = app('Settled5', ACMEPAY)
+    const [q] = askQuestions(a.id, 'fill', [{ question: 'Name', filledValue: 'Sam' }])
+    dismissQuestions([q!.id], 'you')
+    expect(askQuestions(a.id, 'fill', [{ question: 'Name*', filledValue: 'Samuel' }])[0]).toMatchObject({ id: q!.id, status: 'open', known: false })
+    expect(listQuestions({ applicationId: a.id, status: 'open' })[0]).toMatchObject({ question: 'Name', filledValue: 'Samuel' })
+  })
+
+  test('the same field held with different values stays two questions, so Use this answers the right one', () => {
+    const [a, b] = [app('Settled6', ACMEPAY), app('Settled7', ACMEPAY)]
+    askQuestions(a.id, 'fill', [{ question: 'Nickname', filledValue: 'Sam' }])
+    askQuestions(b.id, 'fill', [{ question: 'Nickname', filledValue: 'Sammy' }])
+    const open = listQuestions({ status: 'open' }).filter((g) => g.question === 'Nickname')
+    expect(open.map((g) => g.filledValue).sort()).toEqual(['Sam', 'Sammy'])
+    answerQuestions(open.map((g) => ({ id: g.id, answer: g.filledValue!, allApplications: false })), 'you')
+  })
+
+  test('passing on the last question a form held queues the fill again, and the held value is on the row', async () => {
+    allow()
+    setDoc('answers', STANDARD)
+    const a = app('Settled8', '## Needs your decision\n- [ ] Open to relocating to Austin? Check this still holds.\n')
+    const t = requestSubmit(a.id, { dryRun: true })
+    ai.replies = [{ outcome: 'ready', summary: 'Filled.', filled: [field('Open to relocating to Austin?', 'No')], needsYou: [] }]
+    await run(t.id)
+    const [g] = listQuestions({ applicationId: a.id, status: 'open' })
+    expect(g).toMatchObject({ question: 'Open to relocating to Austin?', filledValue: 'No' })
+    expect(g!.why).toContain('Check this still holds')
+    expect(dismissQuestions(g!.ids, 'you').resubmitted).toEqual([a.id])
   })
 })
 

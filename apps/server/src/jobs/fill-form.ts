@@ -15,13 +15,13 @@ import { notifyPromise } from '../notify'
 import { context, render } from '../prompts'
 import { forWhom, getApplication, setStage, submitByOf, submitterAllowed, updateApplication } from '../services/applications'
 import { docBody } from '../services/documents'
-import { askQuestions } from '../services/questions'
+import { askQuestions, settledFor } from '../services/questions'
 import { checkApplicationRules } from '../services/rules'
 import { buildResumePdf, getResume, resumeForApplication } from '../services/resumes'
 import { getSettings } from '../settings'
 import { clip, truncate } from '../text'
 import { experienceContext, experienceLogLine } from '../experience'
-import { type AuditEntry, checkFill, FILL_SOURCES, submitRefusal } from '../form-answers'
+import { type AuditEntry, checkFill, FILL_SOURCES, readPackage, submitRefusal } from '../form-answers'
 import type { TaskOutcome } from './tasks'
 
 export const FillReport = z.object({
@@ -76,8 +76,8 @@ export interface FillOutput extends FillReport {
  * The filler's report, checked against the package and Standard answers: anything it filled that
  * the user hasn't confirmed comes back as a question, so the fill can't be "ready" with it.
  */
-export const reviewFill = (data: FillReport, a: Pick<schema.Application, 'packageMd' | 'companyName'>): { report: FillReport; audit: AuditEntry[] } => {
-  const { audit, questions } = checkFill({ filled: data.filled, needsYou: data.needsYou, packageMd: a.packageMd, standardAnswers: docBody('answers'), company: a.companyName })
+export const reviewFill = (data: FillReport, a: Pick<schema.Application, 'id' | 'packageMd' | 'companyName'>): { report: FillReport; audit: AuditEntry[] } => {
+  const { audit, questions } = checkFill({ filled: data.filled, needsYou: data.needsYou, packageMd: a.packageMd, standardAnswers: docBody('answers'), company: a.companyName, settled: settledFor(a.id) })
   if (!questions.length) return { report: data, audit }
   const held = audit.filter((e) => !e.confirmed).length
   const report: FillReport = {
@@ -97,6 +97,13 @@ export const snapshotText = (snap: string) => {
     if (w && words.at(-1) !== w) words.push(w)
   }
   return truncate(words.join(' · ') || snap, 2000)
+}
+
+/** The open items in the package the user has since answered or dropped, for the filler, which reads the package as text. */
+const settledNote = (a: Pick<schema.Application, 'id' | 'packageMd'>) => {
+  const settled = settledFor(a.id)
+  const items = readPackage(a.packageMd).pending.filter(settled.item)
+  return items.length ? `## Settled since the package was written\nThese open items no longer count. Don't hold a field back for them:\n${items.map((i) => `- ${i}`).join('\n')}` : ''
 }
 
 const evidenceFrom = (snap: string | null, reported: string): Evidence => ({
@@ -198,6 +205,7 @@ export const runFillForm = (task: schema.Task): Promise<TaskOutcome> =>
             URL: url,
             RESUME_PDF: pdf.path,
             PACKAGE: a.packageMd ?? '',
+            SETTLED: settledNote(a),
             PROFILE: clip(context.profile(), 12_000, "get_profile_doc 'answers' with offset"),
             EXPERIENCE: experience.text,
             SUBMIT_NOTE: strict ? SUBMIT_NOTE : '',
@@ -270,7 +278,7 @@ export const runFillForm = (task: schema.Task): Promise<TaskOutcome> =>
       await notifyPromise({ kind: 'agent', title: `Didn't submit ${a.companyName}`, body: `It breaks your rules: ${why}`, path: `/applications/${a.id}`, priority: 4 })
       return done
     }
-    const asked = s ? s.problems.map((p) => ({ question: p.field, why: p.why })) : report.needsYou.map((n) => ({ question: n.field, why: n.why, options: n.options }))
+    const asked = s ? s.problems.map((p) => ({ question: p.field, why: p.why })) : report.needsYou.map((n) => ({ question: n.field, why: n.why, options: n.options, filledValue: audit.find((e) => e.field === n.field && !e.confirmed)?.value ?? null }))
     // Kept as questions: the user answers them in Sidedoor (or through their AI), and the answers stay for next time.
     if (asked.length) askQuestions(a.id, 'fill', asked)
     const asks = asked.length
