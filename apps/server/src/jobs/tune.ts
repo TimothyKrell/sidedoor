@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm'
 import { z } from 'zod'
-import { TUNE_ASK_BELOW, TUNE_MAX_QUESTIONS, TUNE_STOPS, TUNE_TARGET, type TuneStop } from '@sidedoor/shared/review'
+import { TUNE_MAX_QUESTIONS, TUNE_STOPS, TUNE_TARGET, type TuneStop } from '@sidedoor/shared/review'
 import { MATCH_NOISE_MARGIN, type ResumeMatch } from '@sidedoor/shared/match'
 import { logActivity } from '../activity'
 import { mcpFor, runJob } from '../ai'
@@ -23,19 +23,28 @@ const TuneOut = z.object({
 })
 
 /**
- * What's worth interrupting the user for, whatever the AI proposed: a match too low to go out as
- * it is, and a must-have still short. The limit is here and not only in the prompt because a
- * prompt's "at most 5" came back as five for nearly every application.
+ * Which of the AI's questions to keep: each about a requirement still short after the pass, the
+ * ones that could win back the most points first (must-haves before nice-to-haves). The limit is
+ * here and not only in the prompt because a prompt's "at most 5" came back as five for nearly
+ * every application.
  */
 const worthAsking = (asks: NonNullable<z.infer<typeof TuneOut>['questions']>, m: ResumeMatch) => {
-  if (m.score >= TUNE_ASK_BELOW) return []
-  const short = new Set(m.requirements.filter((r) => r.kind === 'must' && r.level !== 'strong').map((r) => r.id))
-  return asks.filter((q) => short.has(q.requirement)).slice(0, TUNE_MAX_QUESTIONS)
+  const lost = new Map((m.breakdown ?? []).flatMap((c) => c.gaps.map((g) => [g.id, g.lost] as const)))
+  const rank = new Map(
+    m.requirements
+      .filter((r) => r.level !== 'strong')
+      .map((r) => [r.id, (r.kind === 'must' ? 1000 : 0) + (lost.get(r.id) ?? 0)] as const),
+  )
+  return asks
+    .filter((q) => rank.has(q.requirement))
+    .sort((x, y) => rank.get(y.requirement)! - rank.get(x.requirement)!)
+    .slice(0, TUNE_MAX_QUESTIONS)
 }
 
 /**
- * Work the tailored resume up against the posting: edit, re-check, repeat, then ask the user for
- * the little only they can add, if it's worth asking. Sidedoor measures the start and the finish itself, and puts the resume
+ * Work the tailored resume up against the posting: edit, re-check, repeat, then leave a few optional
+ * questions whose answers could push it further. Answers go to Experience, so every later pass
+ * (here and elsewhere) can use them. Sidedoor measures the start and the finish itself, and puts the resume
  * back if the pass left it scoring lower than it found it.
  */
 export const runTune = async (task: schema.Task): Promise<TaskOutcome> => {
@@ -50,7 +59,11 @@ export const runTune = async (task: schema.Task): Promise<TaskOutcome> => {
     logActivity('application', `Tuned the resume: ${a.companyName} – ${a.role}`, { detail: `${from} → ${v.to}`, link: `/applications/${a.id}` })
     return `Match ${from} → ${v.to}. ${v.summary}`
   }
-  if (from >= TUNE_TARGET) {
+  // Answers given since the last pass are new facts: worth a pass, and past the usual target.
+  const last = a.tuneJson?.at
+  const answered = !!last && answersFor(a.id).some((q) => (q.answeredAt ?? '') > last)
+  const target = answered ? 100 : TUNE_TARGET
+  if (from >= target) {
     const summary = `It was already at ${from}, past the ${TUNE_TARGET} target, so nothing changed.`
     return { output: finish({ to: from, rounds: 0, stopped: 'target', summary }), costUsd: before.costUsd ?? undefined, log: before.log }
   }
@@ -64,7 +77,7 @@ export const runTune = async (task: schema.Task): Promise<TaskOutcome> => {
       LEAD_NAME: `${a.companyName} – ${a.role}`,
       RESUME_ID: resume.id,
       MAX_PAGES: s.prep.maxPages,
-      TARGET: TUNE_TARGET,
+      TARGET: target,
       NOISE: MATCH_NOISE_MARGIN,
       JD: jdText(a, p, 'resume tuning'),
       MATCH: JSON.stringify(matchForAgent(getApplication(a.id)!)),

@@ -8,7 +8,7 @@ import { BUCKET_META, REVIEW_BUCKETS, type ReviewBucket, stillOpen } from '@side
 import { CompanyAvatar, Empty, Freshness, PageHeader, Salary } from '~/components/app/bits'
 import { usePageContext } from '~/components/app/chat'
 import { ApplicationQuestions } from '~/components/app/questions'
-import { Decisions, JobSummary, ListingGone, ResumeStep, type ReviewItem, ReviewStep, WritingChecklist } from '~/components/app/review'
+import { Decisions, isTuneQuestion, JobSummary, ListingGone, ResumeStep, type ReviewItem, ReviewStep, WritingChecklist } from '~/components/app/review'
 import { Segmented } from '~/components/app/segmented'
 import { Button } from '~/components/ui/button'
 import { qo, rpc, setStageFn } from '~/lib/api'
@@ -100,6 +100,8 @@ function Review() {
 function Application({ item, place, total, prev, next, go }: { item: ReviewItem; place: number; total: number; prev: string | undefined; next: string | undefined; go: (id: string | undefined) => void }) {
   const { data: d } = useQuery(qo.application(item.id))
   const questions = useQuery(qo.questions({ applicationId: item.id, status: 'all' })).data ?? []
+  // Tuning's open questions sit under the resume instead.
+  const settling = questions.filter((g) => !(isTuneQuestion(g) && g.status === 'open'))
   usePageContext(`/applications/${item.id}`, `application ${item.companyName} – ${item.role} (going through the review)`)
   if (!d) return <Loader2 className="size-5 animate-spin text-muted-foreground" />
   const f = item.facts
@@ -139,13 +141,13 @@ function Application({ item, place, total, prev, next, go }: { item: ReviewItem;
       <ListingGone d={d} />
 
       <ReviewStep n={1} title="Resume" done={f.tuned && !tuning} working={tuning}>
-        <ResumeStep d={d} working={tuning} />
+        <ResumeStep d={d} working={tuning} questions={questions} />
       </ReviewStep>
 
       <ReviewStep n={2} title="Questions and decisions" done={!openAsks} note={openAsks ? `${openAsks} open` : undefined}>
         <div className="space-y-3">
-          {!openAsks && !questions.length && <p className="text-sm text-muted-foreground">Nothing to settle on this one.</p>}
-          <ApplicationQuestions applicationId={a.id} groups={questions} hasPackage />
+          {!openAsks && !settling.length && <p className="text-sm text-muted-foreground">Nothing to settle on this one.</p>}
+          <ApplicationQuestions applicationId={a.id} groups={settling} hasPackage />
           <Decisions d={d} />
         </div>
       </ReviewStep>

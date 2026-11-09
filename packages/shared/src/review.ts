@@ -6,11 +6,11 @@ import { extractProseSections } from './package-sections'
 /** The AI stops working a resume up once the match reaches this. */
 export const TUNE_TARGET = 95
 
-/** Tuning asks you nothing once the match reaches this: a few more points aren't worth your time. */
-export const TUNE_ASK_BELOW = 90
-
-/** The most questions one tuning pass may ask. */
-export const TUNE_MAX_QUESTIONS = 2
+/**
+ * The most questions one tuning pass may leave, each about a requirement still short. They're
+ * optional and folded away under the resume, so nothing waits on them.
+ */
+export const TUNE_MAX_QUESTIONS = 4
 
 export const TUNE_STOPS = ['target', 'no_gain', 'no_more_facts', 'limit'] as const
 export type TuneStop = (typeof TUNE_STOPS)[number]

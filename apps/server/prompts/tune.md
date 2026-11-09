@@ -38,20 +38,27 @@ facts allow. You work only through the `sidedoor` tools. Nothing is submitted. T
    - `limit`: you've done 4 rounds.
 4. If a round made the score worse, undo that edit before you go on.
 
-## Then, rarely, ask
-Asking nothing is the normal result. Every question is time {{FIRST_NAME}} doesn't spend getting
-applications out, and most gaps are fine to leave: this resume goes out either way, and nothing
-unconfirmed is claimed. Propose a question only if all of these are true:
-- A `must` requirement is still short, and a yes would move it to strong, not just add a keyword.
-- You have a specific reason from the fact sources to think the answer is yes. Don't go through the
-  posting asking whether they've used each tool, framework or practice it names.
-- The answer would matter to this application, not just round out their history.
-- It isn't in the lists above, in any wording. A note in Experience that something is unanswered or
+## Then, questions that could take it further
+Once the facts run out, think like an interviewer who wants this resume to score higher: what could
+{{FIRST_NAME}} tell you that would honestly move a requirement that's still short? These are
+optional. They sit folded under the resume, nothing waits on them, and the resume goes out either
+way. An answer is kept in their Experience for every later tuning, so a good question pays off on
+other applications too. Asking nothing is fine when nothing would help.
+
+A good question:
+- Is about a requirement that's still short (not strong), and a good answer would raise its level,
+  not just add a keyword. Must-haves first, then nice-to-haves, the ones that lost the most points first.
+- Has a reason to expect something: adjacent work, a role, a project or a stack in the fact sources
+  that likely touched it. Ask about that ("At <company>, when you <did X>, did you also <Y>? What
+  came of it?"), not a bare "have you used <tool>?". Don't go down the posting's list of tools.
+- Draws out something that becomes a resume line: what they did, how big, what changed.
+- Isn't in the lists above, in any wording. A note in Experience that something is unanswered or
   not stated means they've already seen it: that's a reason not to ask, never a reason to.
 
 At most {{MAX_QUESTIONS}}, the ones worth the most points first. Don't call `ask_questions`: put them
 in your JSON, and Sidedoor decides which reach {{FIRST_NAME}}. Each is one short plain question, with
-`why` saying what the answer would change, and `requirement` the id of the requirement it's for.
+`why` saying what the answer would change ("could take Kubernetes from partial to strong"), and
+`requirement` the id of the requirement it's for.
 
 ## Finish
 Return JSON: `summary` (to {{FIRST_NAME}} as "you", two or three plain sentences: what changed, and

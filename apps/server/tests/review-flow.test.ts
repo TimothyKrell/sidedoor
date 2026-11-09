@@ -186,32 +186,50 @@ describe('tuning the resume', () => {
     const finished = async (id: string) => expect((await run(id)).status).toBe('done')
     afterEach(() => void (scores.requirements = []))
 
-    test('two at most, optional, for a must-have that is short', async () => {
+    test('four at most, optional, for a requirement still short, the most points first', async () => {
       const a = ready('Asks')
-      scores.requirements = [need('r1', 'must', 'partial')]
+      scores.requirements = [need('r1', 'nice', 'missing'), need('r2', 'must', 'partial')]
       scores.next = [70, 80]
-      ai.replies = reply(asks(5))
+      ai.replies = reply([...asks(1, 'r1').map((q) => ({ ...q, question: 'Nice one?' })), ...asks(5, 'r2')])
       await finished(a.id)
-      expect(tuneAsked(a.id).map((q) => [q.askedBy, q.optional])).toEqual([['tune', true], ['tune', true]])
+      const open = tuneAsked(a.id)
+      expect(open.map((q) => [q.askedBy, q.optional])).toEqual(Array(4).fill(['tune', true]))
+      expect(open.map((q) => q.question)).not.toContain('Nice one?')
       expect(item(a.id).facts.openQuestions).toBe(0)
     })
 
-    test('nothing for a nice-to-have, a must-have already strong, or a requirement it made up', async () => {
-      const a = ready('Nice')
+    test('nothing for a requirement already strong, or one it made up', async () => {
+      const a = ready('Strong')
       scores.requirements = [need('r1', 'nice', 'missing'), need('r2', 'must', 'strong')]
       scores.next = [70, 80]
-      ai.replies = reply([...asks(1, 'r1'), ...asks(1, 'r2'), ...asks(1, 'r9')])
+      ai.replies = reply([...asks(1, 'r1'), ...asks(1, 'r2').map((q) => ({ ...q, question: 'Strong one?' })), ...asks(1, 'r9').map((q) => ({ ...q, question: 'Made up?' }))])
       await finished(a.id)
-      expect(tuneAsked(a.id)).toHaveLength(0)
+      expect(tuneAsked(a.id).map((q) => q.question)).toEqual(['Have you done thing 0?'])
     })
 
-    test('nothing once the match is good enough', async () => {
+    test('still asks once the match is good, since the questions are optional', async () => {
       const a = ready('Good enough')
       scores.requirements = [need('r1', 'must', 'partial')]
-      scores.next = [80, 90]
+      scores.next = [80, 92]
       ai.replies = reply(asks(2))
       await finished(a.id)
-      expect(tuneAsked(a.id)).toHaveLength(0)
+      expect(tuneAsked(a.id)).toHaveLength(2)
+    })
+
+    test('answers since the last pass get a pass even at the target', async () => {
+      const a = ready('Answered')
+      scores.next = [80, 96]
+      ai.replies = reply([])
+      await finished(a.id)
+      setResumeTune(a.id, { ...getApplication(a.id)!.tuneJson!, at: '2026-01-01T00:00:00.000Z' })
+      const [q] = askQuestions(a.id, 'tune', [{ question: 'Did you run the on-call rotation?', about: 'you', saveTo: 'experience' }])
+      answerQuestions([{ id: q!.id, answer: 'Yes, for two years.' }], 'you')
+      scores.next = [96, 98]
+      ai.replies = reply([])
+      await finished(a.id)
+      expect(ai.prompts).toHaveLength(2)
+      expect(ai.prompts.at(-1)).toContain('Did you run the on-call rotation? → Yes, for two years.')
+      expect(getApplication(a.id)!.tuneJson).toMatchObject({ from: 96, to: 98 })
     })
 
     test('it sees what was already asked', async () => {
