@@ -89,9 +89,20 @@ describe('research sent to Grok Bot', () => {
     await finishTask(t.id, { summary: 'Found the hiring manager.' })
 
     expect(task(t.id)).toMatchObject({ status: 'done', output: 'Found the hiring manager.' })
-    // A linked person means outreach comes next, exactly as when research runs here.
-    const outreach = db.select().from(schema.tasks).where(eq(schema.tasks.kind, 'outreach')).all()
-    expect(outreach).toMatchObject([{ applicationId: a.id, status: 'queued' }])
+    // Outreach drafts wait until the user asks for them.
+    expect(db.select().from(schema.tasks).where(eq(schema.tasks.kind, 'outreach')).all()).toEqual([])
+  })
+
+  test('with outreach on, a linked person means drafts come next, exactly as when research runs here', async () => {
+    updateSettings('outreach', { auto: true })
+    const a = app('Initech')
+    const t = enqueueTask('research', 'Research: Initech', { applicationId: a.id })
+    turnOn()
+    await takeTask(t.id)
+    linkPerson(a.id, upsertPerson({ name: 'Hiring Manager', companyName: 'Initech' }).id, 'hiring manager')
+    await finishTask(t.id, { summary: 'Found the hiring manager.' })
+    expect(db.select().from(schema.tasks).where(eq(schema.tasks.kind, 'outreach')).all()).toMatchObject([{ applicationId: a.id, status: 'queued' }])
+    updateSettings('outreach', { auto: false })
   })
 
   test('a task it did not take cannot be finished, and an error fails it', async () => {

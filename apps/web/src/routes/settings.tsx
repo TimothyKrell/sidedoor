@@ -426,6 +426,7 @@ function AiSection() {
   const { data } = useQuery(qo.aiStatus())
   const prep = useSection('prep')
   const research = useSection('research')
+  const outreach = useSection('outreach')
   const editor = useSection('editor')
   const worker = useSection('worker')
   const funding = useSection('funding')
@@ -485,9 +486,9 @@ function AiSection() {
         desc="What your AI does on its own. Everything it writes waits for your review."
         footer={
           <SaveBar
-            dirty={prep.dirty || research.dirty || editor.dirty || worker.dirty || funding.dirty || discover.dirty}
-            saving={prep.saving || research.saving}
-            onSave={() => void Promise.all([prep.dirty && prep.save(), research.dirty && research.save(), editor.dirty && editor.save(), worker.dirty && worker.save(), funding.dirty && funding.save(), discover.dirty && discover.save()])}
+            dirty={prep.dirty || research.dirty || outreach.dirty || editor.dirty || worker.dirty || funding.dirty || discover.dirty}
+            saving={prep.saving || research.saving || outreach.saving}
+            onSave={() => void Promise.all([prep.dirty && prep.save(), research.dirty && research.save(), outreach.dirty && outreach.save(), editor.dirty && editor.save(), worker.dirty && worker.save(), funding.dirty && funding.save(), discover.dirty && discover.save()])}
           />
         }
       >
@@ -496,6 +497,9 @@ function AiSection() {
         </Row>
         <Row label="Research the company and find people" hint="When you start pursuing a job.">
           <Switch checked={research.v.auto} onCheckedChange={(auto) => research.set({ auto })} />
+        </Row>
+        <Row label="Draft outreach after research" hint="Off: ask for drafts on an application or a person when you want them.">
+          <Switch checked={outreach.v.auto} onCheckedChange={(auto) => outreach.set({ auto })} />
         </Row>
         <Row label="Second editing pass on drafts" hint="A separate, light edit against your writing style.">
           <Switch checked={editor.v.enabled} onCheckedChange={(enabled) => editor.set({ enabled })} />

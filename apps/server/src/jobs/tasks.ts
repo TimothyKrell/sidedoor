@@ -7,8 +7,9 @@ import { domainOf, ensureCompany } from '../companies'
 import { db, schema } from '../db/client'
 import { newId, nowIso } from '../ids'
 import { notifyPromise } from '../notify'
-import { ATS_LINK, detectAts, detectSource, fetchJson, fetchText, isAdapterKind, parseRss, probeBoard } from '../scout/adapters'
+import { AGGREGATOR_KINDS, ATS_LINK, detectAts, detectSource, fetchJson, fetchText, isAdapterKind, parseRss, probeBoard } from '../scout/adapters'
 import { resolveAggregatorPostings } from '../scout/resolve'
+import { readyToScore, scan } from '../scout/scan'
 import { getApplication, setStage, trackPosting, updateApplication } from '../services/applications'
 import { answersFor, askedBefore } from '../services/questions'
 import { checkApplicationRules } from '../services/rules'
@@ -55,7 +56,7 @@ const existingAtCompany = (companyId: string | null, companyName: string | null)
     .from(schema.applications)
     .where(companyId ? eq(schema.applications.companyId, companyId) : eq(schema.applications.companyName, companyName ?? ''))
     .all()
-  return rows.map((a) => `- ${a.companyName} – ${a.role} (stage ${a.stage}, status ${a.status})`).join('\n') || '- none'
+  return rows.map((a) => `- ${a.companyName} – ${a.role} (stage ${a.stage}, status ${a.status}${a.fitScore !== null ? `, fit ${a.fitScore}` : ''})`).join('\n') || '- none'
 }
 
 export const hoursSince = (iso: string | null | undefined) => (iso ? (Date.now() - new Date(iso).getTime()) / 3600_000 : null)
@@ -96,13 +97,7 @@ export const runTriage = async () => {
   const resolved = await resolveAggregatorPostings().catch((e) => (console.error('[resolve] failed', e), null))
   if (resolved && resolved.resolved + resolved.duplicate > 0) console.log(`[resolve] ${JSON.stringify(resolved)}`)
   if (!s.triage.enabled || aiLimitedUntil()) return { triaged: 0 }
-  const pending = db
-    .select()
-    .from(schema.postings)
-    .where(and(eq(schema.postings.triageStatus, 'pending'), isNull(schema.postings.closedAt)))
-    .orderBy(desc(schema.postings.firstSeenAt))
-    .limit(s.triage.maxPerRun)
-    .all()
+  const pending = readyToScore(s.triage.maxPerRun)
   if (pending.length === 0) return { triaged: 0 }
   const criteria = context.criteria()
   const inventory = context.inventory()
@@ -142,6 +137,7 @@ ${triageJd(r)}
 
   const outcomes = await Effect.runPromise(Effect.forEach(batches, (b) => Effect.promise(() => doBatch(b)), { concurrency: 2 }))
   const queued: string[] = []
+  const sweeps: string[] = []
   for (const { batch, results } of outcomes) {
     const byKey = new Map(results.map((r) => [r.key, r]))
     for (const p of batch) {
@@ -187,13 +183,17 @@ ${triageJd(r)}
         .where(eq(schema.postings.id, p.id))
         .run()
       counts[decision]++
+      if (decision !== 'skip') await betterFit({ ...p, companyId, companyName }, score)
       if (decision === 'queue' && !p.applicationId) {
         trackPosting(p.id)
         queued.push(`${companyName} – ${p.title}`)
+        sweeps.push(p.id)
       }
       if (decision !== 'skip') await maybeNotifyHot(p.id)
     }
   }
+  // A strong lead: see what else the company has open. In the background; scoring moves on.
+  for (const id of sweeps) void sweepCompany(id).catch((e) => console.error('[sweep] failed', e))
   const triaged = counts.queue + counts.maybe + counts.skip
   if (triaged)
     logActivity('triage', `Scored ${triaged} new posting${triaged === 1 ? '' : 's'}: ${counts.queue ? `${counts.queue} strong fit${counts.queue === 1 ? '' : 's'}` : 'no strong fits'}${counts.maybe ? `, ${counts.maybe} maybe` : ''}`, {
@@ -371,7 +371,8 @@ export const researchWork = (task: schema.Task) => {
   const finish = async (text: string) => {
     const linked = db.select({ n: sql<number>`count(*)` }).from(schema.applicationPeople).where(eq(schema.applicationPeople.applicationId, a.id)).get()?.n ?? 0
     logActivity('research', `Researched ${a.companyName}: ${linked} people to reach`, { detail: truncate(text, 400), link: `/applications/${a.id}` })
-    if (linked > 0) enqueueTask('outreach', `Draft outreach: ${a.companyName} – ${a.role}`, { applicationId: a.id })
+    // Drafts cost a long AI run each; they come when the user asks, unless they turned this on.
+    if (linked > 0 && getSettings().outreach.auto) enqueueTask('outreach', `Draft outreach: ${a.companyName} – ${a.role}`, { applicationId: a.id })
     await notifyPromise({
       kind: 'research-ready',
       title: `${a.companyName}: research + ${linked} contacts`,
@@ -447,6 +448,45 @@ const addSource = (v: { name: string; kind: string; board: string; url: string |
     .run().changes > 0
 
 /** Find and register a company's ATS board from a careers URL or by probing slug guesses. */
+const SWEEP_EVERY_DAYS = 7
+
+/**
+ * A lead at a company: watch the company's own board and read it now as a company sweep, which
+ * lets through engineering roles the title filters drop, so a role there that fits better than the
+ * lead is scored too (`betterFit` says so). Once a week per company; a board the user paused stays paused.
+ */
+export const sweepCompany = async (postingId: string) => {
+  const p = db.select().from(schema.postings).where(eq(schema.postings.id, postingId)).get()
+  const company = p?.companyId ? db.select().from(schema.companies).where(eq(schema.companies.id, p.companyId)).get() : undefined
+  if (!p || !company) return
+  const last = getMeta<string>(`swept:${company.id}`)
+  if (last && Date.now() - Date.parse(last) < SWEEP_EVERY_DAYS * 86400_000) return
+  setMeta(`swept:${company.id}`, nowIso())
+  await attachBoard(company, p.applyUrl ?? p.url, 'sweep').catch(() => null)
+  const boards = db
+    .select({ id: schema.sources.id })
+    .from(schema.sources)
+    .where(and(eq(schema.sources.companyId, company.id), eq(schema.sources.status, 'active'), notInArray(schema.sources.kind, [...AGGREGATOR_KINDS])))
+    .all()
+  if (boards.length) await Effect.runPromise(scan({ sourceIds: boards.map((b) => b.id), sweep: true }))
+}
+
+/** A posting that scored above the best application already open at its company: worth a look instead. */
+const betterFit = async (p: schema.Posting, score: number) => {
+  if (!p.companyId) return
+  const open = db
+    .select()
+    .from(schema.applications)
+    .where(and(eq(schema.applications.companyId, p.companyId), inArray(schema.applications.status, ['potential', 'active']), sql`${schema.applications.postingId} is not ${p.id}`))
+    .all()
+    .filter((a) => a.fitScore !== null)
+  const best = open.sort((a, b) => (b.fitScore ?? 0) - (a.fitScore ?? 0))[0]
+  if (!best || score <= (best.fitScore ?? 0)) return
+  const detail = `${p.title} (fit ${score}) scores above ${best.role} (fit ${best.fitScore}), which you're pursuing there.`
+  logActivity('triage', `Better fit at ${p.companyName ?? best.companyName}`, { detail, link: `/jobs/${p.id}` })
+  await notifyPromise({ kind: 'hot-job', title: `Better fit at ${p.companyName ?? best.companyName}`, body: detail, path: `/jobs/${p.id}`, priority: 4, dedupeKey: `better:${p.id}` })
+}
+
 export const attachBoard = async (company: schema.Company, careersUrl: string | null, origin: string) => {
   const existing = db.select().from(schema.sources).where(eq(schema.sources.companyId, company.id)).get()
   if (existing) return existing.kind

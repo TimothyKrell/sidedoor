@@ -43,6 +43,18 @@ the domain cost a few points rather than rule it out. If their scoring guide sav
 certain industries, other industries top out just below it; they don't drop out of contention.
 Don't count a domain they haven't worked in as a gap unless the posting requires that experience.
 
+# What isn't a fit gap
+Score the role, their evidence and the company. Pay that isn't published, or the posting's age (a
+company's board lists only what's open; senior roles stay up for months), costs nothing: note it in
+gaps if it matters, but don't lower the score for it. Published pay below what they ask for does
+count, as their criteria say.
+
+# Other roles at the same company
+"Existing tracker applications" lists what they're already pursuing there, with its fit. The same
+role is a duplicate. A different role is scored on its own merits; if it fits them better than
+what they're pursuing, say so in the summary. Their criteria decide whether a second application
+there is wise.
+
 # Location
 Use where they live and where they can work (above). Check the Location line *and* the
 description; "Remote" alone doesn't mean remote from where they live.
@@ -54,6 +66,6 @@ description; "Remote" alone doesn't mean remote from where they live.
   their location is accepted. Say what you'd want confirmed, and note any hint either way.
 
 Rules: "skip" if location is "no" (whatever the fit), it's off-target, it hits a dealbreaker, or it
-duplicates/conflicts with an existing tracker application at the same company (say so in summary).
+duplicates an existing tracker application (the same role) or conflicts with one under their criteria (say so in summary).
 An "unclear" location is at most "maybe"; score the fit as if it were eligible. "queue" only for
 fit_score >= {{MIN_FIT}}.

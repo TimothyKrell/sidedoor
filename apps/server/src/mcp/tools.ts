@@ -251,9 +251,14 @@ export const appTools = [
 
   tool(
     'track_posting',
-    'Start pursuing a posting: creates an application and (by default) queues the AI to build the application package and research the company/people.',
+    'Start pursuing a posting: creates an application and (by default) queues the AI to build the application package and research the company/people. It also reads the company\'s own board for other roles; one that scores higher is flagged as a better fit.',
     { postingId: z.string(), prep: z.boolean().optional(), research: z.boolean().optional() },
-    safe((a) => appBrief(trackPosting(a.postingId, { ...(a.prep !== undefined ? { prep: a.prep } : {}), ...(a.research !== undefined ? { research: a.research } : {}) }))),
+    safe((a) => {
+      const app = trackPosting(a.postingId, { ...(a.prep !== undefined ? { prep: a.prep } : {}), ...(a.research !== undefined ? { research: a.research } : {}) })
+      // See what else the company has open; a better fit there gets scored and flagged.
+      void import('../jobs/tasks').then((m) => m.sweepCompany(a.postingId)).catch(() => {})
+      return appBrief(app)
+    }),
   ),
 
   tool(

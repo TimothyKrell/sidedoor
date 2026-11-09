@@ -112,6 +112,27 @@ describe('resolving aggregator listings', () => {
   })
 })
 
+describe('only originals', () => {
+  test('a listing found only as a repost is set aside; one linking to the company careers page points there', async () => {
+    db.insert(schema.sources).values({ id: 'src_vcfund', name: 'Fund', kind: 'getro', board: 'jobs.fund.test', status: 'active' }).run()
+    const vc = (title: string, applyUrl: string) => listing(title, newId('vc'), { sourceId: 'src_vcfund', companyName: 'Unlisted Co', url: 'https://jobs.fund.test/companies/unlisted/jobs/1', applyUrl })
+    const repost = vc('Staff Engineer', 'https://www.linkedin.com/jobs/view/123')
+    const own = vc('Principal Engineer', 'https://unlisted.example/careers/principal')
+    await resolveAggregatorPostings()
+    expect(posting(repost)).toMatchObject({ triageStatus: 'skipped', heuristic: expect.stringContaining('no original') })
+    expect(posting(own)).toMatchObject({ triageStatus: 'pending', url: 'https://unlisted.example/careers/principal', viaUrl: 'https://jobs.fund.test/companies/unlisted/jobs/1' })
+    expect(posting(own).resolvedAt).toBeTruthy()
+  })
+
+  test('an HN post is written by the employer, so it is the original', async () => {
+    db.insert(schema.sources).values({ id: 'src_hn_t', name: 'HN', kind: 'hn', board: 'whoishiring', status: 'active' }).run()
+    const id = listing('Founding Engineer', 'hn1', { sourceId: 'src_hn_t', companyName: 'Tiny Startup', url: 'https://news.ycombinator.com/item?id=1', applyUrl: 'https://news.ycombinator.com/item?id=1' })
+    await resolveAggregatorPostings()
+    expect(posting(id)).toMatchObject({ triageStatus: 'pending', url: 'https://news.ycombinator.com/item?id=1' })
+    expect(posting(id).resolvedAt).toBeTruthy()
+  })
+})
+
 describe('location survives the aggregator', () => {
   // A user in the US, as onboarding sets them up: location filters generated from their country.
   beforeAll(() => {

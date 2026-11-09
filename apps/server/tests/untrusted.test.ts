@@ -181,8 +181,8 @@ describe('fencing', () => {
 
   test('code that reads a posting description into an AI goes through the guard', () => {
     // Writing descriptions (ingest), the schema, the fill (which only picks Experience sections with
-    // it) and the rule checks (plain code, no AI) are the only places that touch .jd without it.
-    const INGEST = ['src/scout/scan.ts', 'src/scout/resolve.ts', 'src/db/schema.ts', 'src/untrusted.ts', 'src/jobs/fill-form.ts', 'src/services/rules.ts']
+    // it), the rule checks and the scout's remote check (plain code, no AI) are the only places that touch .jd without it.
+    const INGEST = ['src/scout/scan.ts', 'src/scout/resolve.ts', 'src/scout/workplace.ts', 'src/db/schema.ts', 'src/untrusted.ts', 'src/jobs/fill-form.ts', 'src/services/rules.ts']
     const walk = (dir: string): string[] => readdirSync(dir).flatMap((f) => (statSync(join(dir, f)).isDirectory() ? walk(join(dir, f)) : /\.tsx?$/.test(f) ? [join(dir, f)] : []))
     const offenders = walk(join(root, 'src'))
       .map((f) => relative(root, f))

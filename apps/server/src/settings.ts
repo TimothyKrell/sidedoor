@@ -134,6 +134,12 @@ export const AppSettings = z.object({
       auto: z.boolean().default(false),
     })
     .prefault({}),
+  outreach: z
+    .object({
+      /** Draft messages to the people research found, without being asked. Off: drafts come when the user asks. */
+      auto: z.boolean().default(false),
+    })
+    .prefault({}),
   funding: z
     .object({
       enabled: z.boolean().default(false),

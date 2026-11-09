@@ -619,3 +619,28 @@ current when making a non-obvious call. Open questions for the maintainer live i
   few requests, but boards run to thousands of jobs that change over days, so they're polled at
   most every four hours. Add one by its URL: the host gives nothing away, so the page is fetched
   and recognized before following its links, which point at portfolio companies' boards.
+- **Only originals are scored.** An aggregator listing (a feed, a VC board) waits until resolving
+  matches it to the company's own posting, and is scored as that. A listing whose apply link is the
+  company's own careers page counts as the original. One found only as a repost (LinkedIn, another
+  job site) is set aside as "no original" rather than scored on a teaser. HN posts are the
+  employer's own words, so they count. This also stops the same job, listed on a company board and
+  three VC boards, from being scored four times.
+- **Remote is checked before scoring, in plain code.** A third of scoring calls went to postings the
+  AI then marked as somewhere the user can't work: "Remote, Latin America", or a US office with
+  "hybrid, 3 days in SF" in the description. When remote is the only work mode, a posting must
+  show it's remote (`scout/workplace.ts`): hybrid, on-site or office days in the listing or
+  description, or no mention of remote anywhere, set it aside as "not remote". Listed remote but
+  asking for office days goes to scoring to judge. Places are read one by one against every country
+  and region, and the ones the user's place pattern doesn't cover count as foreign. The check runs
+  again on waiting postings just before scoring, so the backlog and changed filters are covered.
+  Checked against 2,444 scored postings: it catches about two thirds of the AI's "no"s and drops
+  about 1% of its "ok"s, all low-fit ones whose descriptions never say remote.
+- **A lead at a company sweeps its board.** When a posting is queued or tracked, the company's own
+  board is watched and read straight away, and the sweep lets through engineering titles the title
+  filters drop: the company is already known to be worth a look, and the best role there may be
+  titled oddly ("AI Lead - Product Engineering"). Place and remote still apply. Once a week per
+  company. A role that scores above the application already open there is flagged as a better fit.
+  Scoring is told that a different role at the same company isn't a duplicate, and that missing pay
+  or an old posting date isn't a fit gap.
+- **Outreach drafts come when asked.** Drafting is a long AI run per application and most drafts
+  went unused, so research no longer queues it. Settings → AI has a switch to turn it back on.

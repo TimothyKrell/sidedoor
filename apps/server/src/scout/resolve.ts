@@ -7,7 +7,7 @@ import { relinkApplication } from '../services/applications'
 import { getMeta, getSettings, setMeta } from '../settings'
 import { parseComp } from '../text'
 import { ADAPTERS, AGGREGATOR_KINDS, type AdapterKind, detectAts, isAdapterKind, probeBoard, type RawJob } from './adapters'
-import { compileFilters, locationPasses } from './scan'
+import { compileFilters, heuristic, locationPasses } from './scan'
 
 /**
  * Aggregators (Jobicy, Himalayas, WWR, ...) list jobs that live on a company's own ATS, often with a
@@ -192,14 +192,19 @@ const hostOf = (url: string | null) => {
 export type ResolveOutcome = 'resolved' | 'duplicate' | 'not-found'
 
 /**
- * Aggregators flatten location ("Remote" in a USA feed), so the company's own posting gets the
- * location filter again. Not yet triaged: it's filtered out like any other. Already triaged or
- * tracked: it's flagged, since the user may be mid-way through it.
+ * Aggregators flatten location ("Remote" in a USA feed) and carry no or a cut description, so the
+ * company's own posting gets the filters again: where it is, and for a remote-only search whether
+ * its description shows it's remote. Not yet triaged: it's filtered out like any other. Already
+ * triaged or tracked: a wrong place is flagged, since the user may be mid-way through it.
  */
-const locationRecheck = (p: schema.Posting, location: string | null): Partial<schema.Posting> => {
-  if (location === p.location || locationPasses(location, compileFilters(getSettings().scout))) return {}
-  if (p.triageStatus === 'pending' && !p.applicationId) return { triageStatus: 'skipped', heuristic: 'fail: location' }
-  return { locationFit: 'no', locationNote: `The company's posting lists ${location?.replace(/\s*\|\s*/g, ' · ')}` }
+const recheck = (p: schema.Posting, job: { title: string; location: string | null; jd: string | null }): Partial<schema.Posting> => {
+  const f = compileFilters(getSettings().scout)
+  if (p.triageStatus === 'pending' && !p.applicationId) {
+    const h = heuristic({ ...job, location: job.location ?? '', postedAt: undefined }, f, false)
+    return h === 'pass' || h.startsWith('fail: title') ? {} : { triageStatus: 'skipped', heuristic: h }
+  }
+  if (job.location === p.location || locationPasses(job.location, f)) return {}
+  return { locationFit: 'no', locationNote: `The company's posting lists ${job.location?.replace(/\s*\|\s*/g, ' · ')}` }
 }
 
 const apply = (p: schema.Posting, company: schema.Company, { board, job }: Found): ResolveOutcome => {
@@ -222,7 +227,7 @@ const apply = (p: schema.Posting, company: schema.Company, { board, job }: Found
     location,
     postedAt: toIsoDate(job.postedAt) ?? p.postedAt,
     ...(comp ? { compText: comp.text, compMin: comp.min, compMax: comp.max } : {}),
-    ...locationRecheck(p, location),
+    ...recheck(p, { title: job.title || p.title, location, jd: fuller }),
     resolvedAt: at,
   }
   return db.transaction((tx) => {
@@ -253,14 +258,46 @@ const apply = (p: schema.Posting, company: schema.Company, { board, job }: Found
   })
 }
 
+/** Job sites that repost other companies' jobs. A link to one of them is never the original posting. */
+const REPOST_HOSTS = /(^|\.)(linkedin\.com|indeed\.com|glassdoor\.com|ziprecruiter\.com|wellfound\.com|angel\.co|builtin\.com|builtin[a-z]+\.com|monster\.com|dice\.com|simplyhired\.com|remoteok\.(com|io)|weworkremotely\.com|himalayas\.app|remotive\.com|jobicy\.com|workingnomads\.com|cryptojobslist\.com|web3\.career|getro\.com|consider\.com|otta\.com|welcometothejungle\.com|jooble\.org|talent\.com|adzuna\.[a-z.]+|google\.com)$/i
+
+/**
+ * An aggregator listing whose original couldn't be found on a board Sidedoor reads. Its apply link
+ * may still be the company's own careers page, which is the original: the posting points there.
+ * Otherwise only the reposted copy exists, and that isn't shown or scored. HN posts are written by
+ * the employer, so they are the original.
+ */
+const notFound = (p: schema.Posting) => {
+  const at = nowIso()
+  const kind = p.sourceId ? db.select({ kind: schema.sources.kind, board: schema.sources.board }).from(schema.sources).where(eq(schema.sources.id, p.sourceId)).get() : undefined
+  if (kind?.kind === 'hn') {
+    db.update(schema.postings).set({ resolvedAt: at }).where(eq(schema.postings.id, p.id)).run()
+    return
+  }
+  const own = [p.applyUrl, p.url].find((u) => {
+    const host = hostOf(u)
+    return !!u && host !== 'an aggregator' && !REPOST_HOSTS.test(host) && host !== kind?.board && host !== hostOf(kind?.board ?? null)
+  })
+  if (own) {
+    db.update(schema.postings).set({ resolvedAt: at, viaUrl: p.viaUrl ?? p.url, url: own, applyUrl: own }).where(eq(schema.postings.id, p.id)).run()
+    return
+  }
+  const pending = p.triageStatus === 'pending' && !p.applicationId
+  db.update(schema.postings)
+    .set({ resolvedAt: at, ...(pending ? { triageStatus: 'skipped' as const, heuristic: 'no original: only a reposted copy was found' } : {}) })
+    .where(eq(schema.postings.id, p.id))
+    .run()
+}
+
 export const resolvePosting = async (p: schema.Posting): Promise<ResolveOutcome> => {
-  if (!p.companyName) return 'not-found'
-  const company = p.companyId
-    ? (db.select().from(schema.companies).where(eq(schema.companies.id, p.companyId)).get() ?? ensureCompany(p.companyName))
-    : ensureCompany(p.companyName)
-  const found = await findDirect(p, company).catch(() => null)
-  if (!found) {
-    db.update(schema.postings).set({ resolvedAt: nowIso() }).where(eq(schema.postings.id, p.id)).run()
+  const company = p.companyName
+    ? p.companyId
+      ? (db.select().from(schema.companies).where(eq(schema.companies.id, p.companyId)).get() ?? ensureCompany(p.companyName))
+      : ensureCompany(p.companyName)
+    : null
+  const found = company ? await findDirect(p, company).catch(() => null) : null
+  if (!found || !company) {
+    notFound(p)
     return 'not-found'
   }
   return apply(p, company, found)
@@ -286,7 +323,6 @@ export const resolveAggregatorPostings = async (limit = 25) => {
         inArray(schema.postings.sourceId, aggregatorSources),
         isNull(schema.postings.resolvedAt),
         isNull(schema.postings.closedAt),
-        isNotNull(schema.postings.companyName),
         ne(schema.postings.triageStatus, 'skipped'),
       ),
     )

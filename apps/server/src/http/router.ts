@@ -355,6 +355,7 @@ export const router = {
   // ------------------------------------------------------------------ writes
   trackPosting: proc(z.object({ id: z.string(), prep: z.boolean().optional(), research: z.boolean().optional() }), async ({ id, prep, research }) => {
     const a = (await apps()).trackPosting(id, { ...(prep !== undefined ? { prep } : {}), ...(research !== undefined ? { research } : {}) })
+    void import('../jobs/tasks').then((m) => m.sweepCompany(id)).catch(() => {})
     return { id: a.id }
   }),
   setPostingStatus: proc(z.object({ id: z.string(), status: z.enum(['new', 'starred', 'dismissed']) }), async ({ id, status }) => {

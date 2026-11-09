@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, lt } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNotNull, isNull, lt, notInArray, or } from 'drizzle-orm'
 import { Effect } from 'effect'
 import { logActivity } from '../activity'
 import { ensureCompany } from '../companies'
@@ -6,11 +6,13 @@ import { db, schema } from '../db/client'
 import { newId, nowIso, toIsoDate } from '../ids'
 import { type AppSettings, getSettings } from '../settings'
 import { parseComp } from '../text'
+import { foreignPlaces, placePasses, workplaceOf } from './workplace'
 import { ADAPTERS, AGGREGATOR_KINDS, DETAILS, detectAts, isAdapterKind, LIST_CAP, minPollMinutes, PORTFOLIO_KINDS, type RawJob } from './adapters'
 
 type Filters = ReturnType<typeof compileFilters>
 
-export const compileFilters = (s: AppSettings['scout']) => {
+/** The scout's filters. Remote only when remote is the only way the user said they'll work. */
+export const compileFilters = (s: AppSettings['scout'], workModes: readonly string[] = getSettings().search.workModes) => {
   const safe = (p: string) => {
     try {
       return new RegExp(p, 'i')
@@ -18,40 +20,50 @@ export const compileFilters = (s: AppSettings['scout']) => {
       return null
     }
   }
+  const locationOk = s.locationOk ? safe(s.locationOk) : null
   return {
     include: s.titleInclude.map(safe).filter((r): r is RegExp => r !== null),
     exclude: s.titleExclude.map(safe).filter((r): r is RegExp => r !== null),
-    locationOk: safe(s.locationOk),
+    locationOk,
     remote: safe(s.remoteWords),
-    block: safe(s.locationBlock),
+    block: s.locationBlock ? safe(s.locationBlock) : null,
+    foreign: foreignPlaces(locationOk),
+    remoteOnly: workModes.length > 0 && workModes.every((m) => m === 'remote'),
     maxAgeDays: s.maxAgeDays,
     boardMaxAgeDays: s.boardMaxAgeDays,
   }
 }
 
-/**
- * A place the user can work, or remote without naming a place they can't. A missing location gets
- * the benefit of the doubt, and so does everything when the user set no location preferences.
- */
-export const locationPasses = (loc: string | null | undefined, f: Filters) =>
-  !loc || (!f.locationOk && !f.block) || !!(f.locationOk?.test(loc) || (f.remote?.test(loc) && !f.block?.test(loc)))
+/** A place the user can work, or remote without naming a place they can't (see `placePasses`). */
+export const locationPasses = (loc: string | null | undefined, f: Filters) => placePasses(loc, f)
 
 /**
  * Cheap first-pass filter. AI triage makes the real call. No title filters means every title passes.
+ * For a remote-only search, a posting must show it's remote (`workplaceOf`); one that can't tell yet
+ * (no description) passes and is checked again once its description is read.
  * `maxAgeDays` is the feed limit by default; company boards pass their own, longer one (a board lists
  * only what's open, and senior roles stay up for months), and 0 or false skips the age check.
  */
-export const heuristic = (job: Pick<RawJob, 'title' | 'location' | 'postedAt'>, f: Filters, maxAgeDays: number | false = f.maxAgeDays) => {
+export const heuristic = (job: Pick<RawJob, 'title' | 'location' | 'postedAt'> & { jd?: string | null }, f: Filters, maxAgeDays: number | false = f.maxAgeDays) => {
   const t = job.title
   if (f.include.length && !f.include.some((r) => r.test(t))) return 'fail: title'
   if (f.exclude.some((r) => r.test(t))) return 'fail: title excluded'
   if (!locationPasses(job.location, f)) return 'fail: location'
+  if (f.remoteOnly && workplaceOf(job) === 'not remote') return 'fail: not remote'
   if (maxAgeDays && job.postedAt) {
     const posted = new Date(job.postedAt).getTime()
     if (!Number.isNaN(posted) && Date.now() - posted > maxAgeDays * 86400_000) return 'fail: old'
   }
   return 'pass'
 }
+
+/**
+ * A company sweep (a lead turned up there) lets through any engineering title the user's title
+ * filters drop, since the company is already known to be worth a look. Place and remote still apply.
+ */
+export const SWEPT = 'pass: company sweep'
+const SWEEP_TITLE = /\b(engineer(ing)?|developer|architect|cto|technical|technology)\b/i
+const passes = (h: string | null) => h === 'pass' || h === SWEPT
 
 /** Filter verdicts the scout gave, as opposed to "duplicate of …" from resolving. These get a second look. */
 const filteredOut = (h: string | null) => !!h && h.startsWith('fail:')
@@ -70,7 +82,7 @@ export interface ScanResult {
   error?: string
 }
 
-const scanSource = (source: schema.Source, f: Filters) =>
+const scanSource = (source: schema.Source, f: Filters, sweep = false) =>
   Effect.gen(function* () {
     if (!isAdapterKind(source.kind)) return { sourceId: source.id, ok: false, jobs: 0, new: 0, newPass: 0, error: 'no adapter' }
     const started = nowIso()
@@ -98,10 +110,14 @@ const scanSource = (source: schema.Source, f: Filters) =>
         // Dropped by the filters and untouched since: the filters may have changed, so it gets another look.
         known.set(r.key, { heuristic: r.heuristic, recheck: r.triageStatus === 'skipped' && filteredOut(r.heuristic) && r.userStatus === 'new' && !r.applicationId })
     }
+    const verdictOf = (j: RawJob) => {
+      const h = heuristic(j, f, maxAge)
+      return sweep && h === 'fail: title' && heuristic(j, { ...f, include: [SWEEP_TITLE] }, maxAge) === 'pass' ? SWEPT : h
+    }
     // Verdicts up front: new postings, and filtered-out ones the current filters may now let through.
     const verdicts = jobs.map((j, i) => {
       const k = known.get(keys[i]!)
-      return !k || k.recheck ? heuristic(j, f, maxAge) : null
+      return !k || k.recheck ? verdictOf(j) : null
     })
     // Boards whose list has no descriptions: read them for the postings that will be triaged.
     const detail = DETAILS[source.kind]
@@ -109,7 +125,7 @@ const scanSource = (source: schema.Source, f: Filters) =>
     if (detail) {
       // An aggregator listing that links to an ATS Sidedoor reads gets the company's full posting when resolved.
       const resolvable = (j: RawJob) => isAggregator && !!(detectAts(j.applyUrl) ?? detectAts(j.url))
-      const need = verdicts.flatMap((v, i) => (v === 'pass' && !jobs[i]!.jd && !resolvable(jobs[i]!) ? [i] : []))
+      const need = verdicts.flatMap((v, i) => (passes(v) && !jobs[i]!.jd && !resolvable(jobs[i]!) ? [i] : []))
       for (const i of need.slice(MAX_DETAILS)) unread.add(i)
       yield* Effect.forEach(
         need.slice(0, MAX_DETAILS),
@@ -121,7 +137,7 @@ const scanSource = (source: schema.Source, f: Filters) =>
               const merged = { ...jobs[i]!, ...Object.fromEntries(Object.entries(d.value).filter(([, v]) => v !== undefined && v !== '')) }
               jobs[i] = merged
               // The full posting can say more about where (a list's "3 Locations"); filter it again.
-              verdicts[i] = heuristic(merged, f, maxAge)
+              verdicts[i] = verdictOf(merged)
             }),
           ),
         { concurrency: 3, discard: true },
@@ -145,10 +161,10 @@ const scanSource = (source: schema.Source, f: Filters) =>
         const h = verdicts[i] ?? null
         if (k) {
           const seen = { lastSeenAt: started, closedAt: null }
-          if (h === 'pass' && !unread.has(i)) {
+          if (passes(h) && !unread.has(i)) {
             revived++
             tx.update(schema.postings).set({ ...seen, heuristic: h, triageStatus: 'pending', jd: j.jd.slice(0, 40_000), location: j.location || null }).where(eq(schema.postings.key, key)).run()
-          } else if (h && h !== 'pass' && h !== k.heuristic) tx.update(schema.postings).set({ ...seen, heuristic: h }).where(eq(schema.postings.key, key)).run()
+          } else if (h && !passes(h) && h !== k.heuristic) tx.update(schema.postings).set({ ...seen, heuristic: h }).where(eq(schema.postings.key, key)).run()
           else tx.update(schema.postings).set(seen).where(eq(schema.postings.key, key)).run()
           continue
         }
@@ -164,7 +180,7 @@ const scanSource = (source: schema.Source, f: Filters) =>
         } else if (companyId) {
           displayCompany = tx.select({ name: schema.companies.name }).from(schema.companies).where(eq(schema.companies.id, companyId)).get()?.name ?? displayCompany
         }
-        if (h === 'pass') pass++
+        if (passes(h)) pass++
         const comp = parseComp(j.comp)
         tx.insert(schema.postings)
           .values({
@@ -184,9 +200,9 @@ const scanSource = (source: schema.Source, f: Filters) =>
             compMin: comp.min,
             compMax: comp.max,
             // Only keep full descriptions for postings that may be triaged; keeps the DB small.
-            jd: h === 'pass' ? j.jd.slice(0, 40_000) : null,
+            jd: passes(h) ? j.jd.slice(0, 40_000) : null,
             heuristic: h,
-            triageStatus: h === 'pass' ? 'pending' : 'skipped',
+            triageStatus: passes(h) ? 'pending' : 'skipped',
             notifiedAt: initial ? 'initial-scan' : null,
           })
           .onConflictDoNothing()
@@ -226,8 +242,8 @@ export const dueSources = (s = getSettings().scout, force = false) => {
   })
 }
 
-/** Poll every due source (10 at a time) and record new postings. */
-export const scan = (opts: { force?: boolean; sourceIds?: string[] } = {}) =>
+/** Poll every due source (10 at a time) and record new postings. `sweep`: a company sweep (see SWEPT). */
+export const scan = (opts: { force?: boolean; sourceIds?: string[]; sweep?: boolean } = {}) =>
   Effect.gen(function* () {
     const settings = getSettings()
     const f = compileFilters(settings.scout)
@@ -237,7 +253,7 @@ export const scan = (opts: { force?: boolean; sourceIds?: string[] } = {}) =>
       due = db.select().from(schema.sources).all().filter((s) => ids.has(s.id))
     }
     if (due.length === 0) return { sources: 0, errors: 0, jobs: 0, new: 0, newPass: 0, revived: 0 }
-    const results = yield* Effect.forEach(due, (src) => scanSource(src, f), { concurrency: 10 })
+    const results = yield* Effect.forEach(due, (src) => scanSource(src, f, opts.sweep), { concurrency: 10 })
     const total = results.reduce(
       (a, r) => ({ sources: a.sources + 1, errors: a.errors + (r.ok ? 0 : 1), jobs: a.jobs + r.jobs, new: a.new + r.new, newPass: a.newPass + r.newPass, revived: a.revived + (r.revived ?? 0) }),
       { sources: 0, errors: 0, jobs: 0, new: 0, newPass: 0, revived: 0 },
@@ -246,3 +262,35 @@ export const scan = (opts: { force?: boolean; sourceIds?: string[] } = {}) =>
     if (total.revived > 0) logActivity('scout', `${total.revived} posting${total.revived === 1 ? '' : 's'} the filters had dropped pass them now`, { detail: 'They go to scoring like new ones.', link: '/jobs' })
     return total
   })
+
+/**
+ * Postings ready for scoring, newest first. An aggregator listing waits until it's matched to the
+ * company's original (resolve.ts), so only originals are scored. Each waiting posting passes the
+ * filters again first: they may have changed since it was found, and its description, read since,
+ * may show it isn't remote. One that fails now is set aside with the reason, without a scoring call.
+ */
+export const readyToScore = (limit: number) => {
+  const f = compileFilters(getSettings().scout)
+  const aggregators = db.select({ id: schema.sources.id }).from(schema.sources).where(inArray(schema.sources.kind, [...AGGREGATOR_KINDS])).all().map((r) => r.id)
+  const original = aggregators.length ? or(isNull(schema.postings.sourceId), notInArray(schema.postings.sourceId, aggregators), isNotNull(schema.postings.resolvedAt)) : undefined
+  const ready: schema.Posting[] = []
+  for (;;) {
+    const rows = db
+      .select()
+      .from(schema.postings)
+      .where(and(eq(schema.postings.triageStatus, 'pending'), isNull(schema.postings.closedAt), original))
+      .orderBy(desc(schema.postings.firstSeenAt))
+      .limit(limit)
+      .offset(ready.length)
+      .all()
+    for (const p of rows) {
+      const job = { title: p.title, location: p.location ?? '', jd: p.jd }
+      const h = p.applicationId ? 'pass' : heuristic(job, p.heuristic === SWEPT ? { ...f, include: [] } : f, false)
+      // Last check before scoring: no description is coming, so one that never says remote isn't.
+      const verdict = h === 'pass' && !p.applicationId && f.remoteOnly && workplaceOf(job, true) === 'not remote' ? 'fail: not remote' : h
+      if (verdict === 'pass') ready.push(p)
+      else db.update(schema.postings).set({ triageStatus: 'skipped', heuristic: verdict }).where(eq(schema.postings.id, p.id)).run()
+    }
+    if (ready.length >= limit || rows.length < limit) return ready.slice(0, limit)
+  }
+}
