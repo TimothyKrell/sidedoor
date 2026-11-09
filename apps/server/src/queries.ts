@@ -10,6 +10,7 @@ import { baseResume, getResume, resumeForApplication } from './services/resumes'
 import { gmailComposeUrl } from './services/people'
 import { prepInProgress } from './services/tasks'
 import { getMeta, getSettings } from './settings'
+import { aiLimitedUntil } from './ai/limits'
 import { injectionFlags } from './untrusted'
 
 const P = schema.postings
@@ -70,6 +71,19 @@ const appCols = {
   createdAt: A.createdAt,
 }
 
+/**
+ * Open postings that passed the scout's filters and wait for the AI to score them, and whether
+ * anything is scoring them: triage can be switched off, paused by a usage limit, or have no AI to
+ * run on. Closed postings are left out because triage never reads them.
+ */
+export const triageBacklog = () => {
+  const s = getSettings()
+  const waiting = db.select({ n: sql<number>`count(*)` }).from(P).where(and(eq(P.triageStatus, 'pending'), isNull(P.closedAt))).get()?.n ?? 0
+  const limitedUntil = aiLimitedUntil()
+  const state = !s.triage.enabled ? 'off' : !s.ai.default ? 'no-ai' : limitedUntil ? 'limited' : 'on'
+  return { waiting, state, limitedUntil } as const
+}
+
 export const workerStatus = () => {
   const lastScan = getMeta<{ at: string; sources: number; jobs: number; errors: number }>('lastScan')
   const tasks = db.select({ status: schema.tasks.status, n: sql<number>`count(*)` }).from(schema.tasks).where(inArray(schema.tasks.status, ['queued', 'running'])).groupBy(schema.tasks.status).all()
@@ -84,7 +98,7 @@ export const workerStatus = () => {
     scoutEnabled: s.scout.enabled,
     ntfyTopic: s.notify.ntfyTopic,
     ntfyServer: s.notify.ntfyServer,
-    pendingTriage: db.select({ n: sql<number>`count(*)` }).from(P).where(eq(P.triageStatus, 'pending')).get()?.n ?? 0,
+    triage: triageBacklog(),
   }
 }
 
@@ -162,7 +176,8 @@ export const getToday = () => {
 export interface PostingFilters {
   window?: '6h' | '24h' | '72h' | '7d' | '30d' | 'all'
   minFit?: number
-  decision?: 'queue' | 'maybe' | 'skip' | 'triaged' | 'all'
+  /** `pending`: not scored yet. */
+  decision?: 'queue' | 'maybe' | 'skip' | 'triaged' | 'pending' | 'all'
   status?: 'new' | 'starred' | 'dismissed' | 'tracked' | 'all'
   q?: string
   limit?: number
@@ -180,6 +195,7 @@ export const listPostings = (f: PostingFilters) => {
   if (f.minFit) c.push(gte(P.fitScore, f.minFit))
   const d = f.decision ?? 'triaged'
   if (d === 'triaged') c.push(inArray(P.decision, ['queue', 'maybe']))
+  else if (d === 'pending') c.push(eq(P.triageStatus, 'pending'))
   else if (d !== 'all') c.push(eq(P.decision, d))
   const st = f.status ?? 'new'
   if (st !== 'all') c.push(eq(P.userStatus, st))

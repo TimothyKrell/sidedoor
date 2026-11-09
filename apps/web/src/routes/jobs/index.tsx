@@ -6,12 +6,14 @@ import { z } from 'zod'
 import { Empty, PageHeader } from '~/components/app/bits'
 import { PostingCard } from '~/components/app/cards'
 import { Segmented } from '~/components/app/segmented'
+import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
-import { qo } from '~/lib/api'
+import { qo, rpc } from '~/lib/api'
+import { useAction } from '~/lib/use-action'
 
 const Search_ = z.object({
   window: z.enum(['6h', '24h', '72h', '7d', '30d', 'all']).optional().catch(undefined),
-  decision: z.enum(['triaged', 'queue', 'maybe', 'skip', 'all']).optional().catch(undefined),
+  decision: z.enum(['triaged', 'queue', 'maybe', 'skip', 'pending', 'all']).optional().catch(undefined),
   status: z.enum(['new', 'starred', 'dismissed', 'tracked', 'all']).optional().catch(undefined),
   q: z.string().optional().catch(undefined),
   minFit: z.number().optional().catch(undefined),
@@ -39,6 +41,7 @@ const DECISIONS = [
   { value: 'queue', label: 'Strong fit' },
   { value: 'maybe', label: 'Maybe' },
   { value: 'skip', label: 'Skipped' },
+  { value: 'pending', label: 'Not scored' },
 ] as const
 const STATUSES = [
   { value: 'new', label: 'Inbox' },
@@ -79,6 +82,7 @@ function Jobs() {
           <Segmented value={search.decision === 'all' ? 'triaged' : search.decision} options={DECISIONS} onChange={(v) => void set({ decision: v })} />
         </div>
       </div>
+      {search.decision === 'pending' && <ScoringNote />}
       {data && data.length > 0 ? (
         <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
           {data.map((p) => (
@@ -96,6 +100,8 @@ function Jobs() {
             </>
           ) : setup && setup.postings === 0 ? (
             `The scout is reading your ${setup.sources} source${setup.sources === 1 ? '' : 's'} for the first time. Postings show up here in a minute or two.`
+          ) : search.decision === 'pending' ? (
+            'Nothing waiting to be scored in this range.'
           ) : setup && setup.triaged === 0 && search.decision !== 'all' ? (
             'Postings are in, but your AI hasn’t scored any yet. Scored ones show up here.'
           ) : (
@@ -104,6 +110,40 @@ function Jobs() {
         </Empty>
       )}
       {data && data.length >= 150 && <p className="mt-4 text-center text-xs text-muted-foreground">Showing the newest 150. Narrow the filters to see more.</p>}
+    </div>
+  )
+}
+
+/** Above the unscored list: how many are waiting and why they aren't moving. */
+function ScoringNote() {
+  const { data } = useQuery(qo.status())
+  const turnOn = useAction(() => rpc.updateSettings({ section: 'triage', patch: { enabled: true } }), { success: 'Scoring is on. Your AI works through the newest first.' })
+  if (!data) return null
+  const { waiting, state, limitedUntil } = data.triage
+  const n = `${waiting.toLocaleString()} open posting${waiting === 1 ? '' : 's'}`
+  return (
+    <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border bg-card px-3.5 py-2.5 text-sm text-muted-foreground">
+      <p className="min-w-0 flex-1">
+        {state === 'off' ? (
+          <>{n} passed the scout’s filters but aren’t being scored: scoring new postings is turned off.</>
+        ) : state === 'limited' ? (
+          <>{n} wait to be scored. Your AI hit its usage limit; scoring picks up again {limitedUntil ? `at ${new Date(limitedUntil).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'when it resets'}.</>
+        ) : state === 'no-ai' ? (
+          <>
+            {n} wait to be scored, but no AI is set up to score them.{' '}
+            <Link to="/settings" className="font-medium text-foreground underline-offset-2 hover:underline">
+              Settings
+            </Link>
+          </>
+        ) : (
+          <>{n} passed the scout’s filters and wait for your AI to score them, newest first.</>
+        )}
+      </p>
+      {state === 'off' && (
+        <Button size="sm" disabled={turnOn.pending} onClick={() => void turnOn.run(undefined)}>
+          Turn scoring on
+        </Button>
+      )}
     </div>
   )
 }

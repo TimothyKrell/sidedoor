@@ -70,6 +70,14 @@ function Shortcut({ k, className }: { k: string; className?: string }) {
   return <kbd className={cn('font-mono text-[11px]', className)}>{mac ? `⌘${k}` : `Ctrl+${k}`}</kbd>
 }
 
+const TRIAGE_LABEL = { on: 'Scoring', off: 'Scoring off', limited: 'Scoring paused', 'no-ai': 'No AI' } as const
+const TRIAGE_HINT = {
+  on: 'Your AI is scoring new postings. See what’s waiting.',
+  off: 'Scoring new postings is turned off, so these wait until you turn it back on.',
+  limited: 'Your AI hit its usage limit. Scoring picks up again when it resets.',
+  'no-ai': 'No AI is set up to score postings.',
+} as const
+
 function WorkerDot() {
   const { data } = useQuery(qo.status())
   if (!data) return null
@@ -78,9 +86,15 @@ function WorkerDot() {
     <div className="flex items-center gap-2 text-xs text-muted-foreground" title={alive ? 'Worker running' : 'Background work isn’t running. Restart Sidedoor.'}>
       <span className={cn('size-2 rounded-full', alive ? (data.running ? 'animate-pulse bg-primary' : 'bg-success') : 'bg-destructive')} />
       {alive ? (
-        <span className="truncate">
-          {data.running ? `AI: ${data.running} running${data.queued ? `, ${data.queued} queued` : ''}` : data.pendingTriage ? `Triaging ${data.pendingTriage}` : data.lastScan?.at ? <>Checked <TimeAgo iso={data.lastScan.at} /></> : 'Not checked yet'}
-        </span>
+        data.running ? (
+          <span className="truncate">{`AI: ${data.running} running${data.queued ? `, ${data.queued} queued` : ''}`}</span>
+        ) : data.triage.waiting ? (
+          <Link to="/jobs" search={{ decision: 'pending', window: 'all' }} className="truncate hover:text-foreground hover:underline" title={TRIAGE_HINT[data.triage.state]}>
+            {TRIAGE_LABEL[data.triage.state]} · {data.triage.waiting.toLocaleString()} to score
+          </Link>
+        ) : (
+          <span className="truncate">{data.lastScan?.at ? <>Checked <TimeAgo iso={data.lastScan.at} /></> : 'Not checked yet'}</span>
+        )
       ) : (
         <span>Worker offline</span>
       )}

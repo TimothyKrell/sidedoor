@@ -26,7 +26,7 @@ const dbm = () => import('../db/client')
 const PostingFilters = z.object({
   window: z.enum(['6h', '24h', '72h', '7d', '30d', 'all']).optional(),
   minFit: z.number().optional(),
-  decision: z.enum(['queue', 'maybe', 'skip', 'triaged', 'all']).optional(),
+  decision: z.enum(['queue', 'maybe', 'skip', 'triaged', 'pending', 'all']).optional(),
   status: z.enum(['new', 'starred', 'dismissed', 'tracked', 'all']).optional(),
   q: z.string().optional(),
 })

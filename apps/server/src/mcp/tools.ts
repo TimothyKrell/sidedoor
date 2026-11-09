@@ -184,9 +184,9 @@ export const appTools = [
 
   tool(
     'pipeline_overview',
-    "Snapshot of the user's whole job hunt: applications by stage, follow-ups due, packages awaiting review, newest strong postings, running AI tasks. Call this first when asked what's going on.",
+    "Snapshot of the user's whole job hunt: applications by stage, follow-ups due, packages awaiting review, newest strong postings, running AI tasks, and how many postings wait to be scored (and whether scoring is on). Call this first when asked what's going on.",
     {},
-    safe(() => {
+    safe(async () => {
       const byStage = db.select({ stage: schema.applications.stage, n: sql<number>`count(*)` }).from(schema.applications).where(inArray(schema.applications.status, ['potential', 'active', 'on-hold'])).groupBy(schema.applications.stage).all()
       const t = today()
       const dueApps = db.select().from(schema.applications).where(and(isNotNull(schema.applications.nextActionDate), lte(schema.applications.nextActionDate, t), inArray(schema.applications.status, ['potential', 'active']))).orderBy(schema.applications.nextActionDate).limit(25).all()
@@ -203,6 +203,7 @@ export const appTools = [
         awaitingReviewOrSubmit: review.map(appBrief),
         strongPostingsLast72h: hot.map(postingBrief),
         aiTasks: running.map((x) => ({ id: x.id, kind: x.kind, title: x.title, status: x.status })),
+        unscoredPostings: (await import('../queries')).triageBacklog(),
       }
     }),
     ro,
@@ -215,16 +216,16 @@ export const appTools = [
       query: z.string().optional().describe('matches company or title'),
       minFit: z.number().optional(),
       sinceHours: z.number().optional().describe('only postings first seen in the last N hours'),
-      decision: z.enum(['queue', 'maybe', 'skip']).optional(),
+      decision: z.enum(['queue', 'maybe', 'skip', 'unscored']).optional().describe('unscored: passed the scout\'s filters, waiting for triage to score them'),
       includeClosed: z.boolean().optional(),
       limit: z.number().max(100).optional(),
     },
     safe((a) => {
-      const c = [isNotNull(schema.postings.triagedAt)]
+      const c = [a.decision === 'unscored' ? eq(schema.postings.triageStatus, 'pending') : isNotNull(schema.postings.triagedAt)]
       if (!a.includeClosed) c.push(isNull(schema.postings.closedAt))
       if (a.query) c.push(or(like(schema.postings.companyName, `%${a.query}%`), like(schema.postings.title, `%${a.query}%`))!)
       if (a.minFit) c.push(gte(schema.postings.fitScore, a.minFit))
-      if (a.decision) c.push(eq(schema.postings.decision, a.decision))
+      if (a.decision && a.decision !== 'unscored') c.push(eq(schema.postings.decision, a.decision))
       if (a.sinceHours) c.push(gte(schema.postings.firstSeenAt, new Date(Date.now() - a.sinceHours * 3600_000).toISOString()))
       return db.select().from(schema.postings).where(and(...c)).orderBy(desc(schema.postings.firstSeenAt)).limit(a.limit ?? 30).all().map(postingBrief)
     }),
