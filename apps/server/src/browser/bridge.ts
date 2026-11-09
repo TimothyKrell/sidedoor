@@ -97,6 +97,11 @@ export const bridgeUnguardTab = async (id: string) => {
   await call(`/tabs/${encodeURIComponent(id)}/unguard`, {})
 }
 
+/** Put the guard back on a window left open, to fill it again. Fails (404) when it was closed. */
+export const bridgeGuardTab = async (id: string, guard: string) => {
+  await call(`/tabs/${encodeURIComponent(id)}/guard`, { guard })
+}
+
 export const bridgeCloseTab = async (id: string) => {
   await call(`/tabs/${encodeURIComponent(id)}/close`, {})
 }

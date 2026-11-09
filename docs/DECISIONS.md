@@ -156,8 +156,16 @@ current when making a non-obvious call. Open questions for the maintainer live i
 - **A submit that stops for questions leaves its window open.** It used to close, since answering
   fills it again from scratch, but the window vanishing with no word looked like a crash. Now it
   stays, with a banner saying how many questions and what to do, and the Review page's Send step
-  lists them. The next fill of that application closes it first, so windows don't pile up. A
-  batch still closes its windows (`closeWhenDone`, now set for every batch item).
+  lists them. A batch still closes its windows (`closeWhenDone`, now set for every batch item).
+- **The next fill picks up the window a submit left open** instead of starting over in a new one.
+  It puts the submit guard back (`FormTab.guard`, the bridge's `/tabs/:id/guard`), and the fill
+  keeps what's there, fills in the answers and reports every field, instead of a whole new fill
+  (up to 30 minutes, the resume uploaded again) for two answers.
+  Three guards on the pre-submit check: what the window held before is checked with what the fill
+  reports now, since a field on a step behind it can't be seen; a field Sidedoor held back must be
+  reported again (or asked), or the fill starts over in a new window, because an answer you gave
+  confirms its field whatever the window still holds; and a window that's gone, or a new apply URL,
+  means a new window. Values typed in by hand count as the AI's, so Sidedoor asks about them.
 - **Long documents are read in pages, not cut.** AI clients cap tool results, so a 51K-character
   Experience document returned whole lost its newest sections (the end, where confirmed facts are
   appended). `get_profile_doc` returns 20,000-character pages ending at line breaks, with

@@ -159,12 +159,42 @@ separate step, so:
  * left unanswered is followed by a second, short run that clicks submit and checks it went in.
  * A dry run fills the same way and reports the questions, and never submits.
  */
-/** A submit's window left open when it stopped for questions, by application: filling it again closes it. */
-const stopped = new Map<string, FormTab>()
+/**
+ * A submit's window left open when it stopped for questions, by application: the next fill picks
+ * up there. `filled` is what was in it then, so fields on steps behind it still get checked;
+ * `held` are the ones Sidedoor held back, which the next fill must look at again.
+ */
+const stopped = new Map<string, { tab: FormTab; url: string; filled: FillReport['filled']; held: string[] }>()
+
+/** The fill that picks up a window left open: it keeps what's there and reports all of it. */
+const RESUMED_NOTE = `## Filled before
+Sidedoor filled this form once already and stopped before submitting, for questions. They have
+been answered since, in the material below. The window still holds what went in last time, and
+some fields may have been changed by hand since. Don't start over:
+- Skip the resume upload when the form already shows the file attached.
+- Go through every field on the page: fill the empty ones from the material, and fix any that
+  doesn't match it now (an answer that came in since takes precedence).
+- In \`filled\`, report every field that holds a value, the ones filled before this run too, with
+  where its value comes from. A value none of the material gives is "ai_generated": leave it,
+  and Sidedoor will ask about it.
+- If the window no longer shows this application (another site, an error, or a confirmation that
+  it was already sent), change nothing: report "blocked" and say what it shows.`
+const resumedNote = (held: string[]) =>
+  held.length
+    ? `${RESUMED_NOTE}\n\nThese were held back last time and still hold what went in then. Find each one (go back a step\nif the form has steps and lets you), put in the answer the material gives now, and report it in\n\`filled\`:\n${held.map((f) => `- ${f}`).join('\n')}`
+    : RESUMED_NOTE
+
+const sameField = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase()
+
+/** The fill's report, with what an earlier fill of the same window put in fields it didn't report (steps behind it). */
+const withEarlier = (data: FillReport, earlier: FillReport['filled']): FillReport => ({
+  ...data,
+  filled: [...data.filled, ...earlier.filter((e) => !data.filled.some((f) => sameField(f.field, e.field)))],
+})
 
 /** What the window left open after a submit stopped says: why, and what to do. */
 const stoppedBanner = (questions: number) =>
-  `Sidedoor stopped before submitting: ${questions} question${questions === 1 ? '' : 's'} for you. Answer ${questions === 1 ? 'it' : 'them'} in Sidedoor and it fills and submits this again, or finish this form yourself.`
+  `Sidedoor stopped before submitting: ${questions} question${questions === 1 ? '' : 's'} for you. Answer ${questions === 1 ? 'it' : 'them'} in Sidedoor and it picks up here and submits this, or finish this form yourself.`
 
 export const runFillForm = (task: schema.Task): Promise<TaskOutcome> =>
   withFormLock(async () => {
@@ -192,10 +222,25 @@ export const runFillForm = (task: schema.Task): Promise<TaskOutcome> =>
     // Facts for questions the package doesn't cover: the Experience sections closest to this job and package.
     const posting = a.postingId ? db.select({ jd: schema.postings.jd }).from(schema.postings).where(eq(schema.postings.id, a.postingId)).get() : undefined
     const experience = experienceContext(`${a.role}\n${posting?.jd ?? ''}\n${a.packageMd}`, 24_000)
-    // The window an earlier submit left open: this fill starts over in a new one.
-    await stopped.get(a.id)?.close().catch(() => {})
+    // The window an earlier submit left open: pick up there, guarded again. Gone, or for another
+    // URL: start over in a new one.
+    const prior = stopped.get(a.id)
     stopped.delete(a.id)
-    const tab = await openFormTab(url)
+    let resumed = false
+    if (prior && prior.url === url) {
+      try {
+        await prior.tab.guard()
+        resumed = true
+      } catch (e) {
+        console.error(`[fill] the window left open for ${a.companyName} can't be filled again, opening a new one: ${e instanceof Error ? e.message : String(e)}`)
+      }
+    }
+    if (prior && !resumed) await prior.tab.close().catch(() => {})
+    let tab = resumed && prior ? prior.tab : await openFormTab(url)
+    // Picking up the window left open: what it held then, and the fields that must be looked at again.
+    let resuming = resumed && !!prior
+    const earlier = prior?.filled ?? []
+    const recheck = prior?.held ?? []
     let report: FillReport
     let sent: SubmitReport | null = null
     let evidence: Evidence | null = null
@@ -207,57 +252,73 @@ export const runFillForm = (task: schema.Task): Promise<TaskOutcome> =>
     let costUsd = 0
     let audit: AuditEntry[] = []
     try {
-      r = await withBrowserTools(tab.cdpEndpoint, workDir, async () => {
-        const fill = await runJob({
-          job: 'fill',
-          prompt: render('fill-form', {
-            COMPANY: a.companyName,
-            ROLE: a.role,
-            URL: url,
-            RESUME_PDF: pdf.path,
-            PACKAGE: a.packageMd ?? '',
-            SETTLED: settledNote(a),
-            PROFILE: clip(context.profile(), 12_000, "get_profile_doc 'answers' with offset"),
-            EXPERIENCE: experience.text,
-            SUBMIT_NOTE: strict ? SUBMIT_NOTE : '',
-          }),
-          mcp: mcpFor('browser'),
-          schema: FillReport,
-          maxTurns: 120,
-          timeoutMs: 30 * 60_000,
-        })
-        log.push(...(fill.log ?? []))
-        costUsd += fill.costUsd ?? 0
-        const checked = reviewFill(fill.data, a)
-        audit = checked.audit
-        const reviewed = { ...fill, data: checked.report }
-        // The pre-submit audit: nothing goes in with an answer the user hasn't confirmed.
-        if (!submitting || reviewed.data.outcome !== 'ready' || reviewed.data.needsYou.length || submitRefusal(audit)) return reviewed
-        // A last look at the user's rules, with the questions the form itself asked.
-        const check = checkApplicationRules(a.id, { questions: reviewed.data.filled.map((f) => f.field) })
-        if (blockingFindings(check).length) {
-          held = check
+      for (;;) {
+        // The window left open, filled without reporting a field it held back: it may still hold
+        // the old answer, on a step the fill can't see. Start over in a new window instead.
+        let again = false as boolean
+        r = await withBrowserTools(tab.cdpEndpoint, workDir, async () => {
+          const fill = await runJob({
+            job: 'fill',
+            prompt: render('fill-form', {
+              COMPANY: a.companyName,
+              ROLE: a.role,
+              URL: url,
+              RESUME_PDF: pdf.path,
+              PACKAGE: a.packageMd ?? '',
+              SETTLED: settledNote(a),
+              PROFILE: clip(context.profile(), 12_000, "get_profile_doc 'answers' with offset"),
+              EXPERIENCE: experience.text,
+              SUBMIT_NOTE: strict ? SUBMIT_NOTE : '',
+              RESUMED: resuming ? resumedNote(recheck) : '',
+            }),
+            mcp: mcpFor('browser'),
+            schema: FillReport,
+            maxTurns: 120,
+            timeoutMs: 30 * 60_000,
+          })
+          log.push(...(fill.log ?? []))
+          costUsd += fill.costUsd ?? 0
+          const unseen = resuming && fill.data.outcome !== 'blocked' ? recheck.filter((h) => ![...fill.data.filled, ...fill.data.needsYou].some((f) => sameField(f.field, h))) : []
+          if (unseen.length) {
+            again = true
+            log.push(`The window left open didn't show ${unseen.join(', ')}, held back last time: filling a new window instead`)
+            return fill
+          }
+          const checked = reviewFill(resuming ? withEarlier(fill.data, earlier) : fill.data, a)
+          audit = checked.audit
+          const reviewed = { ...fill, data: checked.report }
+          // The pre-submit audit: nothing goes in with an answer the user hasn't confirmed.
+          if (!submitting || reviewed.data.outcome !== 'ready' || reviewed.data.needsYou.length || submitRefusal(audit)) return reviewed
+          // A last look at the user's rules, with the questions the form itself asked.
+          const check = checkApplicationRules(a.id, { questions: reviewed.data.filled.map((f) => f.field) })
+          if (blockingFindings(check).length) {
+            held = check
+            return reviewed
+          }
+          await tab.unguard()
+          allowSubmit(true)
+          db.update(schema.tasks).set({ input: { ...task.input, submitStartedAt: nowIso() } }).where(eq(schema.tasks.id, task.id)).run()
+          const go = await runJob({
+            job: 'fill',
+            prompt: render('submit-form', { COMPANY: a.companyName, ROLE: a.role }),
+            mcp: mcpFor('browser'),
+            schema: SubmitReport,
+            maxTurns: 25,
+            timeoutMs: 8 * 60_000,
+          })
+          log.push(...(go.log ?? []))
+          costUsd += go.costUsd ?? 0
+          sent = go.data
+          evidence = evidenceFrom(await browserSnapshot(), go.data.confirmation)
+          // It reported back: unless it went in, the same task may try again.
+          if (go.data.outcome !== 'submitted') db.update(schema.tasks).set({ input: task.input }).where(eq(schema.tasks.id, task.id)).run()
           return reviewed
-        }
-        await tab.unguard()
-        allowSubmit(true)
-        db.update(schema.tasks).set({ input: { ...task.input, submitStartedAt: nowIso() } }).where(eq(schema.tasks.id, task.id)).run()
-        const go = await runJob({
-          job: 'fill',
-          prompt: render('submit-form', { COMPANY: a.companyName, ROLE: a.role }),
-          mcp: mcpFor('browser'),
-          schema: SubmitReport,
-          maxTurns: 25,
-          timeoutMs: 8 * 60_000,
         })
-        log.push(...(go.log ?? []))
-        costUsd += go.costUsd ?? 0
-        sent = go.data
-        evidence = evidenceFrom(await browserSnapshot(), go.data.confirmation)
-        // It reported back: unless it went in, the same task may try again.
-        if (go.data.outcome !== 'submitted') db.update(schema.tasks).set({ input: task.input }).where(eq(schema.tasks.id, task.id)).run()
-        return reviewed
-      })
+        if (!again) break
+        await tab.close().catch(() => {})
+        resuming = false
+        tab = await openFormTab(url)
+      }
       report = r.data
       // Submitted: no window left behind. A batch's dry run is a report, with nothing to review: its window closes too.
       const s = sent as SubmitReport | null
@@ -268,7 +329,7 @@ export const runFillForm = (task: schema.Task): Promise<TaskOutcome> =>
         closed = true
       } else if (asking) {
         // Stopped for questions: the window stays, saying why, until the answers fill it again.
-        stopped.set(a.id, tab)
+        stopped.set(a.id, { tab, url, filled: report.filled, held: audit.filter((e) => !e.confirmed).map((e) => e.field) })
         message = stoppedBanner(asks)
       }
     } finally {
@@ -279,6 +340,7 @@ export const runFillForm = (task: schema.Task): Promise<TaskOutcome> =>
     const label = `${a.companyName} – ${a.role}`
     const out: FillOutput = { ...report, submitting, dryRun, submit: sent, evidence, audit, rules: held }
     log.push(experienceLogLine(experience))
+    if (resuming) log.push('Picked up the form window the last submit left open, instead of filling a new one')
     const done = { output: JSON.stringify(out), sessionId: r.sessionId, costUsd: costUsd || undefined, log, provider: r.provider, model: r.model }
     const s = sent as SubmitReport | null
     if (s?.outcome === 'submitted') {

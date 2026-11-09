@@ -1,4 +1,4 @@
-import { bridgeCloseTab, bridgeFinishTab, bridgeOpenTab, bridgePdf, bridgeRead, bridgeUnguardTab, hasBridge } from './bridge'
+import { bridgeCloseTab, bridgeFinishTab, bridgeGuardTab, bridgeOpenTab, bridgePdf, bridgeRead, bridgeUnguardTab, hasBridge } from './bridge'
 import { banner, GUARD } from './guard'
 import { assertPublicUrl } from './guard-net'
 import { localFormTab, localPdf, localRead } from './local'
@@ -66,6 +66,8 @@ export interface FormTab {
   finish: (message?: string) => Promise<void>
   /** Lift the submit guard and keep driving the window: only to submit an application Grok Bot sent. */
   unguard: () => Promise<void>
+  /** Put the submit guard back on a window `finish` left open, to fill it again from where it stopped. Fails when the window is gone. */
+  guard: () => Promise<void>
   /** Close the window: the application went in, or it will be filled again. */
   close: () => Promise<void>
 }
@@ -74,7 +76,7 @@ export interface FormTab {
 export const openFormTab = async (url: string): Promise<FormTab> => {
   if (hasBridge()) {
     const t = await bridgeOpenTab(url, GUARD)
-    return { cdpEndpoint: t.cdpEndpoint, finish: (message) => bridgeFinishTab(t.id, banner(message)), unguard: () => bridgeUnguardTab(t.id), close: () => bridgeCloseTab(t.id) }
+    return { cdpEndpoint: t.cdpEndpoint, finish: (message) => bridgeFinishTab(t.id, banner(message)), unguard: () => bridgeUnguardTab(t.id), guard: () => bridgeGuardTab(t.id, GUARD), close: () => bridgeCloseTab(t.id) }
   }
   return localFormTab(url)
 }

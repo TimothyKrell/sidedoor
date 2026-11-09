@@ -13,15 +13,23 @@ vi.mock('../src/ai', async (orig) => ({
     return { text: '', data: ai.replies.shift(), log: ['step'], sessionId: 'sess_1', costUsd: 0.01, provider: 'claude', model: 'm' }
   },
 }))
-const tab = vi.hoisted(() => ({ calls: [] as string[] }))
+// `gone`: the window left open was closed, so it can't be guarded again.
+const tab = vi.hoisted(() => ({ calls: [] as string[], opens: 0, gone: false }))
 vi.mock('../src/browser', async (orig) => ({
   ...(await orig<typeof import('../src/browser')>()),
-  openFormTab: async () => ({
-    cdpEndpoint: 'ws://x',
-    finish: async (message?: string) => void tab.calls.push(message ? `finish: ${message}` : 'finish'),
-    unguard: async () => void tab.calls.push('unguard'),
-    close: async () => void tab.calls.push('close'),
-  }),
+  openFormTab: async () => {
+    tab.opens++
+    return {
+      cdpEndpoint: 'ws://x',
+      finish: async (message?: string) => void tab.calls.push(message ? `finish: ${message}` : 'finish'),
+      unguard: async () => void tab.calls.push('unguard'),
+      guard: async () => {
+        tab.calls.push('guard')
+        if (tab.gone) throw new Error('The form window is closed')
+      },
+      close: async () => void tab.calls.push('close'),
+    }
+  },
 }))
 vi.mock('../src/mcp/playwright', () => ({ withBrowserTools: (_e: string, _d: string, fn: () => Promise<unknown>) => fn() }))
 const pdf = join(mkdtempSync(join(tmpdir(), 'sd-pdf-')), 'Resume.pdf')
@@ -64,6 +72,8 @@ afterEach(() => {
   ai.replies = []
   ai.prompts = []
   tab.calls = []
+  tab.opens = 0
+  tab.gone = false
 })
 
 describe('letting Grok Bot submit', () => {
@@ -148,7 +158,7 @@ describe('the fill that submits', () => {
     const t = requestSubmit(a.id, { dryRun: true })
     ai.replies = [{ outcome: 'needs_you', summary: 'One question.', filled: [], needsYou: [{ field: 'Start date', why: 'not in the package' }] }]
     await run(t.id)
-    expect(tab.calls).toEqual(['finish: Sidedoor stopped before submitting: 1 question for you. Answer it in Sidedoor and it fills and submits this again, or finish this form yourself.'])
+    expect(tab.calls).toEqual(['finish: Sidedoor stopped before submitting: 1 question for you. Answer it in Sidedoor and it picks up here and submits this, or finish this form yourself.'])
     const again = answerFormQuestions(a.id, [{ question: 'Start date', answer: 'Two weeks' }])
     expect(again.input.dryRun).toBe(true)
     expect(getApplication(a.id)!.stage).toBe('review')
@@ -191,11 +201,83 @@ describe('the fill that submits', () => {
       ]),
     )
     expect(submissions(a.id)[0]!.status).toBe('queued')
-    // Filling it again closes the window it left open, then opens a new one.
+    // Filling it again picks up the window it left open, guarded again, instead of opening a new one.
     tab.calls = []
+    ai.prompts = []
+    ai.replies = [filled, { outcome: 'submitted', summary: 'In.', problems: [], confirmation: 'Thanks!' }]
+    const done = await run(again.id)
+    expect(tab.calls).toEqual(['guard', 'unguard', 'close'])
+    expect(tab.opens).toBe(1)
+    expect(ai.prompts[0]).toContain('## Filled before')
+    expect(done.log).toContain('Picked up the form window the last submit left open, instead of filling a new one')
+    expect(getApplication(a.id)!.stage).toBe('applied')
+  })
+
+  test('a window left open that was closed since is filled again in a new one', async () => {
+    allow()
+    const a = app('Pied Piper')
+    ai.replies = [{ outcome: 'needs_you', summary: 'One question.', filled: [], needsYou: [{ field: 'Start date', why: 'not in the package' }] }]
+    await run(requestSubmit(a.id).id)
+    const again = answerFormQuestions(a.id, [{ question: 'Start date', answer: 'Two weeks' }])
+    tab.calls = []
+    tab.opens = 0
+    ai.prompts = []
+    tab.gone = true
     ai.replies = [filled, { outcome: 'submitted', summary: 'In.', problems: [], confirmation: 'Thanks!' }]
     await run(again.id)
-    expect(tab.calls).toEqual(['close', 'unguard', 'close'])
+    expect(tab.calls).toEqual(['guard', 'close', 'unguard', 'close'])
+    expect(tab.opens).toBe(1)
+    expect(ai.prompts[0]).not.toContain('## Filled before')
+  })
+
+  test('picking up a window, what it held before is still checked, and a held-back field it skips means a new window', async () => {
+    allow()
+    const a = app('Vandelay')
+    // Filled on the first step: one from the package, one made up, which Sidedoor holds back.
+    const first = [
+      { field: 'Why us?', value: 'Because.', source: 'package' },
+      { field: 'Years managing teams', value: '12', source: 'ai_generated' },
+    ]
+    ai.replies = [{ outcome: 'ready', summary: 'Filled.', filled: first, needsYou: [] }]
+    await run(requestSubmit(a.id).id)
+    expect(submissions(a.id)[0]!.questions.map((q) => q.question)).toEqual(['Years managing teams'])
+    const again = answerFormQuestions(a.id, [{ question: 'Years managing teams', answer: '8' }])
+    // The fill picks up the window but doesn't say what that field holds now: a new window, filled from the start.
+    tab.calls = []
+    tab.opens = 0
+    ai.prompts = []
+    ai.replies = [
+      { outcome: 'ready', summary: 'Filled the last step.', filled: [{ field: 'Start date', value: 'Two weeks', source: 'package' }], needsYou: [] },
+      { ...filled, filled: [{ field: 'Years managing teams', value: '8', source: 'package' }] },
+      { outcome: 'submitted', summary: 'In.', problems: [], confirmation: 'Thanks!' },
+    ]
+    const done = await run(again.id)
+    expect(ai.prompts[0]).toContain('- Years managing teams')
+    expect(ai.prompts[1]).not.toContain('## Filled before')
+    expect(tab.calls).toEqual(['guard', 'close', 'unguard', 'close'])
+    expect(tab.opens).toBe(1)
+    expect(done.log).toContain("The window left open didn't show Years managing teams, held back last time: filling a new window instead")
+    expect(getApplication(a.id)!.stage).toBe('applied')
+  })
+
+  test('picking up a window, the fields it filled before go into the check with the new ones', async () => {
+    allow()
+    const a = app('Kramerica')
+    ai.replies = [{ outcome: 'ready', summary: 'Filled.', filled: [{ field: 'Why us?', value: 'Because.', source: 'package' }, { field: 'Favorite color', value: 'Blue', source: 'ai_generated' }], needsYou: [] }]
+    await run(requestSubmit(a.id).id)
+    const again = answerFormQuestions(a.id, [{ question: 'Favorite color', answer: 'Green' }])
+    tab.calls = []
+    // It reports the field held back, not the one on the step behind it.
+    ai.replies = [
+      { outcome: 'ready', summary: 'Filled.', filled: [{ field: 'Favorite color', value: 'Green', source: 'package' }], needsYou: [] },
+      { outcome: 'submitted', summary: 'In.', problems: [], confirmation: 'Thanks!' },
+    ]
+    await run(again.id)
+    expect(tab.calls).toEqual(['guard', 'unguard', 'close'])
+    expect(submissions(a.id)[0]!.audit.map((e) => [e.field, e.value, e.confirmed])).toEqual([
+      ['Favorite color', 'Green', true],
+      ['Why us?', 'Because.', true],
+    ])
   })
 
   test("the form's questions are kept as questions, and answering the last one in the app sends it again", async () => {

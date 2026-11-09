@@ -142,26 +142,44 @@ const ensureWindow = async () => {
 // The guard runs in every frame, and many forms live in one (Stripe embeds Greenhouse), so lift it in all of them.
 const everyFrame = (p: Page, js: string) => Promise.all(p.frames().map((f) => f.evaluate(js).catch(() => {})))
 
-export const localFormTab = async (url: string) => {
-  await ensureWindow()
+/** Connect to the form window's browser. The guard's init script and the public-only routes last as long as this connection. */
+const connectForms = async () => {
   const browser = await (await pw()).connectOverCDP(cdpEndpoint)
   const context: BrowserContext = browser.contexts()[0] ?? (await browser.newContext())
   await context.addInitScript(GUARD)
   // While an agent drives the window it stays on the public web (routes end when we disconnect).
   if (process.env.SIDEDOOR_TEST_LOCAL_FORMS !== '1') await context.route('**/*', publicRoute())
+  return { browser, context }
+}
+
+/** Which tab a page is, across connections: Playwright's Page objects end with the connection. */
+const targetOf = async (context: BrowserContext, p: Page) => {
+  const s = await context.newCDPSession(p)
+  try {
+    return (await s.send('Target.getTargetInfo')).targetInfo.targetId
+  } finally {
+    await s.detach().catch(() => {})
+  }
+}
+
+export const localFormTab = async (url: string) => {
+  await ensureWindow()
+  let { browser, context } = await connectForms()
   // Reuse the blank tab of a window that was just launched; otherwise open a new window without
   // activating it (a hidden background tab stops rendering, and clicks there stall).
-  let page = context.pages().find((p) => p.url() === 'about:blank')
-  if (!page) {
+  let blank = context.pages().find((p) => p.url() === 'about:blank')
+  if (!blank) {
     const cdp = await browser.newBrowserCDPSession()
     const opened = context.waitForEvent('page', { timeout: 15_000 })
     await cdp.send('Target.createTarget', { url: 'about:blank', newWindow: true, background: true })
-    page = await opened
+    blank = await opened
     await cdp.detach().catch(() => {})
   }
+  let page: Page = blank
   for (const p of context.pages()) if (p !== page) await everyFrame(p, 'window.__sidedoorFilling = false')
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45_000 })
   await page.evaluate(GUARD).catch(() => {})
+  const target = await targetOf(context, page).catch(() => null)
   // Stay connected while the agent fills: the guard's init script lives as long as this session.
   return {
     cdpEndpoint,
@@ -177,6 +195,22 @@ export const localFormTab = async (url: string) => {
       // Runs after the guard's init script on every new page, so pages after this one aren't guarded either.
       await context.addInitScript('window.__sidedoorFilling = false')
       for (const p of context.pages()) await everyFrame(p, 'window.__sidedoorFilling = false')
+    },
+    guard: async () => {
+      // Never launch a new browser for this: the window it left open is gone with the old one.
+      if (!target || !(await cdpUp())) throw new Error('The form window is closed')
+      const c = await connectForms()
+      let found: Page | undefined
+      for (const p of c.context.pages()) if ((await targetOf(c.context, p).catch(() => null)) === target) found = p
+      if (!found) {
+        await c.browser.close().catch(() => {})
+        throw new Error('The form window is closed')
+      }
+      ;({ browser, context } = c)
+      page = found
+      for (const p of context.pages()) if (p !== found) await everyFrame(p, 'window.__sidedoorFilling = false')
+      // The guard already in the page skips itself, so turn it back on; frames without it get it now.
+      await everyFrame(found, `${GUARD};window.__sidedoorFilling = true;document.getElementById('sidedoor-banner')?.remove()`)
     },
     close: async () => {
       await page.close().catch(() => {})

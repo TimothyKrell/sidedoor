@@ -20,6 +20,7 @@ import { iconPath } from './paths'
  *   POST /tabs              open an application form in its own window, with the submit guard
  *   POST /tabs/:id/finish   lift the guard and show the review banner
  *   POST /tabs/:id/unguard  lift the guard and keep driving it (Grok Bot submitting, when allowed)
+ *   POST /tabs/:id/guard    put the guard back on a window left open, to fill it again (404: it's gone)
  *   POST /tabs/:id/close    close the window (submitted, or to be filled again)
  *   POST /tabs/reset        call off opens in progress and drop the forms session's connections (before a retry)
  *   POST /ping              is the bridge answering
@@ -287,6 +288,22 @@ export const startBridge = async (o: { onNotifyClick: (path: string | undefined)
     await inEveryFrame(wc.mainFrame.framesInSubtree.map((f) => ({ run: () => f.executeJavaScript('window.__sidedoorFilling = false') })))
   }
 
+  /** Put the guard back on a window `finishTab` left open, and take the banner down, so the fill can pick up where it stopped. */
+  const guardTab = async (id: string, guard: string) => {
+    const tab = tabs.get(id)
+    if (!tab || tab.win.isDestroyed()) return null
+    const wc = tab.win.webContents
+    if (!wc.debugger.isAttached()) wc.debugger.attach('1.3')
+    await wc.debugger.sendCommand('Page.enable')
+    if (!tab.guardId) tab.guardId = ((await wc.debugger.sendCommand('Page.addScriptToEvaluateOnNewDocument', { source: guard, runImmediately: true })) as { identifier: string }).identifier
+    // The guard already in each page skips itself, so turn it back on; pages without it get it now.
+    const on = `${guard};window.__sidedoorFilling = true;document.getElementById('sidedoor-banner')?.remove()`
+    await inEveryFrame(wc.mainFrame.framesInSubtree.map((f) => ({ run: () => f.executeJavaScript(on) })))
+    if (tab.win.isDestroyed()) return null
+    tab.win.setTitle('Sidedoor · application form')
+    return { id, cdpEndpoint: `ws://127.0.0.1:${port}/cdp/${id}?token=${token}` }
+  }
+
   /** Destroy, not close: a page's beforeunload could otherwise keep it open. */
   const closeTab = (id: string) => {
     const tab = tabs.get(id)
@@ -346,6 +363,11 @@ export const startBridge = async (o: { onNotifyClick: (path: string | undefined)
         if (fin) {
           await finishTab(fin[1]!, String(body.banner ?? ''))
           return json(res, 200, { ok: true })
+        }
+        const g = path.match(/^\/tabs\/(\w+)\/guard$/)
+        if (g) {
+          const tab = await guardTab(g[1]!, String(body.guard ?? ''))
+          return tab ? json(res, 200, tab) : json(res, 404, { error: 'That form window is closed' })
         }
         const act = path.match(/^\/tabs\/(\w+)\/(unguard|close)$/)
         if (act) {

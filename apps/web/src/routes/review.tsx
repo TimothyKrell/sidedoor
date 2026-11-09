@@ -191,7 +191,7 @@ function StoppedForQuestions({ s, open }: { s: NonNullable<ReviewItem['submissio
       )}
       <div className="text-muted-foreground">
         {open
-          ? `Answer ${open === 1 ? 'it' : 'them'} under Questions and decisions and Sidedoor fills and submits it again. The form is still open in the Sidedoor browser window if you’d rather finish it yourself.`
+          ? `Answer ${open === 1 ? 'it' : 'them'} under Questions and decisions and Sidedoor picks the form up where it stopped and submits it. The form is still open in the Sidedoor browser window if you’d rather finish it yourself.`
           : 'You’ve answered these since. Press Approve & submit to send it again.'}
       </div>
     </div>
