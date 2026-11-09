@@ -177,6 +177,9 @@ some fields may have been changed by hand since. Don't start over:
 - In \`filled\`, report every field that holds a value, the ones filled before this run too, with
   where its value comes from. A value none of the material gives is "ai_generated": leave it,
   and Sidedoor will ask about it.
+- A validation message from the earlier submit attempt can stay on a field after it's fixed, until
+  submit is clicked again (a country picker showing "+1" under "Select a country"). A field that
+  shows its value is filled: report it in \`filled\`, and don't hold the form back for the message.
 - If the window no longer shows this application (another site, an error, or a confirmation that
   it was already sent), change nothing: report "blocked" and say what it shows.`
 const resumedNote = (held: string[]) =>

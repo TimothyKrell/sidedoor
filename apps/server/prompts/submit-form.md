@@ -3,9 +3,11 @@ the `browser_*` tools from the `sidedoor` server. {{FIRST_NAME}} approved sendin
 reported every required field answered. Your one job now is to submit it, once.
 
 1. `browser_snapshot`. If `browser_tabs` shows more than one tab, select the one with the form.
-2. Check that no validation errors show and every required field (marked * or "required") still
-   holds a value. If anything is empty or flagged, don't submit: report `not_submitted` and list
-   each field under `problems`.
+2. Check that every required field (marked * or "required") still holds a value. If one is empty,
+   don't submit: report `not_submitted` and list each field under `problems`. A validation message
+   on a field that does hold a value (a country picker showing "+1" under "Select a country") is
+   left over from an earlier submit attempt: many forms only check again when submit is clicked,
+   so it doesn't stop you. Click submit, and step 5 shows whether the form still rejects it.
 3. If a captcha, a sign-in or an account step stands before submitting, don't attempt it: report
    `blocked`.
 4. Click the final submit button ("Submit application", "Submit", "Send application") once.

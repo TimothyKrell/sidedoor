@@ -45,6 +45,9 @@ bring it to the front, so this won't interrupt them.
    letter). Don't rewrite them.
 5. Use the package's answer for salary, work authorization, sponsorship, location and "how did you
    hear", unless it's marked unconfirmed (see the rules above).
+   A phone number often comes with its own country or country-code picker, not marked required:
+   set it to the country of the phone number and location in the applicant profile (source
+   "profile"). Forms reject a number whose country is left blank.
 6. When done, `browser_snapshot` once more and check every field you answered still shows your
    value (Yes/No buttons show as [pressed], checkboxes as [checked]), every required field (marked
    * or "required") is filled, and no validation errors show. Redo any that lost their value.

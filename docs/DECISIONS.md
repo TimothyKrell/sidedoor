@@ -166,6 +166,12 @@ current when making a non-obvious call. Open questions for the maintainer live i
   reported again (or asked), or the fill starts over in a new window, because an answer you gave
   confirms its field whatever the window still holds; and a window that's gone, or a new apply URL,
   means a new window. Values typed in by hand count as the AI's, so Sidedoor asks about them.
+- **The submit step clicks past a leftover validation message.** Greenhouse keeps "Select a
+  country" on the phone's country picker after it's set, until submit is clicked again (checked on
+  a live form). The submit step stopped on any flagged field, so a picked-up window that had failed
+  once never went in: Cedar asked the same question twice. Now only an empty required field stops
+  it; a click on a form that's still wrong is rejected by the form and reported as before. The fill
+  also sets a phone's country picker from the profile, since it isn't marked required.
 - **Long documents are read in pages, not cut.** AI clients cap tool results, so a 51K-character
   Experience document returned whole lost its newest sections (the end, where confirmed facts are
   appended). `get_profile_doc` returns 20,000-character pages ending at line breaks, with
