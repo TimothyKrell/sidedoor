@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, isNull, notInArray, or, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, gte, inArray, isNull, lt, notInArray, or, sql } from 'drizzle-orm'
 import { Effect } from 'effect'
 import { z } from 'zod'
 import { blockingFindings } from '@sidedoor/shared/rules'
@@ -9,6 +9,7 @@ import { newId, nowIso } from '../ids'
 import { notifyPromise } from '../notify'
 import { AGGREGATOR_KINDS, ATS_LINK, detectAts, detectSource, fetchJson, fetchText, isAdapterKind, parseRss, probeBoard } from '../scout/adapters'
 import { readyToScore, scan } from '../scout/scan'
+import { appQueueScore } from '../queries'
 import { getApplication, setStage, trackPosting, updateApplication } from '../services/applications'
 import { answersFor, askedBefore } from '../services/questions'
 import { checkApplicationRules } from '../services/rules'
@@ -446,6 +447,30 @@ const addSource = (v: { name: string; kind: string; board: string; url: string |
     .run().changes > 0
 
 /** Find and register a company's ATS board from a careers URL or by probing slug guesses. */
+/** Background prep's place in the queue: 0-9 from the work-on-first score, below what the user asks for (10), so the review cap still applies. */
+export const prepPriority = (score: number) => Math.max(0, Math.min(9, Math.floor(score / 10)))
+
+/**
+ * Background prep runs in work-on-first order (queue-score.ts): newest listing first, then fit and
+ * pay. A listing's newness changes by the hour, so the waiting prep is re-scored as it waits.
+ */
+export const refreshPrepOrder = () => {
+  const T = schema.tasks
+  const queued = db.select({ id: T.id, applicationId: T.applicationId, priority: T.priority }).from(T).where(and(eq(T.kind, 'prep'), eq(T.status, 'queued'), lt(T.priority, 10))).all()
+  let moved = 0
+  for (const t of queued) {
+    const a = t.applicationId ? getApplication(t.applicationId) : undefined
+    if (!a) continue
+    const p = a.postingId ? db.select({ postedAt: schema.postings.postedAt, compMin: schema.postings.compMin, compMax: schema.postings.compMax }).from(schema.postings).where(eq(schema.postings.id, a.postingId)).get() : undefined
+    const priority = prepPriority(appQueueScore(a, p ?? null))
+    if (priority !== t.priority) {
+      db.update(T).set({ priority }).where(eq(T.id, t.id)).run()
+      moved++
+    }
+  }
+  return moved
+}
+
 const SWEEP_EVERY_DAYS = 7
 
 /**

@@ -1,4 +1,5 @@
 import { tool } from './define'
+import { appQueueScore } from '../queries'
 import { and, desc, eq, gte, inArray, isNotNull, isNull, like, lte, ne, or, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { logActivity } from '../activity'
@@ -122,6 +123,8 @@ const appBrief = (a: schema.Application) => ({
   url: a.jobUrl,
   rank: a.rank,
   shot: a.shot,
+  /** Work-on-first score 0-100: how new the listing is counts most, then fit and pay. The pipeline sorts by it after the user's own ranking. */
+  queueScore: appQueueScore(a, null),
   postedAt: a.postedAt,
   /** Where postedAt came from ('greenhouse:first_published', 'json-ld:datePosted', 'scout:ashby') and whether it's the board's own date. */
   postedAtSource: a.postedAtSource,

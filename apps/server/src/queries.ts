@@ -4,6 +4,7 @@ import { db, schema } from './db/client'
 import { today } from './ids'
 import { linkedinUrl } from '@sidedoor/shared/linkedin'
 import { xUrl } from '@sidedoor/shared/x'
+import { queueScore } from '@sidedoor/shared/queue-score'
 import { resumeLines } from '@sidedoor/shared/resume'
 import { isWritten } from './services/documents'
 import { baseResume, getResume, resumeForApplication } from './services/resumes'
@@ -102,6 +103,14 @@ export const workerStatus = () => {
   }
 }
 
+/** Work-on-first score for an application (see queue-score.ts): its listing's date and pay, else its own. */
+export const appQueueScore = (
+  a: { fitScore: number | null; postedAt: string | null; compMin: number | null; compMax: number | null },
+  listing: { postedAt: string | null; compMin: number | null; compMax: number | null } | null,
+  salaryMin = getSettings().search.salaryMin,
+) =>
+  queueScore({ fitScore: a.fitScore, postedAt: listing?.postedAt ?? a.postedAt, compMin: a.compMin ?? listing?.compMin, compMax: a.compMax ?? listing?.compMax }, { salaryMin })
+
 export const getToday = () => {
   const t = today()
   const s = getSettings()
@@ -119,10 +128,11 @@ export const getToday = () => {
       return Number.isNaN(posted) || Date.now() - posted < 5 * 86400_000
     })
     .slice(0, 12)
+  // Your order first (the pipeline's), then work-on-first: newest listing, fit and pay together.
   const review = db.select(appCols).from(A).where(and(inArray(A.stage, ['review', 'approved']), inArray(A.status, ['potential', 'active', 'on-hold'])))
-    // Your order first (the pipeline's), then your AI's odds, then fit.
-    .orderBy(sql`${A.rank} is null`, A.rank, sql`${A.shot} is null`, desc(A.shot), desc(A.fitScore))
     .all()
+    .map((a) => ({ ...a, queueScore: appQueueScore(a, null) }))
+    .sort((x, y) => (x.rank ?? Infinity) - (y.rank ?? Infinity) || y.queueScore - x.queueScore)
   const prep = prepInProgress()
   const preparing = prep.size ? db.select(appCols).from(A).where(inArray(A.id, [...prep.keys()])).all().map((a) => ({ ...a, prep: prep.get(a.id)! })) : []
   const dueApps = db
@@ -245,7 +255,15 @@ export const listApplications = () => {
     return a.postedAt ? { postedAt: a.postedAt, firstSeenAt: a.createdAt, compText: null, compMin: null, compMax: null } : null
   }
   const prep = prepInProgress()
-  return { open: open.map((a) => ({ ...a, listing: listingFor(a), prep: prep.get(a.id) ?? null })), closed, peopleCount }
+  const salaryMin = getSettings().search.salaryMin
+  return {
+    open: open.map((a) => {
+      const listing = listingFor(a)
+      return { ...a, listing, prep: prep.get(a.id) ?? null, queueScore: appQueueScore(a, listing, salaryMin) }
+    }),
+    closed,
+    peopleCount,
+  }
 }
 
 /** An application's posting. Older applications (imported, or added by hand) have no posting id; their job URL usually matches one. */

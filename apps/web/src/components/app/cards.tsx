@@ -114,6 +114,8 @@ export interface AppLike {
   /** Your AI's estimate of the chance it gets you an interview (0-100), and why. */
   shot?: number | null
   shotWhy?: string | null
+  /** Work-on-first score (0-100): newest listing counts most, then fit and pay. */
+  queueScore?: number
 }
 
 /** What the AI is doing with an application, in a word or two. */
@@ -143,8 +145,13 @@ export function AppRow({ a, showStage = true, showListing = false }: { a: AppLik
           a.nextAction && <div className="mt-0.5 truncate text-xs text-muted-foreground">{a.nextAction}</div>
         )}
         {/* One wrapping meta row, so dates never sit on top of each other in narrow columns. */}
-        {(hasListing || a.nextActionDate || a.shot != null) && (
+        {(hasListing || a.nextActionDate || a.shot != null || (showListing && a.queueScore != null)) && (
           <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-xs">
+            {showListing && a.queueScore != null && (
+              <span title="Work on these first: a new listing counts most, then fit and pay" className="text-muted-foreground">
+                Priority <span className="font-medium text-foreground tabular-nums">{a.queueScore}</span>
+              </span>
+            )}
             {a.shot != null && (
               <span title={a.shotWhy ?? undefined} className="text-muted-foreground">
                 Odds <span className="font-medium text-foreground tabular-nums">{a.shot}%</span>

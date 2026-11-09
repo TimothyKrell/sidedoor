@@ -3,7 +3,7 @@ import { Duration, Effect, Fiber, Ref, Schedule } from 'effect'
 import { logActivity } from '../activity'
 import { grokBotTick } from './handoff'
 import { advanceBatches } from './submit-batch'
-import { claimNextTask, executeTask, runTriage } from './tasks'
+import { claimNextTask, executeTask, refreshPrepOrder, runTriage } from './tasks'
 import { db, schema } from '../db/client'
 import { nowIso, today } from '../ids'
 import { notify } from '../notify'
@@ -175,6 +175,7 @@ const scheduleTick = Effect.gen(function* () {
     enqueueTask('discover', 'Discover new companies and job boards')
   }
   if (aiReady) queueBriefs()
+  refreshPrepOrder()
   // Listing checks call the ATSs' public APIs, a few each half hour; not AI work, so no AI needed.
   if (!refreshRunning() && due('lastListingCheck', 30 * 60_000)) {
     setMeta('lastListingCheck', nowIso())

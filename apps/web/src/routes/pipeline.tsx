@@ -39,13 +39,13 @@ type OpenApp = Awaited<ReturnType<typeof rpc.applications>>['open'][number]
 
 /**
  * A column's order. The ones you (or your AI) ranked come first, in your order. The rest follow:
- * what your AI is working on (running, then waiting), then high priority, then best odds, then best fit.
+ * what your AI is working on (running, then waiting), then work-on-first (newest listing, then fit
+ * and pay; queue-score.ts), then best fit.
  */
 const columnOrder = (a: OpenApp, b: OpenApp) =>
   (a.rank ?? Infinity) - (b.rank ?? Infinity) ||
   working(b) - working(a) ||
-  (a.priority === 'high' ? -1 : 0) - (b.priority === 'high' ? -1 : 0) ||
-  (b.shot ?? -1) - (a.shot ?? -1) ||
+  b.queueScore - a.queueScore ||
   (b.fitScore ?? 0) - (a.fitScore ?? 0)
 
 /** The card's place among the ranked ones in its column (1 = first), for the "#n" on it. */

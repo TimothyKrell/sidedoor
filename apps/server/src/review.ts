@@ -3,7 +3,7 @@ import { decisionsOf } from '@sidedoor/shared/decisions'
 import { reviewBucket, type ReviewFacts, writingItems } from '@sidedoor/shared/review'
 import { db, schema } from './db/client'
 import { submissions } from './jobs/fill-form'
-import { matchStale } from './queries'
+import { appQueueScore, matchStale } from './queries'
 import { listQuestions } from './services/questions'
 import { enqueueTask } from './services/tasks'
 
@@ -11,11 +11,10 @@ const A = schema.applications
 const T = schema.tasks
 const AI_KINDS: schema.TaskKind[] = ['prep', 'match', 'tune']
 
-/** A rank you (or your AI) set first, then high priority, best odds, best fit: the pipeline's order. */
+/** A rank you (or your AI) set first, then work on first (newest listing, fit and pay), then best fit: the pipeline's order. */
 const order = (a: schema.Application, b: schema.Application) =>
   (a.rank ?? Infinity) - (b.rank ?? Infinity) ||
-  (a.priority === 'high' ? -1 : 0) - (b.priority === 'high' ? -1 : 0) ||
-  (b.shot ?? -1) - (a.shot ?? -1) ||
+  appQueueScore(b, null) - appQueueScore(a, null) ||
   (b.fitScore ?? 0) - (a.fitScore ?? 0)
 
 /** Applications with a package that haven't gone out yet. */

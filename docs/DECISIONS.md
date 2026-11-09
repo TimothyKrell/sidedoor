@@ -644,3 +644,11 @@ current when making a non-obvious call. Open questions for the maintainer live i
   or an old posting date isn't a fit gap.
 - **Outreach drafts come when asked.** Drafting is a long AI run per application and most drafts
   went unused, so research no longer queues it. Settings → AI has a switch to turn it back on.
+- **Work on the newest first.** Applying in a listing's first days gets you ahead of the pile, so the
+  order you work in weighs newness most: half the work-on-first score is how new the listing is
+  (halving every four days), a quarter fit, a quarter pay against the user's minimum salary. A
+  missing date, fit or salary gets a middling-low value, so an unpublished salary doesn't bury a job
+  but doesn't beat one that shows a good one (`shared/queue-score.ts`). The pipeline, the review
+  list and background prep all go by it, after any order the user set by hand. Newness changes by
+  the hour, so waiting prep is re-scored every minute. Its priority stays 0-9, under the 10 that
+  user-requested work gets, so the cap on packages awaiting review still holds.
