@@ -65,6 +65,10 @@ description; "Remote" alone doesn't mean remote from where they live.
 - "unclear": "Remote" with no country, or the company is based elsewhere and nothing says whether
   their location is accepted. Say what you'd want confirmed, and note any hint either way.
 
+A recruiting firm, staffing agency or job site posting a role for a client it doesn't name
+("partner company", "our client") isn't the employer's posting: skip it, and say in the summary
+that it's an agency repost. A role at an agency that is itself the employer is scored as usual.
+
 Rules: "skip" if location is "no" (whatever the fit), it's off-target, it hits a dealbreaker, or it
 duplicates an existing tracker application (the same role) or conflicts with one under their criteria (say so in summary).
 An "unclear" location is at most "maybe"; score the fit as if it were eligible. "queue" only for

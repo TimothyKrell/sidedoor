@@ -642,6 +642,7 @@ current when making a non-obvious call. Open questions for the maintainer live i
   company. A role that scores above the application already open there is flagged as a better fit.
   Scoring is told that a different role at the same company isn't a duplicate, and that missing pay
   or an old posting date isn't a fit gap.
+- **Agency reposts are skipped.** A recruiting firm posting for an unnamed client (Jobgether lists thousands on its own board, and it sits on VC boards as a portfolio company) passes every "original" check, since the board is the agency's own. Scoring is told to skip those and say so; the role, if it's real, turns up on the employer's board.
 - **Outreach drafts come when asked.** Drafting is a long AI run per application and most drafts
   went unused, so research no longer queues it. Settings → AI has a switch to turn it back on.
 - **Work on the newest first.** Applying in a listing's first days gets you ahead of the pile, so the
