@@ -171,8 +171,10 @@ page and agents agree.
 
 1. **Resume.** A `tune` task (`jobs/tune.ts`, `prompts/tune.md`) runs after every prep, or from Tune
    on the page. The AI edits and re-checks until the match reaches 95 or stops rising, then may
-   propose questions in its output; `worthAsking` keeps at most two, on a must-have that's short,
-   and none at a match of 90 or more. Sidedoor measures the start and finish itself and restores
+   propose questions that could raise it further; `worthAsking` keeps at most four, on
+   requirements still short, most points first. They're optional and shown folded under the
+   resume, not with step 2. Answers go to Experience; answers since the last pass let a re-tune run
+   past 95. Sidedoor measures the start and finish itself and restores
    the resume if the pass left it lower.
 2. **Questions and decisions.** The question store, and the package's "Needs your decision" list.
    Talk it through opens the application's own chat (`applicationThread`), which starts with what

@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { ArrowRight, Check, CheckCircle2, Circle, FileText, ListChecks, Loader2, MessageSquare, Sparkles, Undo2, WandSparkles } from 'lucide-react'
+import { ArrowRight, Check, CheckCircle2, ChevronRight, Circle, FileText, ListChecks, Loader2, MessageSquare, Sparkles, Undo2, WandSparkles } from 'lucide-react'
 import { type ReactNode, useState } from 'react'
 import { toast } from 'sonner'
 import { decisionsOf } from '@sidedoor/shared/decisions'
@@ -14,6 +14,7 @@ import { cn } from '~/lib/utils'
 import { Section, TimeAgo } from './bits'
 import { useChat } from './chat'
 import { MatchRing } from './match'
+import { type QuestionGroup, QuestionList } from './questions'
 
 type Detail = ApplicationDetail
 export type ReviewItem = Awaited<ReturnType<typeof rpc.reviewQueue>>[number]
@@ -74,12 +75,19 @@ export function ReviewStep({ n, title, done, working, note, children }: { n: num
   )
 }
 
-/** The match, what the AI did to raise it, and the way into the chat about it. */
-export function ResumeStep({ d, working }: { d: Detail; working: boolean }) {
+/** Optional questions tuning left about requirements still short: kept out of the way, under the resume. */
+export const isTuneQuestion = (g: QuestionGroup) => g.askedBy === 'tune' && g.optional
+
+/** The match, what the AI did to raise it, the questions that could raise it further, and the way into the chat about it. */
+export function ResumeStep({ d, working, questions }: { d: Detail; working: boolean; questions: QuestionGroup[] }) {
   const a = d.application
   const talk = useApplicationChat(a.id)
   const tune = useAction((v: { kind: 'tune'; applicationId: string }) => startTaskFn({ data: v }), { success: 'Your AI is working on the resume' })
+  const [asking, setAsking] = useState(false)
   const t = a.tuneJson
+  const asks = questions.filter((g) => isTuneQuestion(g) && g.status === 'open')
+  // Answered since the last pass: what a new pass has to work with.
+  const fresh = questions.filter((g) => isTuneQuestion(g) && g.status === 'answered' && (!t || (g.answeredAt ?? '') > t.at)).length
   const failed = d.tasks.find((x) => x.kind === 'tune')?.status === 'failed' ? d.tasks.find((x) => x.kind === 'tune') : null
   const m = a.matchJson
   return (
@@ -110,8 +118,8 @@ export function ResumeStep({ d, working }: { d: Detail; working: boolean }) {
         <Button size="sm" variant={t ? 'default' : 'outline'} onClick={() => void talk()}>
           <MessageSquare /> Talk it through
         </Button>
-        <Button size="sm" variant={t ? 'outline' : 'default'} disabled={working || tune.pending} onClick={() => void tune.run({ kind: 'tune', applicationId: a.id })}>
-          <WandSparkles /> {t ? 'Tune again' : 'Tune resume'}
+        <Button size="sm" variant={t && !fresh ? 'outline' : 'default'} disabled={working || tune.pending} onClick={() => void tune.run({ kind: 'tune', applicationId: a.id })}>
+          <WandSparkles /> {fresh ? `Tune again with ${fresh} answer${fresh === 1 ? '' : 's'}` : t ? 'Tune again' : 'Tune resume'}
         </Button>
         {d.resume && (
           <Button asChild size="sm" variant="outline">
@@ -126,6 +134,20 @@ export function ResumeStep({ d, working }: { d: Detail; working: boolean }) {
           </Link>
         </Button>
       </div>
+      {asks.length > 0 && (
+        <div className="space-y-2">
+          <button type="button" className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground" onClick={() => setAsking(!asking)}>
+            <ChevronRight className={cn('size-3.5 transition-transform', asking && 'rotate-90')} />
+            {asks.length} question{asks.length === 1 ? '' : 's'} that could raise the match
+          </button>
+          {asking && (
+            <>
+              <p className="text-xs text-muted-foreground">Optional: it can go without them. Answers are kept in your Experience, so later tunings use them too, here and on other jobs.</p>
+              <QuestionList groups={asks} showApplications={false} />
+            </>
+          )}
+        </div>
+      )}
     </div>
   )
 }

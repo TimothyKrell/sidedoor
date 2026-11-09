@@ -478,9 +478,13 @@ current when making a non-obvious call. Open questions for the maintainer live i
   question always holds, even when it reads like a fact about the past.
 - **Tuning's limit is in code.** The prompt said "at most 5" and got exactly 5 on about half the
   applications, including ones already at 93. The AI now proposes questions in its output and
-  `worthAsking` keeps two at most, tied to a must-have that's still short, and none at 90 or above.
-  The number is a judgment call: past 90 the resume is good enough that a few more points don't
-  repay the interruption.
+  `worthAsking` keeps four at most, each tied to a requirement still short, the most points first.
+  They were two, must-haves only and none at 90 or above, while they sat with the questions that
+  hold an application. Now they're folded under the resume on the Review page ("N questions that
+  could raise the match"), so they interrupt nothing, and the user asked for more of them: questions
+  an interviewer would ask to draw out a true line, not a list of the posting's tools. An answer is
+  kept in Experience, so it feeds every later pass, and answers given since the last pass let a
+  re-tune ("Tune again with N answers") run past the 95 target instead of stopping at once.
 - **Passing on a question is remembered.** Keys match wording only, and the wording changes with
   each posting, so the same few topics came back (meetup talks four times, GCP and BigQuery four
   times, and topics already dismissed). Prep and tuning now see what's been asked and not answered,
