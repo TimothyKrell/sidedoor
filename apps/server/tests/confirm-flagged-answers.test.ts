@@ -243,6 +243,21 @@ describe('self-identification questions', () => {
     const r = check([{ field: 'Are you Hispanic/Latino?', value: 'Decline To Self Identify', source: 'standard_answer' }])
     expect(r.audit[0]).toMatchObject({ source: 'unconfirmed', confirmed: false })
   })
+
+  test('a bare Yes/No goes in when Standard answers start that question\'s answer with it', () => {
+    const std = `| Field | Answer |\n|---|---|\n| EEO | Race/ethnicity: White. Hispanic/Latino: **No** (pick "No"). Veteran status: **not a veteran**. Disability: decline to self-identify |\n`
+    const r = check(
+      [
+        { field: 'Are you Hispanic/Latino?', value: 'No', source: 'standard_answer' },
+        { field: 'Are you a protected veteran?', value: 'No', source: 'standard_answer' },
+        { field: 'Are you Hispanic or Latino?', value: 'Yes', source: 'standard_answer' },
+        { field: 'Do you have a disability?', value: 'No', source: 'standard_answer' },
+      ],
+      '# Package\n',
+      std,
+    )
+    expect(r.audit.map((e) => e.confirmed)).toEqual([true, true, false, false])
+  })
 })
 
 describe('open questions in the package', () => {

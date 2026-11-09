@@ -240,6 +240,14 @@ export const standardStatements = (doc: string) => {
 /** Forms offer "Man" where Standard answers say "Male". Only the whole answer: "Trans man" isn't "Male". */
 const plainSex = (value: string) => value.trim().replace(/^man$/i, 'male').replace(/^woman$/i, 'female')
 
+/** A bare "Yes" or "No" (or "not a veteran"), as 'yes' / 'no'; null for anything that says more. */
+const polarity = (s: string) => {
+  const t = s.replace(/\*/g, '').trim()
+  if (/^yes\b/i.test(t)) return 'yes'
+  if (/^(no|not)\b/i.test(t)) return 'no'
+  return null
+}
+
 /** Standard answers say this, in so many words, for this kind of question. */
 const explicitlyStandard = (kinds: string[], value: string, statements: { label: string; answer: string }[]) => {
   const v = keyWords(plainSex(value))
@@ -247,6 +255,8 @@ const explicitlyStandard = (kinds: string[], value: string, statements: { label:
     if (!demographicKinds(s.label).some((k) => kinds.includes(k))) return false
     if (/\bconfirm\b/i.test(s.answer)) return false
     if (DECLINE.test(value)) return DECLINE.test(s.answer)
+    // "Yes" and "No" are all stop words: a form's bare "No" matches an answer that starts "No".
+    if (!v.size) return polarity(value) !== null && polarity(value) === polarity(s.answer)
     const a = keyWords(s.answer)
     return covers(v, a) || covers(a, v)
   })
