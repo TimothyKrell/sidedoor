@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { ArrowRight, Check, CheckCircle2, ChevronRight, Circle, FileText, ListChecks, Loader2, MessageSquare, Sparkles, Undo2, WandSparkles } from 'lucide-react'
-import { type ReactNode, useState } from 'react'
+import { type ReactNode, useEffect, useState, useSyncExternalStore } from 'react'
 import { toast } from 'sonner'
 import { decisionsOf } from '@sidedoor/shared/decisions'
 import { BUCKET_META, type ReviewBucket, TUNE_STOP_LABEL, type WritingItem, writingItems } from '@sidedoor/shared/review'
@@ -162,34 +162,63 @@ const VOICES: { voice: Voice; label: string; title: string }[] = [
   { voice: 'milady', label: 'Milady', title: 'Lowercase, the way a long-time poster writes. For crypto companies only' },
 ]
 
+/**
+ * Writing help in flight or back, by `${applicationId}:${key}`. It lives outside the row so leaving
+ * the page doesn't lose it: come back and it's still working, or what it wrote is waiting in the box.
+ */
+type Assist = { mode: Help; from: string; result?: { text: string; note: string | null } }
+const assists = new Map<string, Assist>()
+const assistListeners = new Set<() => void>()
+const assistChanged = () => assistListeners.forEach((l) => l())
+const subscribeAssists = (l: () => void) => {
+  assistListeners.add(l)
+  return () => void assistListeners.delete(l)
+}
+
 function WritingRow({ id, item }: { id: string; item: WritingItem }) {
-  const [text, setText] = useState(item.blank ? '' : item.text)
-  const [open, setOpen] = useState(!item.done)
+  const k = `${id}:${item.key}`
+  const entry = useSyncExternalStore(subscribeAssists, () => assists.get(k))
+  const busy = !!entry && !entry.result
+  const mode = busy ? entry.mode : null
+  const [text, setText] = useState(() => assists.get(k)?.from ?? (item.blank ? '' : item.text))
+  const [open, setOpen] = useState(!item.done || assists.has(k))
+  const qc = useQueryClient()
   const save = useAction((v: { done: boolean; text?: string }) => rpc.setWriting({ id, key: item.key, ...v }))
-  const assist = useAction((mode: Help) =>
-    mode === 'draft' || mode === 'cleanup'
-      ? rpc.assistWriting({ id, key: item.key, mode, text })
-      : mode.startsWith('tpl:')
-        ? rpc.restyleCoverLetter({ id, template: mode.slice(4), text })
-        : rpc.restyleCoverLetter({ id, voice: mode as Voice, text }),
-  )
   const { data: settings } = useQuery({ ...qo.settings(), enabled: item.key === 'cover-letter' })
   const templates = settings?.settings.coverLetters.templates ?? []
   const defaultTemplate = settings?.settings.coverLetters.defaultTemplate
   const [undo, setUndo] = useState<string | null>(null)
-  const [mode, setMode] = useState<Help | null>(null)
   const [note, setNote] = useState<string | null>(null)
   const changed = text.trim() !== item.text.trim()
   /** Fills the box and saves nothing. What was there stays one click away. */
   const help = async (m: Help) => {
-    setMode(m)
-    const r = await assist.run(m)
-    setMode(null)
-    if (!r) return
-    setUndo(text)
-    setText(r.text)
-    setNote(r.note)
+    if (assists.has(k)) return
+    assists.set(k, { mode: m, from: text })
+    assistChanged()
+    try {
+      const r = await (m === 'draft' || m === 'cleanup'
+        ? rpc.assistWriting({ id, key: item.key, mode: m, text })
+        : m.startsWith('tpl:')
+          ? rpc.restyleCoverLetter({ id, template: m.slice(4), text })
+          : rpc.restyleCoverLetter({ id, voice: m as Voice, text }))
+      assists.set(k, { mode: m, from: text, result: { text: r.text, note: r.note } })
+      void qc.invalidateQueries()
+    } catch (e) {
+      assists.delete(k)
+      toast.error(e instanceof Error ? e.message : String(e))
+    }
+    assistChanged()
   }
+  // Whichever row is showing when the result lands (this one, or this one remounted) puts it in the box.
+  useEffect(() => {
+    if (!entry?.result) return
+    assists.delete(k)
+    setUndo(entry.from)
+    setText(entry.result.text)
+    setNote(entry.result.note)
+    setOpen(true)
+    assistChanged()
+  }, [entry, k])
   return (
     <li className="py-3 first:pt-0 last:pb-0">
       <div className="flex items-start gap-2.5">
@@ -203,23 +232,23 @@ function WritingRow({ id, item }: { id: string; item: WritingItem }) {
       </div>
       {open && (
         <div className="mt-2 space-y-2 pl-6.5">
-          <Textarea value={text} disabled={assist.pending} onChange={(e) => setText(e.target.value)} rows={Math.min(14, Math.max(4, Math.ceil(text.length / 90)))} placeholder="Ramble here in your own words, then clean it up. Or have your AI draft it." />
+          <Textarea value={text} disabled={busy} onChange={(e) => setText(e.target.value)} rows={Math.min(14, Math.max(4, Math.ceil(text.length / 90)))} placeholder="Ramble here in your own words, then clean it up. Or have your AI draft it." />
           <div className="flex flex-wrap items-center gap-2">
-            <Button size="sm" variant="outline" className="h-7 text-xs" disabled={assist.pending} onClick={() => void help('draft')} title="Writes it from your Experience and stories, building on anything in the box">
+            <Button size="sm" variant="outline" className="h-7 text-xs" disabled={busy} onClick={() => void help('draft')} title="Writes it from your Experience and stories, building on anything in the box">
               {mode === 'draft' ? <Loader2 className="animate-spin" /> : <WandSparkles />} {text.trim() ? 'Redraft it' : 'Draft it for me'}
             </Button>
-            <Button size="sm" variant="outline" className="h-7 text-xs" disabled={assist.pending || !text.trim()} onClick={() => void help('cleanup')} title="Organizes what you wrote and tidies it up, without adding anything you didn't say">
+            <Button size="sm" variant="outline" className="h-7 text-xs" disabled={busy || !text.trim()} onClick={() => void help('cleanup')} title="Organizes what you wrote and tidies it up, without adding anything you didn't say">
               {mode === 'cleanup' ? <Loader2 className="animate-spin" /> : <Sparkles />} Clean up my answer
             </Button>
             {item.key === 'cover-letter' &&
               VOICES.map((v) => (
-                <Button key={v.voice} size="sm" variant="outline" className="h-7 text-xs" disabled={assist.pending} onClick={() => void help(v.voice)} title={v.title}>
+                <Button key={v.voice} size="sm" variant="outline" className="h-7 text-xs" disabled={busy} onClick={() => void help(v.voice)} title={v.title}>
                   {mode === v.voice && <Loader2 className="animate-spin" />} {v.label}
                 </Button>
               ))}
             {item.key === 'cover-letter' &&
               templates.map((t) => (
-                <Button key={t.id} size="sm" variant="outline" className="h-7 text-xs" disabled={assist.pending} onClick={() => void help(`tpl:${t.id}`)} title={`Writes it from your template "${t.name}", keeping your own text as you wrote it`}>
+                <Button key={t.id} size="sm" variant="outline" className="h-7 text-xs" disabled={busy} onClick={() => void help(`tpl:${t.id}`)} title={`Writes it from your template "${t.name}", keeping your own text as you wrote it`}>
                   {mode === `tpl:${t.id}` ? <Loader2 className="animate-spin" /> : <FileText />} {t.name}
                   {t.id === defaultTemplate && <span className="text-muted-foreground">(default)</span>}
                 </Button>
@@ -231,7 +260,7 @@ function WritingRow({ id, item }: { id: string; item: WritingItem }) {
                 </Link>
               </Button>
             )}
-            {undo !== null && !assist.pending && (
+            {undo !== null && !busy && (
               <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => { setText(undo); setUndo(null); setNote(null) }}>
                 <Undo2 /> Undo
               </Button>
