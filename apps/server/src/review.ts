@@ -32,12 +32,14 @@ export const reviewQueue = () => {
     for (const x of q.applications) counts.set(x.id, (counts.get(x.id) ?? 0) + 1)
   }
   const sent = new Map(submissions().map((s) => [s.applicationId, s]))
-  const closedAt = new Map(db.select({ id: schema.postings.id, closedAt: schema.postings.closedAt }).from(schema.postings).where(inArray(schema.postings.id, apps.flatMap((a) => (a.postingId ? [a.postingId] : [])))).all().map((p) => [p.id, p.closedAt]))
+  const P = schema.postings
+  const postings = new Map(db.select({ id: P.id, closedAt: P.closedAt, postedAt: P.postedAt, firstSeenAt: P.firstSeenAt }).from(P).where(inArray(P.id, apps.flatMap((a) => (a.postingId ? [a.postingId] : [])))).all().map((p) => [p.id, p]))
 
   return apps.map((a) => {
     const mine = active.filter((t) => t.applicationId === a.id)
     const writing = writingItems(a.packageMd, a.writingChecks)
     const s = sent.get(a.id) ?? null
+    const p = a.postingId ? postings.get(a.postingId) : undefined
     const real = s && !s.dryRun ? s : null
     const facts: ReviewFacts = {
       stage: a.stage,
@@ -64,7 +66,10 @@ export const reviewQueue = () => {
       bucket: reviewBucket(facts),
       optionalQuestions: optional.get(a.id) ?? 0,
       writing: writing.map((w) => ({ key: w.key, title: w.title, blank: w.blank, done: w.done })),
-      listingClosed: !!(a.listingClosedAt || (a.postingId && closedAt.get(a.postingId))),
+      listingClosed: !!(a.listingClosedAt || p?.closedAt),
+      // How old the listing is: the application's own checked date, else the posting's, else when it was first seen.
+      postedAt: a.postedAt ?? p?.postedAt ?? null,
+      firstSeenAt: p?.firstSeenAt ?? a.createdAt,
       submission: s && { status: s.status, dryRun: s.dryRun, summary: s.summary },
     }
   })

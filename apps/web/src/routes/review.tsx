@@ -77,6 +77,7 @@ function Review() {
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-medium">{x.companyName}</span>
                       <span className="block truncate text-xs text-muted-foreground">{x.role}</span>
+                      <Freshness postedAt={x.postedAt} firstSeenAt={x.firstSeenAt} />
                     </span>
                     <span className="shrink-0 text-right">
                       {x.score != null && <span className="block text-xs font-medium tabular-nums">{x.score}</span>}

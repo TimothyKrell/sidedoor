@@ -114,6 +114,13 @@ describe('the step an application is on', () => {
     expect(i.facts).toMatchObject({ openQuestions: 1, openDecisions: 2, writingLeft: 2, tuned: true })
     expect(i.bucket).toBe('answers')
   })
+
+  test('each one says how old its listing is, from the checked date or else when it was first seen', () => {
+    const dated = app('Dated', { postedAt: '2026-11-01T00:00:00.000Z' })
+    const undated = app('Undated')
+    expect(item(dated.id)).toMatchObject({ postedAt: '2026-11-01T00:00:00.000Z' })
+    expect(item(undated.id)).toMatchObject({ postedAt: null, firstSeenAt: getApplication(undated.id)!.createdAt })
+  })
 })
 
 describe('written answers', () => {
