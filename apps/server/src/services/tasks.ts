@@ -25,10 +25,16 @@ export const enqueueTask = (kind: schema.TaskKind, title: string, o: EnqueueOpti
     if (o.postingId) conds.push(eq(schema.tasks.postingId, o.postingId))
     if (o.applicationId || o.personId || o.postingId || kind === 'funding' || kind === 'discover' || kind === 'resume-notes') {
       const existing = db.select().from(schema.tasks).where(and(...conds)).get()
-      // Asking again with more urgency moves the waiting one up instead of queueing a second.
-      if (existing && existing.status === 'queued' && (o.priority ?? 0) > existing.priority) {
-        db.update(schema.tasks).set({ priority: o.priority! }).where(eq(schema.tasks.id, existing.id)).run()
-        return { ...existing, priority: o.priority! }
+      // Asking again with more urgency moves the waiting one up instead of queueing a second. When the
+      // user asks (priority 10+), it also stops waiting out a hold it got as background work, such
+      // as prep put off because the review queue was full.
+      const priority = o.priority ?? 0
+      const held = !!existing?.runAfter && existing.runAfter > nowIso()
+      if (existing && existing.status === 'queued' && (priority > existing.priority || (priority >= 10 && held && !o.runAfter))) {
+        const runAfter = priority >= 10 ? (o.runAfter ?? null) : existing.runAfter
+        const next = Math.max(priority, existing.priority)
+        db.update(schema.tasks).set({ priority: next, runAfter }).where(eq(schema.tasks.id, existing.id)).run()
+        return { ...existing, priority: next, runAfter }
       }
       if (existing) return existing
     }
