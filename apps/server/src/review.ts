@@ -70,7 +70,8 @@ export const reviewQueue = () => {
       // How old the listing is: the application's own checked date, else the posting's, else when it was first seen.
       postedAt: a.postedAt ?? p?.postedAt ?? null,
       firstSeenAt: p?.firstSeenAt ?? a.createdAt,
-      submission: s && { status: s.status, dryRun: s.dryRun, summary: s.summary },
+      // The questions a submit stopped on, as the form asked them.
+      submission: s && { status: s.status, dryRun: s.dryRun, summary: s.summary, questions: s.questions.map((q) => ({ question: q.question, why: q.why })) },
     }
   })
 }

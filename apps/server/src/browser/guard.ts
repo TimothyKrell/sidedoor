@@ -42,15 +42,17 @@ export const GUARD = `(() => {
   }
 })()`
 
-export const BANNER = `(() => {
+/** The banner on a form left open for the user, saying what's left to do. */
+export const banner = (text = 'Sidedoor filled this form. Review every field, then submit it yourself.') => `(() => {
   window.__sidedoorFilling = false
   if (document.getElementById('sidedoor-banner')) return
   const d = document.createElement('div')
   d.id = 'sidedoor-banner'
-  d.textContent = 'Sidedoor filled this form. Review every field, then submit it yourself.'
+  d.textContent = ${JSON.stringify(text)}
   d.style.cssText = 'position:fixed;z-index:2147483647;left:50%;top:12px;transform:translateX(-50%);background:#e8b931;color:#111;font:600 14px system-ui;padding:8px 14px;border-radius:999px;box-shadow:0 4px 18px rgba(0,0,0,.35);cursor:pointer'
   d.title = 'Click to dismiss'
   d.onclick = () => d.remove()
   document.body.appendChild(d)
 })()`
+export const BANNER = banner()
 

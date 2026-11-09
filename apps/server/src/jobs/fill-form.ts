@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { blockingFindings, type RuleCheck } from '@sidedoor/shared/rules'
 import { mcpFor, runJob } from '../ai'
 import { logActivity } from '../activity'
-import { openFormTab, withFormLock } from '../browser'
+import { type FormTab, openFormTab, withFormLock } from '../browser'
 import { paths } from '../config'
 import { db, schema } from '../db/client'
 import { nowIso } from '../ids'
@@ -159,6 +159,13 @@ separate step, so:
  * left unanswered is followed by a second, short run that clicks submit and checks it went in.
  * A dry run fills the same way and reports the questions, and never submits.
  */
+/** A submit's window left open when it stopped for questions, by application: filling it again closes it. */
+const stopped = new Map<string, FormTab>()
+
+/** What the window left open after a submit stopped says: why, and what to do. */
+const stoppedBanner = (questions: number) =>
+  `Sidedoor stopped before submitting: ${questions} question${questions === 1 ? '' : 's'} for you. Answer ${questions === 1 ? 'it' : 'them'} in Sidedoor and it fills and submits this again, or finish this form yourself.`
+
 export const runFillForm = (task: schema.Task): Promise<TaskOutcome> =>
   withFormLock(async () => {
     const a = task.applicationId ? getApplication(task.applicationId) : undefined
@@ -185,6 +192,9 @@ export const runFillForm = (task: schema.Task): Promise<TaskOutcome> =>
     // Facts for questions the package doesn't cover: the Experience sections closest to this job and package.
     const posting = a.postingId ? db.select({ jd: schema.postings.jd }).from(schema.postings).where(eq(schema.postings.id, a.postingId)).get() : undefined
     const experience = experienceContext(`${a.role}\n${posting?.jd ?? ''}\n${a.packageMd}`, 24_000)
+    // The window an earlier submit left open: this fill starts over in a new one.
+    await stopped.get(a.id)?.close().catch(() => {})
+    stopped.delete(a.id)
     const tab = await openFormTab(url)
     let report: FillReport
     let sent: SubmitReport | null = null
@@ -192,6 +202,7 @@ export const runFillForm = (task: schema.Task): Promise<TaskOutcome> =>
     let held: RuleCheck | null = null
     let r: Awaited<ReturnType<typeof runJob<typeof FillReport>>>
     let closed = false
+    let message: string | undefined
     const log: string[] = []
     let costUsd = 0
     let audit: AuditEntry[] = []
@@ -248,15 +259,20 @@ export const runFillForm = (task: schema.Task): Promise<TaskOutcome> =>
         return reviewed
       })
       report = r.data
-      // Submitted, or to be filled again once they answer: no window left behind for either.
+      // Submitted: no window left behind. A batch's dry run is a report, with nothing to review: its window closes too.
       const s = sent as SubmitReport | null
-      // A batch's dry run is a report, with nothing to review: its window closes too.
-      if (s?.outcome === 'submitted' || (strict && !s && report.outcome === 'needs_you') || (dryRun && task.input.closeWhenDone === true)) {
+      const asks = s ? (s.outcome === 'submitted' ? 0 : s.problems.length) : report.outcome === 'needs_you' ? report.needsYou.length : 0
+      const asking = strict && asks > 0
+      if (s?.outcome === 'submitted' || (task.input.closeWhenDone === true && (dryRun || asking))) {
         await tab.close().catch((e: unknown) => console.error('[fill] close failed', e))
         closed = true
+      } else if (asking) {
+        // Stopped for questions: the window stays, saying why, until the answers fill it again.
+        stopped.set(a.id, tab)
+        message = stoppedBanner(asks)
       }
     } finally {
-      if (!closed) await tab.finish().catch((e: unknown) => console.error('[fill] finish failed', e))
+      if (!closed) await tab.finish(message).catch((e: unknown) => console.error('[fill] finish failed', e))
       rmSync(workDir, { recursive: true, force: true })
     }
 

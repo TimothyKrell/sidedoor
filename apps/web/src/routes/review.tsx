@@ -175,6 +175,29 @@ function Application({ item, place, total, prev, next, go }: { item: ReviewItem;
   )
 }
 
+/** Why the last submit stopped short, and what gets it going again. */
+function StoppedForQuestions({ s, open }: { s: NonNullable<ReviewItem['submission']>; open: number }) {
+  return (
+    <div className="space-y-2 rounded-lg bg-hot/10 p-3 text-sm">
+      <div className="font-medium">{s.dryRun ? 'The dry run stopped on questions.' : 'Not submitted: the form asked things Sidedoor couldn’t answer for you.'}</div>
+      {s.questions.length > 0 && (
+        <ul className="space-y-1">
+          {s.questions.map((q, i) => (
+            <li key={i}>
+              <span className="font-medium">{q.question}</span> <span className="text-muted-foreground">: {q.why}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="text-muted-foreground">
+        {open
+          ? `Answer ${open === 1 ? 'it' : 'them'} under Questions and decisions and Sidedoor fills and submits it again. The form is still open in the Sidedoor browser window if you’d rather finish it yourself.`
+          : 'You’ve answered these since. Press Approve & submit to send it again.'}
+      </div>
+    </div>
+  )
+}
+
 /** The last step. Pressing the button is what sends it: Sidedoor fills the form and submits only if every required answer is confirmed. */
 function SendStep({ item, onSent }: { item: ReviewItem; onSent: () => void }) {
   const [confirming, setConfirming] = useState(false)
@@ -192,6 +215,7 @@ function SendStep({ item, onSent }: { item: ReviewItem; onSent: () => void }) {
   return (
     <div className="space-y-3">
       {s && !s.dryRun && s.status !== 'questions' && <div className={cn('rounded-lg p-3 text-sm', item.bucket === 'stuck' ? 'bg-destructive/10' : 'bg-muted/50')}>{s.summary}</div>}
+      {s?.status === 'questions' && <StoppedForQuestions s={s} open={item.facts.openQuestions} />}
       {s?.dryRun && s.status === 'ready' && (
         <div className="flex items-center gap-1.5 text-sm text-success">
           <Check className="size-4" /> A dry run of this form found nothing left to ask.

@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process'
 import type { Browser, BrowserContext, Page, Route } from 'playwright-core'
 import { paths } from '../config'
 import { requireChrome } from './chrome'
-import { BANNER, GUARD } from './guard'
+import { banner, GUARD } from './guard'
 import { startPublicProxy, type PublicProxy } from '@sidedoor/shared/public-proxy'
 import { isPublicHost } from './guard-net'
 
@@ -165,10 +165,10 @@ export const localFormTab = async (url: string) => {
   // Stay connected while the agent fills: the guard's init script lives as long as this session.
   return {
     cdpEndpoint,
-    finish: async () => {
+    finish: async (message?: string) => {
       for (const p of context.pages()) {
         await everyFrame(p, 'window.__sidedoorFilling = false')
-        await p.evaluate(BANNER).catch(() => {})
+        await p.evaluate(banner(message)).catch(() => {})
       }
       // Disconnects only; the window (we launched it, not Playwright) stays open for review.
       await browser.close().catch(() => {})

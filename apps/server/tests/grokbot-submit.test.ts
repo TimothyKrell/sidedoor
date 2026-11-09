@@ -18,7 +18,7 @@ vi.mock('../src/browser', async (orig) => ({
   ...(await orig<typeof import('../src/browser')>()),
   openFormTab: async () => ({
     cdpEndpoint: 'ws://x',
-    finish: async () => void tab.calls.push('finish'),
+    finish: async (message?: string) => void tab.calls.push(message ? `finish: ${message}` : 'finish'),
     unguard: async () => void tab.calls.push('unguard'),
     close: async () => void tab.calls.push('close'),
   }),
@@ -148,7 +148,7 @@ describe('the fill that submits', () => {
     const t = requestSubmit(a.id, { dryRun: true })
     ai.replies = [{ outcome: 'needs_you', summary: 'One question.', filled: [], needsYou: [{ field: 'Start date', why: 'not in the package' }] }]
     await run(t.id)
-    expect(tab.calls).toEqual(['close'])
+    expect(tab.calls).toEqual(['finish: Sidedoor stopped before submitting: 1 question for you. Answer it in Sidedoor and it fills and submits this again, or finish this form yourself.'])
     const again = answerFormQuestions(a.id, [{ question: 'Start date', answer: 'Two weeks' }])
     expect(again.input.dryRun).toBe(true)
     expect(getApplication(a.id)!.stage).toBe('review')
@@ -160,7 +160,8 @@ describe('the fill that submits', () => {
     const t = requestSubmit(a.id)
     ai.replies = [{ outcome: 'needs_you', summary: 'Two questions need you.', filled: [], needsYou: [{ field: 'Desired salary', why: 'not in the package' }, { field: 'Do you know anyone here?', why: 'not in the package', options: ['Yes', 'No'] }] }]
     await run(t.id)
-    expect(tab.calls).toEqual(['close'])
+    // The window stays open, saying why it stopped.
+    expect(tab.calls).toEqual([expect.stringMatching(/^finish: Sidedoor stopped before submitting: 2 questions for you\. Answer them/)])
     expect(ai.prompts).toHaveLength(1)
     expect(getApplication(a.id)!.stage).toBe('approved')
     const s = submissions(a.id)[0]!
@@ -190,6 +191,11 @@ describe('the fill that submits', () => {
       ]),
     )
     expect(submissions(a.id)[0]!.status).toBe('queued')
+    // Filling it again closes the window it left open, then opens a new one.
+    tab.calls = []
+    ai.replies = [filled, { outcome: 'submitted', summary: 'In.', problems: [], confirmation: 'Thanks!' }]
+    await run(again.id)
+    expect(tab.calls).toEqual(['close', 'unguard', 'close'])
   })
 
   test("the form's questions are kept as questions, and answering the last one in the app sends it again", async () => {
@@ -254,7 +260,7 @@ describe('the fill that submits', () => {
     const t = requestSubmit(a.id)
     ai.replies = [filled, { outcome: 'not_submitted', summary: 'Phone number was rejected.', problems: [{ field: 'Phone', why: 'Use the format +1 555 555 5555' }] }]
     const done = await run(t.id)
-    expect(tab.calls).toEqual(['unguard', 'finish'])
+    expect(tab.calls).toEqual(['unguard', expect.stringMatching(/^finish: Sidedoor stopped before submitting: 1 question/)])
     expect(done.input.submitStartedAt).toBeUndefined()
     expect(getApplication(a.id)!.stage).toBe('approved')
     expect(submissions(a.id)[0]).toMatchObject({ status: 'questions', questions: [{ question: 'Phone', why: 'Use the format +1 555 555 5555', options: [] }] })

@@ -153,6 +153,11 @@ current when making a non-obvious call. Open questions for the maintainer live i
   filled. When nothing is found the page itself is filled, as before.
 - **A batch's dry-run windows close after the report.** Forty-nine windows left open for review
   would be the cost of a check; nothing in a dry run needs the user's eyes there.
+- **A submit that stops for questions leaves its window open.** It used to close, since answering
+  fills it again from scratch, but the window vanishing with no word looked like a crash. Now it
+  stays, with a banner saying how many questions and what to do, and the Review page's Send step
+  lists them. The next fill of that application closes it first, so windows don't pile up. A
+  batch still closes its windows (`closeWhenDone`, now set for every batch item).
 - **Long documents are read in pages, not cut.** AI clients cap tool results, so a 51K-character
   Experience document returned whole lost its newest sections (the end, where confirmed facts are
   appended). `get_profile_doc` returns 20,000-character pages ending at line breaks, with

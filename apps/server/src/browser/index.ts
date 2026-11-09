@@ -1,5 +1,5 @@
 import { bridgeCloseTab, bridgeFinishTab, bridgeOpenTab, bridgePdf, bridgeRead, bridgeUnguardTab, hasBridge } from './bridge'
-import { BANNER, GUARD } from './guard'
+import { banner, GUARD } from './guard'
 import { assertPublicUrl } from './guard-net'
 import { localFormTab, localPdf, localRead } from './local'
 
@@ -62,8 +62,8 @@ export const readPage = async (url: string, offset = 0): Promise<ReadPageResult>
 export interface FormTab {
   /** For Playwright MCP to attach to. */
   cdpEndpoint: string
-  /** Lift the submit guard and show the review banner. The window stays open. */
-  finish: () => Promise<void>
+  /** Lift the submit guard and show the review banner (or `message`, saying what's left). The window stays open. */
+  finish: (message?: string) => Promise<void>
   /** Lift the submit guard and keep driving the window: only to submit an application Grok Bot sent. */
   unguard: () => Promise<void>
   /** Close the window: the application went in, or it will be filled again. */
@@ -74,7 +74,7 @@ export interface FormTab {
 export const openFormTab = async (url: string): Promise<FormTab> => {
   if (hasBridge()) {
     const t = await bridgeOpenTab(url, GUARD)
-    return { cdpEndpoint: t.cdpEndpoint, finish: () => bridgeFinishTab(t.id, BANNER), unguard: () => bridgeUnguardTab(t.id), close: () => bridgeCloseTab(t.id) }
+    return { cdpEndpoint: t.cdpEndpoint, finish: (message) => bridgeFinishTab(t.id, banner(message)), unguard: () => bridgeUnguardTab(t.id), close: () => bridgeCloseTab(t.id) }
   }
   return localFormTab(url)
 }

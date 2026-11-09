@@ -368,7 +368,7 @@ const takeTurn = async (id: string, resolve: typeof resolveApplyTarget): Promise
     const t =
       b.mode === 'fill'
         ? enqueueTask('submit-assist', `Fill form: ${a.companyName} – ${a.role}`, { applicationId: a.id, priority: 10, input: { batchId: id } })
-        : requestSubmit(a.id, { dryRun: b.mode === 'dry-run', by: byOf(b), batchId: id, closeWhenDone: b.mode === 'dry-run' })
+        : requestSubmit(a.id, { dryRun: b.mode === 'dry-run', by: byOf(b), batchId: id, closeWhenDone: true })
     // A fill-only turn that found a submit already waiting for it must not become that submit.
     if (b.mode === 'fill' && t.input.submit === true && t.input.dryRun !== true) throw new Error('This one was already sent to be submitted; that fill is waiting its turn.')
     finish((i) => Object.assign(i, { startedAt: nowIso(), taskId: t.id, ...(target.resolved ? { note: `Apply link found on the job page: ${target.url}` } : {}) }))

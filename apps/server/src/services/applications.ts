@@ -240,7 +240,7 @@ const UNSENT: schema.ApplicationStage[] = ['interested', 'review', 'approved']
  * the one that submits. A dry run fills and reports the questions without approving or submitting
  * anything. `by: 'you'` comes only from the app's own button; no agent tool can set it.
  */
-export const requestSubmit = atomic((id: string, o: { dryRun?: boolean; skipRuleCheck?: boolean; by?: SubmitBy; /** The batch sending it (jobs/submit-batch.ts). */ batchId?: string; /** Close the window after a dry run's report. */ closeWhenDone?: boolean } = {}) => {
+export const requestSubmit = atomic((id: string, o: { dryRun?: boolean; skipRuleCheck?: boolean; by?: SubmitBy; /** The batch sending it (jobs/submit-batch.ts). */ batchId?: string; /** Close the window after a dry run's report, or when it stops for questions: a batch's windows don't pile up. */ closeWhenDone?: boolean } = {}) => {
   const a = getApplication(id)
   if (!a) throw new Error(`No application ${id}`)
   if (a.appliedAt || !UNSENT.includes(a.stage)) throw new Error(`${a.companyName} – ${a.role} is ${STAGE_LABEL[a.stage]}${a.appliedAt ? `, applied ${a.appliedAt.slice(0, 10)}` : ''}: nothing to submit.`)
