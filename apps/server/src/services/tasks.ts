@@ -61,17 +61,24 @@ export interface PrepWork {
   revision: boolean
   /** Running now, rather than waiting for a free slot. */
   running: boolean
+  /** Put off until later: background prep waits while the packages awaiting review are at the cap. */
+  held: boolean
 }
 
 /** Prep tasks that are queued or running, by application. */
 export const prepInProgress = (): Map<string, PrepWork> => {
   const T = schema.tasks
-  const rows = db.select({ applicationId: T.applicationId, status: T.status, input: T.input }).from(T).where(and(eq(T.kind, 'prep'), inArray(T.status, ['queued', 'running']))).all()
+  const rows = db.select({ applicationId: T.applicationId, status: T.status, input: T.input, runAfter: T.runAfter }).from(T).where(and(eq(T.kind, 'prep'), inArray(T.status, ['queued', 'running']))).all()
+  const now = nowIso()
   const out = new Map<string, PrepWork>()
   for (const r of rows) {
     if (!r.applicationId) continue
     const prev = out.get(r.applicationId)
-    out.set(r.applicationId, { revision: (prev?.revision ?? false) || r.input.revision === true, running: (prev?.running ?? false) || r.status === 'running' })
+    out.set(r.applicationId, {
+      revision: (prev?.revision ?? false) || r.input.revision === true,
+      running: (prev?.running ?? false) || r.status === 'running',
+      held: (prev?.held ?? true) && r.status === 'queued' && !!r.runAfter && r.runAfter > now,
+    })
   }
   return out
 }

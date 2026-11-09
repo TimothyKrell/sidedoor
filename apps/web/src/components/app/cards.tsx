@@ -108,7 +108,7 @@ export interface AppLike {
   compMax?: number | null
   listing?: { postedAt: string | null; firstSeenAt: string; compText: string | null; compMin: number | null; compMax: number | null } | null
   /** AI prep under way for it (queued or running). */
-  prep?: { revision: boolean; running: boolean } | null
+  prep?: { revision: boolean; running: boolean; held?: boolean } | null
   /** Your order within its stage (1 = first), if you or your AI ranked it. */
   rank?: number | null
   /** Your AI's estimate of the chance it gets you an interview (0-100), and why. */
@@ -119,7 +119,8 @@ export interface AppLike {
 }
 
 /** What the AI is doing with an application, in a word or two. */
-export const prepLabel = (p: { revision: boolean; running: boolean }) => (!p.running ? 'Waiting for your AI' : p.revision ? 'Your AI is revising it' : 'Your AI is preparing it')
+export const prepLabel = (p: { revision: boolean; running: boolean; held?: boolean }) =>
+  p.running ? (p.revision ? 'Your AI is revising it' : 'Your AI is preparing it') : p.held ? 'Queued until Ready for review has room' : 'Waiting for your AI'
 
 /** showListing adds the salary range and the posting's age (the pipeline board). */
 export function AppRow({ a, showStage = true, showListing = false }: { a: AppLike; showStage?: boolean; showListing?: boolean }) {
