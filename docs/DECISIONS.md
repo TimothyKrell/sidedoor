@@ -169,7 +169,7 @@ current when making a non-obvious call. Open questions for the maintainer live i
 - **The submit step clicks past a leftover validation message.** Greenhouse keeps "Select a
   country" on the phone's country picker after it's set, until submit is clicked again (checked on
   a live form). The submit step stopped on any flagged field, so a picked-up window that had failed
-  once never went in: Cedar asked the same question twice. Now only an empty required field stops
+  once never went in, and asked the same question again. Now only an empty required field stops
   it; a click on a form that's still wrong is rejected by the form and reported as before. The fill
   also sets a phone's country picker from the profile, since it isn't marked required.
 - **Long documents are read in pages, not cut.** AI clients cap tool results, so a 51K-character
