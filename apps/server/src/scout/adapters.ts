@@ -377,7 +377,7 @@ const ripplingDetail = (board: string, job: RawJob) =>
  * linking to the company's own ATS. The board is the site's host (jobs.somefund.com). Two
  * platforms run nearly all of them: Getro and Consider.
  */
-const PORTFOLIO_PAGES = 30
+const PORTFOLIO_PAGES = 60
 const workModeLoc = (remote: boolean, hybrid: boolean) => (remote ? 'Remote' : hybrid ? 'Hybrid' : undefined)
 const yearly = (min: unknown, max: unknown, currency: string | undefined, period: string | undefined) =>
   Predicate.isNumber(min) && min > 0 ? `${currency ?? ''} ${min}${Predicate.isNumber(max) && max > 0 ? `-${max}` : ''} ${period && !/not_defined/.test(period) ? period : ''}`.trim() : undefined
