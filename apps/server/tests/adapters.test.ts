@@ -1,6 +1,6 @@
 import { Effect } from 'effect'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
-import { ADAPTERS, DETAILS, detectAts, detectFeed, minPollMinutes, parseJsonFeed, workdayPostedAt } from '../src/scout/adapters'
+import { ADAPTERS, DETAILS, detectAts, detectFeed, minPollMinutes, parseJsonFeed, portfolioBoard, workdayPostedAt } from '../src/scout/adapters'
 
 /** Canned responses by URL; a function gets the request body (Workday POSTs its page). */
 let routes: Record<string, unknown | ((body: unknown) => unknown)> = {}
@@ -115,6 +115,48 @@ describe('other company boards', () => {
     const [job] = await run(ADAPTERS.rippling('acme'))
     expect(job).toMatchObject({ extId: 'ef0b', title: 'Head of Engineering', location: 'Remote (US)', jd: '' })
     expect(await run(DETAILS.rippling!('acme', job!))).toMatchObject({ jd: 'Lead engineering.\n\nWe make things.', location: 'Remote (US) | New York, NY', postedAt: '2026-10-06T16:36:07-07:00' })
+  })
+})
+
+describe('VC portfolio boards', () => {
+  const nextData = (props: unknown) => `<html><script id="__NEXT_DATA__" type="application/json">${JSON.stringify({ props: { pageProps: props } })}</script></html>`
+
+  test('Getro: the page names the collection; the search API pages through the whole board', async () => {
+    routes['https://jobs.fund.test/jobs'] = nextData({ network: { id: '636' } })
+    const getroJob = (id: number) => ({ id, title: `Engineering Manager ${id}`, organization: { name: 'Acme', slug: 'acme-2' }, slug: `${id}-engineering-manager`, locations: ['New York, NY, USA'], work_mode: id === 1 ? 'remote' : 'on_site', url: 'https://job-boards.greenhouse.io/acme/jobs/9', created_at: 1794153106, compensation_amount_min_cents: id === 1 ? 20000000 : null, compensation_amount_max_cents: id === 1 ? 25000000 : null, compensation_currency: 'USD', compensation_period: 'year' })
+    routes['https://api.getro.com/api/v2/collections/636/search/jobs'] = (b: unknown) => {
+      const { page } = b as { page: number }
+      return { results: { count: 1001, jobs: page === 0 ? Array.from({ length: 1000 }, (_, i) => getroJob(i + 1)) : [getroJob(1001)] } }
+    }
+    const jobs = await run(ADAPTERS.getro('jobs.fund.test'))
+    expect(jobs).toHaveLength(1001)
+    expect(calls.filter((c) => c.method === 'POST').map((c) => (c.body as { page: number }).page)).toEqual([0, 1])
+    expect(jobs[0]).toMatchObject({ extId: '1', company: 'Acme', location: 'New York, NY, USA | Remote', url: 'https://jobs.fund.test/companies/acme-2/jobs/1-engineering-manager', applyUrl: 'https://job-boards.greenhouse.io/acme/jobs/9', postedAt: '2026-11-08T15:51:46.000Z', comp: 'USD 200000-250000 year', jd: '' })
+    expect(jobs[1]!.location).toBe('New York, NY, USA')
+
+    routes['https://jobs.fund.test/companies/acme-2/jobs/1-engineering-manager'] = nextData({ initialState: { jobs: { currentJob: { description: '<p>Lead the team.</p>' } } } })
+    expect(await run(DETAILS.getro!('jobs.fund.test', jobs[0]!))).toEqual({ jd: 'Lead the team.' })
+  })
+
+  test('Consider: the board page gives the board id and CSRF token; the search pages by cursor', async () => {
+    routes['https://jobs.vc.test/jobs'] = '<script>window.serverInitialData = {"csrfToken":"tok","board":{"id":"vc-fund","isParent":true}}</script>'
+    routes['https://jobs.vc.test/api-boards/search-jobs'] = {
+      total: 1,
+      meta: { size: 500, sequence: 'abc' },
+      jobs: [{ jobId: 'j1', title: 'Staff Engineer', companyName: 'Acme', locations: ['United States'], remote: true, hybrid: false, url: 'https://jobs.ashbyhq.com/acme/j1', applyUrl: 'https://jobs.ashbyhq.com/acme/j1?utm_source=vc', timeStamp: '2026-11-08T00:00:00Z', salary: { minValue: 180000, maxValue: 220000, currency: { value: 'USD' }, period: { value: 'year' } } }],
+    }
+    const jobs = await run(ADAPTERS.consider('jobs.vc.test'))
+    expect(jobs).toEqual([{ extId: 'j1', title: 'Staff Engineer', company: 'Acme', location: 'United States | Remote', url: 'https://jobs.ashbyhq.com/acme/j1', applyUrl: 'https://jobs.ashbyhq.com/acme/j1?utm_source=vc', postedAt: '2026-11-08T00:00:00Z', jd: '', comp: 'USD 180000-220000 year' }])
+    expect(calls.at(-1)?.body).toMatchObject({ board: { id: 'vc-fund', isParent: true }, meta: { size: 500 } })
+  })
+
+  test('recognized from the board URL, whatever page it points at', async () => {
+    routes['https://jobs.fund.test/jobs'] = nextData({ network: { id: '636' } })
+    routes['https://jobs.vc.test/jobs'] = '<script>window.serverInitialData = {"csrfToken":"tok","board":{"id":"vc-fund","isParent":true}}</script>'
+    routes['https://acme.test/jobs'] = '<html>Careers</html>'
+    expect(await run(portfolioBoard('https://jobs.fund.test/companies'))).toEqual({ kind: 'getro', board: 'jobs.fund.test' })
+    expect(await run(portfolioBoard('jobs.vc.test'))).toEqual({ kind: 'consider', board: 'jobs.vc.test' })
+    expect(await run(portfolioBoard('https://acme.test/careers'))).toBeNull()
   })
 })
 

@@ -20,13 +20,17 @@ vi.mock('../src/scout/adapters', async (orig) => {
   const list = (board: string) => Effect.succeed((BOARDS[board] ?? []).map((j) => ({ ...j })))
   return {
     ...real,
-    ADAPTERS: { ...real.ADAPTERS, greenhouse: list, rss: list, workday: list },
+    ADAPTERS: { ...real.ADAPTERS, greenhouse: list, rss: list, workday: list, getro: list },
     DETAILS: {
       workday: (_board: string, job: RawJob) => {
         detailCalls.push(job.extId)
         return job.extId === 'broken'
           ? Effect.fail(new real.FetchError(job.url ?? '', 500, 'HTTP 500'))
           : Effect.succeed({ jd: `Full description of ${job.title}`, location: job.extId === 'abroad' ? 'London, United Kingdom' : 'Remote, United States' })
+      },
+      getro: (_board: string, job: RawJob) => {
+        detailCalls.push(job.extId)
+        return Effect.succeed({ jd: `Board description of ${job.title}` })
       },
     },
   }
@@ -153,6 +157,31 @@ describe('closing postings a board stopped listing', () => {
     BOARDS['https://roll.test/rss'] = [job('f2', 'Engineering Manager, Platform')]
     await Effect.runPromise(scan({ sourceIds: [id] }))
     expect(posting('rss:https://roll.test/rss:f1')?.closedAt).toBeNull()
+  })
+})
+
+describe('VC portfolio boards', () => {
+  test('listed jobs get the board age limit, the board page is read only where resolving cannot fill the description, and a gone job closes', async () => {
+    const id = source('src_vc', 'getro', 'jobs.fund.test')
+    const vc = (extId: string, title: string, applyUrl: string, o: Partial<RawJob> = {}) => job(extId, title, { jd: '', company: 'Acme', url: `https://jobs.fund.test/companies/acme/jobs/${extId}`, applyUrl, postedAt: daysAgo(60), ...o })
+    BOARDS['jobs.fund.test'] = [
+      vc('ats', 'Engineering Manager, Payments', 'https://job-boards.greenhouse.io/acme/jobs/1'),
+      vc('own', 'Engineering Manager, Growth', 'https://acme.test/careers/2'),
+    ]
+    detailCalls.length = 0
+    await Effect.runPromise(scan({ sourceIds: [id] }))
+    expect(detailCalls).toEqual(['own'])
+    expect(posting('getro:jobs.fund.test:ats')).toMatchObject({ heuristic: 'pass', triageStatus: 'pending', companyName: 'Acme', jd: '' })
+    expect(posting('getro:jobs.fund.test:own')).toMatchObject({ triageStatus: 'pending', jd: 'Board description of Engineering Manager, Growth' })
+    db.update(schema.postings).set({ lastSeenAt: daysAgo(2) }).where(eq(schema.postings.key, 'getro:jobs.fund.test:own')).run()
+    BOARDS['jobs.fund.test'] = [vc('ats', 'Engineering Manager, Payments', 'https://job-boards.greenhouse.io/acme/jobs/1')]
+    await Effect.runPromise(scan({ sourceIds: [id] }))
+    expect(posting('getro:jobs.fund.test:own')?.closedAt).not.toBeNull()
+  })
+
+  test('polled at most every four hours', () => {
+    source('src_vc_due', 'consider', 'jobs.other.test', { lastCheckedAt: daysAgo(1 / 24) })
+    expect(dueSources(getSettings().scout, true).map((s) => s.id)).not.toContain('src_vc_due')
   })
 })
 

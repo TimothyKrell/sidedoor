@@ -50,7 +50,7 @@ function Sources() {
             <Plus /> Add
           </Button>
         </div>
-        <p className="text-xs text-muted-foreground">Greenhouse, Lever, Ashby, Workable, SmartRecruiters, Workday, Recruitee, Gem and Rippling boards are detected from any job URL, and RSS or JSON job feeds from theirs. A bare token like “ramp” is probed across Ashby, Greenhouse, Lever and Workable.</p>
+        <p className="text-xs text-muted-foreground">Greenhouse, Lever, Ashby, Workable, SmartRecruiters, Workday, Recruitee, Gem and Rippling boards are detected from any job URL, VC portfolio boards on Getro or Consider (jobs.somefund.com) from theirs, and RSS or JSON job feeds from theirs. A bare token like “ramp” is probed across Ashby, Greenhouse, Lever and Workable.</p>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <Segmented

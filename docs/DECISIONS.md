@@ -608,3 +608,14 @@ current when making a non-obvious call. Open questions for the maintainer live i
   later, or closed after going in, so moved-back cards drop out and a recruiter's role counts.
   The funnel and Heard back follow the applications sent in the period; Rejected counts rejections
   that arrived in it, so a recent period can show rejections and 0% heard back at once.
+- **VC portfolio boards are aggregators that list in full.** A fund's job board (Getro or Consider,
+  on its own host like jobs.somefund.com) lists every open job at its portfolio companies, each
+  linking to the company's ATS. So they take the aggregator path: the company comes from the
+  listing, and a listing that passes the filters is resolved to the company's own posting and
+  board, which gets the full description and becomes a watched source. Unlike feeds, a board read
+  is complete and its listings stay up while open, so they get the board age limit and a job gone
+  from a full read is closed. The board page is read for a description only when the apply link
+  isn't an ATS Sidedoor reads, since resolving fills the rest. Both APIs return a whole board in a
+  few requests, but boards run to thousands of jobs that change over days, so they're polled at
+  most every four hours. Add one by its URL: the host gives nothing away, so the page is fetched
+  and recognized before following its links, which point at portfolio companies' boards.

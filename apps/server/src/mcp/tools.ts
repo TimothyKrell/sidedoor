@@ -7,7 +7,7 @@ import { db, schema } from '../db/client'
 import { newId, nowIso, today } from '../ids'
 import { notifyPromise } from '../notify'
 import { Effect } from 'effect'
-import { ADAPTERS, DETAILS, detectAts, detectFeed, fetchText, isAdapterKind, probeBoard, type RawJob } from '../scout/adapters'
+import { ADAPTERS, AGGREGATOR_KINDS, DETAILS, detectAts, detectFeed, fetchText, isAdapterKind, portfolioBoard, probeBoard, type RawJob } from '../scout/adapters'
 import { companyBoard, normTitle } from '../scout/resolve'
 import {
   createApplication,
@@ -158,11 +158,14 @@ const personBrief = (p: schema.Person) => ({
 })
 
 /**
- * The job board behind a custom careers page: an ATS board or RSS feed its HTML links to, else an
- * ATS board under the company's name. A guessed board may be a namesake's or a stale one, so it
+ * The job board behind a custom careers page: a VC portfolio board (Getro, Consider), an ATS board or
+ * RSS feed its HTML links to, else an ATS board under the company's name. A guessed board may be a namesake's or a stale one, so it
  * comes back as a candidate for the agent to check against the careers page.
  */
 const boardBehind = async (url: string, companyName?: string): Promise<{ kind: string; board: string; guessed: boolean; jobs?: number } | null> => {
+  // A VC portfolio board links to its companies' ATS boards, so recognize it before following links.
+  const portfolio = await Effect.runPromise(portfolioBoard(url))
+  if (portfolio) return { ...portfolio, guessed: false }
   const html = await Effect.runPromise(fetchText(url).pipe(Effect.orElseSucceed(() => '')))
   const linked = [...html.matchAll(/https?:\/\/[^"'\s<>]+/g)].map((m) => detectAts(m[0].replace(/api\.ashbyhq\.com\/posting-api\/job-board/, 'jobs.ashbyhq.com').replace(/boards-api\.greenhouse\.io\/v1\/boards/, 'boards.greenhouse.io'))).find((d) => d !== null)
   if (linked) return { ...linked, guessed: false }
@@ -597,7 +600,7 @@ export const appTools = [
 
   tool(
     'add_source',
-    "Add a job board for the scout to poll. Give any careers/ATS URL (Greenhouse, Lever, Ashby, Workable, SmartRecruiters, Workday (…myworkdayjobs.com/<site>), Recruitee, Gem and Rippling are auto-detected), an RSS or JSON job feed URL, or the Hacker News \"Who is hiring\" thread. A company's own careers page works too: Sidedoor looks for the ATS board it links to, then probes the usual ATSs under companyName.",
+    "Add a job board for the scout to poll. Give any careers/ATS URL (Greenhouse, Lever, Ashby, Workable, SmartRecruiters, Workday (…myworkdayjobs.com/<site>), Recruitee, Gem and Rippling are auto-detected), a VC portfolio job board (Getro or Consider, e.g. jobs.somefund.com; give the fund as name, not companyName), an RSS or JSON job feed URL, or the Hacker News \"Who is hiring\" thread. A company's own careers page works too: Sidedoor looks for the ATS board it links to, then probes the usual ATSs under companyName.",
     { url: z.string(), name: z.string().optional(), companyName: z.string().optional(), hot: z.boolean().optional().describe('poll every few minutes') },
     safe(async (a) => {
       const feed = detectAts(a.url) ? null : detectFeed(a.url)
@@ -614,7 +617,7 @@ export const appTools = [
         throw new Error("No ATS board or feed found on that page (checked its links and the usual ATSs under the company's name). Saved it on Sources as a candidate, but the scout can't poll custom careers pages; check it with read_page when needed.")
       }
       const board = det?.board ?? a.url
-      const company = a.companyName ? ensureCompany(a.companyName, guessed ? {} : { atsKind: kind, atsBoard: board }) : null
+      const company = a.companyName ? ensureCompany(a.companyName, guessed || AGGREGATOR_KINDS.has(kind) ? {} : { atsKind: kind, atsBoard: board }) : null
       const status = guessed ? ('candidate' as const) : ('active' as const)
       const onConflict = { ...(guessed ? {} : { status: 'active' as const }), ...(a.hot ? { tier: 'hot' as const } : {}) }
       const insert = db.insert(schema.sources).values({ id: newId('src_'), name: a.name ?? a.companyName ?? board, kind, board, url: a.url, companyId: company?.id ?? null, status, tier: a.hot ? 'hot' : 'normal', origin: 'chat', ...(guessed ? { why: `Guessed from the name for ${a.url}` } : {}) })

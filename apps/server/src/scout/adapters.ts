@@ -34,12 +34,12 @@ const retryTransient = Schedule.exponential(Duration.millis(500)).pipe(
   Schedule.while(({ input }) => input.status === null || input.status >= 500 || input.status === 429),
 )
 
-export const fetchText = (url: string, timeoutMs = 25_000, init: { method?: string; body?: string } = {}) =>
+export const fetchText = (url: string, timeoutMs = 25_000, init: { method?: string; body?: string; headers?: Record<string, string> } = {}) =>
   Effect.tryPromise({
     try: async () => {
       const res = await fetch(url, {
         ...init,
-        headers: { 'User-Agent': UA, Accept: 'application/json, application/rss+xml, */*', ...(init.body ? { 'Content-Type': 'application/json' } : {}) },
+        headers: { 'User-Agent': UA, Accept: 'application/json, application/rss+xml, */*', ...(init.body ? { 'Content-Type': 'application/json' } : {}), ...init.headers },
         signal: AbortSignal.timeout(timeoutMs),
       })
       if (!res.ok) throw new FetchError(url, res.status, `HTTP ${res.status}`)
@@ -372,6 +372,153 @@ const ripplingDetail = (board: string, job: RawJob) =>
     }),
   )
 
+/**
+ * VC portfolio job boards: one board lists every open job at a fund's portfolio companies, each
+ * linking to the company's own ATS. The board is the site's host (jobs.somefund.com). Two
+ * platforms run nearly all of them: Getro and Consider.
+ */
+const PORTFOLIO_PAGES = 30
+const workModeLoc = (remote: boolean, hybrid: boolean) => (remote ? 'Remote' : hybrid ? 'Hybrid' : undefined)
+const yearly = (min: unknown, max: unknown, currency: string | undefined, period: string | undefined) =>
+  Predicate.isNumber(min) && min > 0 ? `${currency ?? ''} ${min}${Predicate.isNumber(max) && max > 0 ? `-${max}` : ''} ${period && !/not_defined/.test(period) ? period : ''}`.trim() : undefined
+
+const nextData = (html: string) => {
+  const m = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/)
+  try {
+    return m?.[1] ? (JSON.parse(m[1]) as unknown) : null
+  } catch {
+    return null
+  }
+}
+
+// Getro: the site's page names its collection; the search API returns the whole board, newest first.
+const GETRO_PAGE = 1000
+const getroCollection = (host: string) =>
+  fetchText(`https://${host}/jobs`).pipe(
+    Effect.flatMap((html) => {
+      const id = str(obj(obj(obj(obj(nextData(html)).props).pageProps).network).id)
+      return id ? Effect.succeed(id) : Effect.fail(new FetchError(host, null, 'not a Getro job board'))
+    }),
+  )
+
+const getro = (board: string) =>
+  getroCollection(board).pipe(
+    Effect.flatMap((id) =>
+      paged(PORTFOLIO_PAGES, (n) =>
+        // Getro answers 406 to an Accept header that also names RSS.
+        fetchText(`https://api.getro.com/api/v2/collections/${id}/search/jobs`, 25_000, { method: 'POST', body: JSON.stringify({ hits_per_page: GETRO_PAGE, page: n, query: '' }), headers: { Accept: 'application/json' } }).pipe(
+          Effect.flatMap(parseJson(id)),
+          Effect.map((d) => {
+            const r = obj(obj(d).results)
+            return {
+              total: Predicate.isNumber(r.count) ? r.count : null,
+              items: arr(r.jobs)
+                .map(obj)
+                .map((j): RawJob => {
+                  const org = obj(j.organization)
+                  const locs = arr(j.locations).map(str)
+                  if (!locs.length) locs.push(str(arr(j.searchable_locations)[0]))
+                  locs.push(workModeLoc(j.work_mode === 'remote', j.work_mode === 'hybrid'))
+                  const cents = (v: unknown) => (Predicate.isNumber(v) ? Math.round(v / 100) : undefined)
+                  return {
+                    extId: str(j.id) ?? '',
+                    title: (str(j.title) ?? '').trim(),
+                    company: str(org.name),
+                    location: joinLocs(locs),
+                    // The board's own page for the job; the apply link is the company's posting, which resolving swaps in.
+                    url: str(org.slug) && str(j.slug) ? `https://${board}/companies/${str(org.slug)}/jobs/${str(j.slug)}` : str(j.url),
+                    applyUrl: str(j.url),
+                    postedAt: Predicate.isNumber(j.created_at) ? new Date(j.created_at * 1000).toISOString() : undefined,
+                    jd: '',
+                    comp: yearly(cents(j.compensation_amount_min_cents), cents(j.compensation_amount_max_cents), str(j.compensation_currency), str(j.compensation_period)),
+                  }
+                }),
+            }
+          }),
+        ),
+      ),
+    ),
+  )
+
+/** The description from the board's job page, for postings whose apply link isn't an ATS Sidedoor reads. */
+const getroDetail = (_board: string, job: RawJob) =>
+  job.url
+    ? fetchText(job.url).pipe(
+        Effect.map((html): Partial<RawJob> => {
+          const cur = obj(obj(obj(obj(obj(obj(nextData(html)).props).pageProps).initialState).jobs).currentJob)
+          return { jd: htmlToJd(str(cur.description)) }
+        }),
+      )
+    : Effect.succeed({})
+
+// Consider: the search API wants the session cookie and CSRF token from the board's page, and pages by a cursor.
+const CONSIDER_PAGE = 500
+const considerSession = (host: string) =>
+  Effect.tryPromise({
+    try: async () => {
+      const res = await fetch(`https://${host}/jobs`, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(25_000) })
+      if (!res.ok) throw new FetchError(host, res.status, `HTTP ${res.status}`)
+      const html = await res.text()
+      const csrf = html.match(/"csrfToken":"([^"]+)"/)?.[1]
+      const id = html.match(/"board":\{"id":"([^"]+)"/)?.[1]
+      if (!csrf || !id) throw new FetchError(host, null, 'not a Consider job board')
+      const cookie = (res.headers.getSetCookie?.() ?? []).map((c) => c.split(';')[0]).join('; ')
+      return { csrf, id, cookie }
+    },
+    catch: (e) => (e instanceof FetchError ? e : new FetchError(host, null, e instanceof Error ? e.message : String(e))),
+  })
+
+const consider = (board: string) =>
+  Effect.gen(function* () {
+    const s = yield* considerSession(board)
+    const out: RawJob[] = []
+    let sequence: string | undefined
+    for (let n = 0; n < PORTFOLIO_PAGES; n++) {
+      const body = { meta: { size: CONSIDER_PAGE, ...(sequence ? { sequence } : {}) }, board: { id: s.id, isParent: true }, query: {}, grouped: false }
+      const d = obj(
+        yield* fetchText(`https://${board}/api-boards/search-jobs`, 25_000, { method: 'POST', body: JSON.stringify(body), headers: { 'x-csrf-token': s.csrf, ...(s.cookie ? { Cookie: s.cookie } : {}) } }).pipe(
+          Effect.flatMap(parseJson(board)),
+        ),
+      )
+      const jobs = arr(d.jobs).map(obj)
+      for (const j of jobs) {
+        const sal = obj(j.salary)
+        out.push({
+          extId: str(j.jobId) ?? '',
+          title: (str(j.title) ?? '').trim(),
+          company: str(j.companyName),
+          location: joinLocs([...arr(j.locations).map(str), workModeLoc(j.remote === true, j.hybrid === true)]),
+          url: str(j.url) ?? str(j.applyUrl),
+          applyUrl: str(j.applyUrl) ?? str(j.url),
+          postedAt: str(j.timeStamp),
+          jd: '',
+          comp: yearly(sal.minValue, sal.maxValue, str(obj(sal.currency).value), str(obj(sal.period).value)),
+        })
+      }
+      sequence = str(obj(d.meta).sequence)
+      const total = Predicate.isNumber(d.total) ? d.total : null
+      if (jobs.length < CONSIDER_PAGE || !sequence || (total !== null && out.length >= total)) break
+    }
+    return out
+  })
+
+/** A Getro or Consider board behind a URL whose host gives nothing away (jobs.somefund.com). */
+export const portfolioBoard = (url: string) =>
+  Effect.gen(function* () {
+    const host = (() => {
+      try {
+        return new URL(/^https?:\/\//i.test(url) ? url : `https://${url}`).hostname
+      } catch {
+        return null
+      }
+    })()
+    if (!host) return null
+    const html = yield* fetchText(`https://${host}/jobs`).pipe(Effect.orElseSucceed(() => ''))
+    if (str(obj(obj(obj(obj(nextData(html)).props).pageProps).network).id)) return { kind: 'getro' as const, board: host }
+    if (/serverInitialData/.test(html) && /"board":\{"id":"[^"]+"/.test(html)) return { kind: 'consider' as const, board: host }
+    return null
+  })
+
 const remoteok = (board: string) =>
   fetchJson(`https://remoteok.com/api${board && board !== 'all' ? `?tag=${board}` : ''}`).pipe(
     Effect.map((d) =>
@@ -502,9 +649,14 @@ const hn = (_board: string) =>
       })
   })
 
-export const ADAPTERS = { greenhouse, lever, ashby, workable, smartrecruiters, workday, recruitee, gem, rippling, remoteok, rss, hn } as const
+export const ADAPTERS = { greenhouse, lever, ashby, workable, smartrecruiters, workday, recruitee, gem, rippling, remoteok, rss, hn, getro, consider } as const
 export type AdapterKind = keyof typeof ADAPTERS
-export const AGGREGATOR_KINDS: ReadonlySet<string> = new Set(['remoteok', 'rss', 'hn'])
+export const AGGREGATOR_KINDS: ReadonlySet<string> = new Set(['remoteok', 'rss', 'hn', 'getro', 'consider'])
+/**
+ * Aggregators that list a fixed set of companies' open jobs in full, like a company board: listings
+ * stay up while open (so they get the board age limit) and one gone from a full read has closed.
+ */
+export const PORTFOLIO_KINDS: ReadonlySet<string> = new Set(['getro', 'consider'])
 export const isAdapterKind = (k: string): k is AdapterKind => k in ADAPTERS
 
 /**
@@ -515,20 +667,22 @@ export const DETAILS: Partial<Record<AdapterKind, (board: string, job: RawJob) =
   smartrecruiters: smartrecruitersDetail,
   workday: workdayDetail,
   rippling: ripplingDetail,
+  getro: getroDetail,
 }
 
 /**
  * Boards read only up to a cap (newest first). A list that reached its cap is partial: a posting
  * missing from it may just be further down, so it isn't closed for that.
  */
-export const LIST_CAP: Partial<Record<string, number>> = { smartrecruiters: LIST_PAGES.smartrecruiters * SR_PAGE, workday: LIST_PAGES.workday * WORKDAY_PAGE }
+export const LIST_CAP: Partial<Record<string, number>> = { smartrecruiters: LIST_PAGES.smartrecruiters * SR_PAGE, workday: LIST_PAGES.workday * WORKDAY_PAGE, getro: PORTFOLIO_PAGES * GETRO_PAGE, consider: PORTFOLIO_PAGES * CONSIDER_PAGE }
 
 /**
  * The least time between polls, whatever the source's tier. Workday reads up to ten pages, the HN
- * thread is one large download that changes slowly, and Remotive asks for at most four reads a day.
+ * thread is one large download that changes slowly, a VC portfolio board lists thousands of jobs
+ * that change over days, and Remotive asks for at most four reads a day.
  */
 export const minPollMinutes = (kind: string, board: string) =>
-  kind === 'workday' || kind === 'hn' ? 60 : kind === 'rss' && /remotive\.com/i.test(board) ? 360 : 0
+  kind === 'workday' || kind === 'hn' ? 60 : PORTFOLIO_KINDS.has(kind) ? 240 : kind === 'rss' && /remotive\.com/i.test(board) ? 360 : 0
 
 const URL_PATTERNS: Array<[AdapterKind, RegExp, ((m: RegExpMatchArray) => string)?]> = [
   ['greenhouse', /(?:boards|job-boards)(?:\.eu)?\.greenhouse\.io\/(?:embed\/job_board\?for=)?([A-Za-z0-9_-]+)/],

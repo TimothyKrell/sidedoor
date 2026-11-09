@@ -6,7 +6,7 @@ import { db, schema } from '../db/client'
 import { newId, nowIso, toIsoDate } from '../ids'
 import { type AppSettings, getSettings } from '../settings'
 import { parseComp } from '../text'
-import { ADAPTERS, AGGREGATOR_KINDS, DETAILS, isAdapterKind, LIST_CAP, minPollMinutes, type RawJob } from './adapters'
+import { ADAPTERS, AGGREGATOR_KINDS, DETAILS, detectAts, isAdapterKind, LIST_CAP, minPollMinutes, PORTFOLIO_KINDS, type RawJob } from './adapters'
 
 type Filters = ReturnType<typeof compileFilters>
 
@@ -84,7 +84,8 @@ const scanSource = (source: schema.Source, f: Filters) =>
     // First scan of a source: everything is "new" to us but not new to the world. Don't notify the user about it.
     const initial = source.lastCheckedAt === null
     const isAggregator = AGGREGATOR_KINDS.has(source.kind)
-    const maxAge = isAggregator ? f.maxAgeDays : f.boardMaxAgeDays
+    const isPortfolio = PORTFOLIO_KINDS.has(source.kind)
+    const maxAge = isAggregator && !isPortfolio ? f.maxAgeDays : f.boardMaxAgeDays
     const keys = jobs.map((j) => `${source.kind}:${source.board}:${j.extId}`)
     const known = new Map<string, { heuristic: string | null; recheck: boolean }>()
     for (let i = 0; i < keys.length; i += 500) {
@@ -106,7 +107,9 @@ const scanSource = (source: schema.Source, f: Filters) =>
     const detail = DETAILS[source.kind]
     const unread = new Set<number>()
     if (detail) {
-      const need = verdicts.flatMap((v, i) => (v === 'pass' && !jobs[i]!.jd ? [i] : []))
+      // An aggregator listing that links to an ATS Sidedoor reads gets the company's full posting when resolved.
+      const resolvable = (j: RawJob) => isAggregator && !!(detectAts(j.applyUrl) ?? detectAts(j.url))
+      const need = verdicts.flatMap((v, i) => (v === 'pass' && !jobs[i]!.jd && !resolvable(jobs[i]!) ? [i] : []))
       for (const i of need.slice(MAX_DETAILS)) unread.add(i)
       yield* Effect.forEach(
         need.slice(0, MAX_DETAILS),
@@ -189,11 +192,11 @@ const scanSource = (source: schema.Source, f: Filters) =>
           .onConflictDoNothing()
           .run()
       }
-      // A company board that stopped listing a posting has closed it. Not aggregators (listings roll off
-      // their feeds while still open), not an empty read (a board hiccup), not a list cut off at its
-      // cap (the rest is further down), and only after a day missing.
+      // A company board that stopped listing a posting has closed it. Not feeds (listings roll off them
+      // while still open; portfolio boards list everything open, so they count), not an empty read (a
+      // board hiccup), not a list cut off at its cap (the rest is further down), and only after a day missing.
       const partial = fetched.success.length >= (LIST_CAP[source.kind] ?? Infinity)
-      if (!isAggregator && !partial && jobs.length > 0)
+      if ((!isAggregator || isPortfolio) && !partial && jobs.length > 0)
         tx.update(schema.postings)
           .set({ closedAt: started })
           .where(and(eq(schema.postings.sourceId, source.id), isNull(schema.postings.closedAt), lt(schema.postings.lastSeenAt, new Date(Date.parse(started) - 24 * 3600_000).toISOString())))
