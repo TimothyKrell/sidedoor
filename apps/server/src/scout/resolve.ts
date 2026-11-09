@@ -354,7 +354,7 @@ export const resolveAggregatorPostings = async (limit = 25) => {
             else counts.notFound++
           }
         }),
-      { concurrency: 4 },
+      { concurrency: 8 },
     ),
   )
   boardJobs.clear()

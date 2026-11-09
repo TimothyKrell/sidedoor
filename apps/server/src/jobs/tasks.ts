@@ -8,7 +8,6 @@ import { db, schema } from '../db/client'
 import { newId, nowIso } from '../ids'
 import { notifyPromise } from '../notify'
 import { AGGREGATOR_KINDS, ATS_LINK, detectAts, detectSource, fetchJson, fetchText, isAdapterKind, parseRss, probeBoard } from '../scout/adapters'
-import { resolveAggregatorPostings } from '../scout/resolve'
 import { readyToScore, scan } from '../scout/scan'
 import { getApplication, setStage, trackPosting, updateApplication } from '../services/applications'
 import { answersFor, askedBefore } from '../services/questions'
@@ -93,9 +92,8 @@ const triageJd = (r: schema.Posting) => {
 
 export const runTriage = async () => {
   const s = getSettings()
-  // Swap aggregator listings for the company's own posting first, so triage reads the full JD.
-  const resolved = await resolveAggregatorPostings().catch((e) => (console.error('[resolve] failed', e), null))
-  if (resolved && resolved.resolved + resolved.duplicate > 0) console.log(`[resolve] ${JSON.stringify(resolved)}`)
+  // Aggregator listings are matched to the company's own posting on their own loop (runner.ts);
+  // readyToScore leaves out the ones still waiting.
   if (!s.triage.enabled || aiLimitedUntil()) return { triaged: 0 }
   const pending = readyToScore(s.triage.maxPerRun)
   if (pending.length === 0) return { triaged: 0 }

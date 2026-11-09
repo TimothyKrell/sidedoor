@@ -8,7 +8,7 @@ import { db, schema } from '../db/client'
 import { nowIso, today } from '../ids'
 import { notify } from '../notify'
 import { queueBriefs } from '../review'
-import { activateFoundBoards } from '../scout/resolve'
+import { activateFoundBoards, resolveAggregatorPostings } from '../scout/resolve'
 import { scan } from '../scout/scan'
 import { setStage } from '../services/applications'
 import { listingClosedAt } from '../services/listings'
@@ -47,6 +47,12 @@ const scoutTick = Effect.gen(function* () {
   if (r.sources) log(`[scout] ${r.sources} sources, ${r.jobs} jobs, ${r.new} new, ${r.newPass} new matches, ${r.errors} errors`)
   setMeta('lastScan', { at: nowIso(), ...r })
 })
+
+// Matching aggregator listings to the company's original runs on its own loop: scoring waits for it,
+// so a slow AI batch mustn't hold it up. Plain HTTP, no AI.
+const resolveTick = Effect.promise(async () => (ready() ? resolveAggregatorPostings(100) : null)).pipe(
+  Effect.tap((r) => Effect.sync(() => r && r.resolved + r.duplicate > 0 && log(`[resolve] ${JSON.stringify(r)}`))),
+)
 
 // Triage runs on its own loop so a slow AI batch never delays polling.
 const triageTick = Effect.promise(async () => (ready() && getSettings().ai.default ? runTriage() : { triaged: 0 })).pipe(
@@ -195,12 +201,13 @@ const main = Effect.gen(function* () {
   }).pipe((e) => guarded('sources', e))
   const scout = yield* scoutTick.pipe((e) => guarded('scout', e), Effect.repeat(Schedule.spaced(Duration.seconds(20))), Effect.forkChild)
   const triage = yield* triageTick.pipe((e) => guarded('triage', e), Effect.repeat(Schedule.spaced(Duration.seconds(15))), Effect.forkChild)
+  const resolve = yield* resolveTick.pipe((e) => guarded('resolve', e), Effect.repeat(Schedule.spaced(Duration.seconds(10))), Effect.forkChild)
   const tasks = yield* taskLoop.pipe(Effect.forkChild)
   const sched = yield* scheduleTick.pipe((e) => guarded('schedule', e), Effect.repeat(Schedule.spaced(Duration.minutes(1))), Effect.forkChild)
   const grok = yield* Effect.promise(() => grokBotTick()).pipe((e) => guarded('grokbot', e), Effect.repeat(Schedule.spaced(Duration.seconds(15))), Effect.forkChild)
   // Grok Bot's submit batches: the next form gets its turn when the one before it is done.
   const batches = yield* Effect.promise(() => advanceBatches()).pipe((e) => guarded('batches', e), Effect.repeat(Schedule.spaced(Duration.seconds(5))), Effect.forkChild)
-  yield* Fiber.joinAll([scout, triage, tasks, sched, grok, batches])
+  yield* Fiber.joinAll([scout, triage, resolve, tasks, sched, grok, batches])
 })
 
 /** Start the background loops. Returns a function that stops them. */
