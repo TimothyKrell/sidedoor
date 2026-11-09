@@ -564,7 +564,8 @@ const remoteLoc = (where: string | undefined) => `${where ?? ''} | Remote`.repla
 
 /**
  * Job boards that publish JSON instead of RSS: Remotive and Jobicy (`jobs`), Working Nomads (a list,
- * or an Elasticsearch `hits` result), and JSON Feed (`items`). Everything they list is remote.
+ * or an Elasticsearch `hits` result), and JSON Feed (`items`). Everything they list is remote, unless
+ * the feed says how each job is worked (`work_type`, as a VC fund's jobs file does).
  */
 export const parseJsonFeed = (d: unknown): RawJob[] => {
   const o = obj(d)
@@ -574,14 +575,16 @@ export const parseJsonFeed = (d: unknown): RawJob[] => {
     const url = str(j.url) ?? str(j.absolute_url) ?? str(j.link) ?? str(j.apply_url) ?? ''
     const salMin = j.salaryMin ?? j.annualSalaryMin
     const salMax = j.salaryMax ?? j.annualSalaryMax
+    const where = str(j.candidate_required_location) ?? str(j.jobGeo) ?? str(j.location) ?? (arr(j.locations).map(str).filter(Boolean).join(', ') || undefined)
+    const mode = str(j.work_type)
     return {
       extId: str(j.id) ?? url,
       title: htmlToText(str(j.title) ?? str(j.jobTitle) ?? str(j.position) ?? ''),
       company: str(j.company_name) ?? str(j.companyName) ?? (Predicate.isString(j.company) ? j.company : str(obj(j.company).name)),
-      location: remoteLoc(str(j.candidate_required_location) ?? str(j.jobGeo) ?? str(j.location) ?? (arr(j.locations).map(str).filter(Boolean).join(', ') || undefined)),
+      location: mode ? joinLocs([where, mode]) : remoteLoc(where),
       url,
       applyUrl: str(j.apply_url) ?? url,
-      postedAt: str(j.publication_date) ?? str(j.pubDate) ?? str(j.pub_date) ?? str(j.date_published),
+      postedAt: str(j.publication_date) ?? str(j.pubDate) ?? str(j.pub_date) ?? str(j.date_published) ?? str(j.first_seen),
       jd: htmlToJd(str(j.description) ?? str(j.jobDescription) ?? str(j.content_html) ?? str(j.content_text)),
       comp: str(j.salary) || (salMin !== undefined && salMin !== null ? `${str(j.salaryCurrency) ?? ''} ${str(salMin)}-${str(salMax) ?? ''}`.trim() : undefined),
     }

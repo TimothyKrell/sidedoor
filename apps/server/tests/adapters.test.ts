@@ -169,6 +169,9 @@ describe('job feeds', () => {
     const nomads = parseJsonFeed({ hits: { hits: [{ _source: { id: 191, title: 'Principal Engineer', company: 'G-P', locations: ['USA'], pub_date: '2026-10-28T10:06:33-04:00', apply_url: 'https://job-boards.greenhouse.io/gp/jobs/1', description: '<p>JD</p>' } }] } })
     expect(nomads[0]).toMatchObject({ extId: '191', company: 'G-P', location: 'USA | Remote', url: 'https://job-boards.greenhouse.io/gp/jobs/1' })
     expect(parseJsonFeed([{ url: 'https://www.workingnomads.com/job/go/1/', title: 'Senior Back-end Developer', company_name: 'Citrusco', location: 'Europe, USA' }])[0]).toMatchObject({ location: 'Europe, USA | Remote' })
+    // A fund's jobs file says how each job is worked; an on-site one isn't made remote.
+    const fund = parseJsonFeed({ jobs: [{ id: '0x::b3', company: '0x', title: 'Engineering Manager', location: 'New York, NY', work_type: 'On-site', apply_url: 'https://jobs.ashbyhq.com/0x/b3', first_seen: '2026-11-02T13:01:38+00:00' }] })
+    expect(fund[0]).toMatchObject({ company: '0x', location: 'New York, NY | On-site', url: 'https://jobs.ashbyhq.com/0x/b3', postedAt: '2026-11-02T13:01:38+00:00' })
   })
 
   test('a JSON feed URL saved as rss is read, and a page that is no feed is an error, not an empty feed', async () => {
