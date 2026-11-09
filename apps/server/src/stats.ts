@@ -155,6 +155,16 @@ export const getStats = (window: StatsWindow = 'all', now = new Date()) => {
     .all()
   const changes = new Map<string, schema.StageChange[]>()
   for (const c of db.select().from(schema.stageChanges).orderBy(schema.stageChanges.at).all()) changes.set(c.applicationId, [...(changes.get(c.applicationId) ?? []), c])
+  // A call or meeting logged on an application is an interview, whatever stage it was left in: agents
+  // often log the screen and close the application without ever moving it to Screening.
+  const met = new Map<string, Date>()
+  const I = schema.interactions
+  for (const x of db.select({ applicationId: I.applicationId, at: I.at, summary: I.summary }).from(I).where(sql`${I.channel} in ('call', 'meeting') and ${I.direction} != 'out' and ${I.applicationId} is not null`).all()) {
+    const at = when(x.at)
+    if (!at || at > now || /\b(booked|scheduled)\b/i.test(x.summary)) continue
+    const seen = met.get(x.applicationId!)
+    if (!seen || at < seen) met.set(x.applicationId!, at)
+  }
 
   // Each application's story: when it went in, how far it got, how it ended.
   const story = apps.map((a) => {
@@ -163,13 +173,17 @@ export const getStats = (window: StatsWindow = 'all', now = new Date()) => {
     const closed = a.stage === 'closed'
     const kind = closed ? closeKind(a.closedReason, a.notesMd) : null
     const won = a.status === 'closed-won'
-    const sent = LIVE_SENT.includes(a.stage) || (closed && kind !== 'duplicate' && (!!a.appliedAt || kind === 'rejected' || won || top >= ORDER.screening!))
-    const sentAt = when(a.appliedAt) ?? reached.get('applied') ?? reached.get('screening') ?? reached.get('interviewing') ?? when(a.createdAt)!
+    const metAt = met.get(a.id) ?? null
+    const earliest = (...ds: Array<Date | null | undefined>) => ds.filter((d): d is Date => !!d).sort((x, y) => x.getTime() - y.getTime())[0] ?? null
+    const staged = reached.get('screening') ?? reached.get('interviewing') ?? reached.get('offer') ?? (top >= ORDER.screening! ? (when(a.createdAt) ?? null) : null)
+    const talkedAt = earliest(staged, metAt)
+    const interviewedAt = earliest(reached.get('interviewing') ?? reached.get('offer') ?? (top >= ORDER.interviewing! ? (when(a.createdAt) ?? null) : null), metAt)
+    const sent = LIVE_SENT.includes(a.stage) || (closed && kind !== 'duplicate' && (!!a.appliedAt || kind === 'rejected' || won || !!talkedAt))
+    const sentAt = earliest(when(a.appliedAt) ?? reached.get('applied') ?? reached.get('screening') ?? reached.get('interviewing') ?? when(a.createdAt)!, talkedAt)!
     const closedAt = closed ? (when(history.filter((c) => c.stage === 'closed').at(-1)?.at) ?? when(a.updatedAt)!) : null
-    const talkedAt = reached.get('screening') ?? reached.get('interviewing') ?? reached.get('offer') ?? (top >= ORDER.screening! ? (when(a.createdAt) ?? null) : null)
-    const quiet = a.stage === 'applied' && days(sentAt, now) >= QUIET_DAYS
-    const outcome = won || top >= ORDER.offer! ? 'offer' : !closed && top >= ORDER.screening! ? 'talking' : kind === 'rejected' ? 'rejected' : closed ? 'withdrew' : quiet ? 'quiet' : 'waiting'
-    return { ...a, kind, won, sent, sentAt, closedAt, talkedAt, top, outcome }
+    const quiet = a.stage === 'applied' && !talkedAt && days(sentAt, now) >= QUIET_DAYS
+    const outcome = won || top >= ORDER.offer! ? 'offer' : !closed && talkedAt ? 'talking' : kind === 'rejected' ? 'rejected' : closed ? 'withdrew' : quiet ? 'quiet' : 'waiting'
+    return { ...a, kind, won, sent, sentAt, closedAt, talkedAt, interviewedAt, top, outcome }
   })
   const sent = story.filter((a) => a.sent)
 
@@ -184,7 +198,7 @@ export const getStats = (window: StatsWindow = 'all', now = new Date()) => {
   const rejected = story.filter((a) => a.kind === 'rejected')
   const talked = story.filter((a) => a.talkedAt)
   const cohort = sent.filter((a) => inWindow(a.sentAt))
-  const heard = (a: (typeof story)[number]) => a.kind === 'rejected' || a.top >= ORDER.screening!
+  const heard = (a: (typeof story)[number]) => a.kind === 'rejected' || !!a.talkedAt
   const prevCohort = sent.filter((a) => inPrev(a.sentAt))
   const rate = (xs: typeof story) => (xs.length ? xs.filter(heard).length / xs.length : null)
 
@@ -263,7 +277,7 @@ export const getStats = (window: StatsWindow = 'all', now = new Date()) => {
     const rows = [...groups].map(([label, xs]) => ({
       label,
       sent: xs.length,
-      talked: xs.filter((a) => a.top >= ORDER.screening!).length,
+      talked: xs.filter((a) => a.talkedAt).length,
       rejected: xs.filter((a) => a.outcome === 'rejected').length,
     }))
     return rows.sort((a, b) => (order ? order.indexOf(a.label) - order.indexOf(b.label) : b.sent - a.sent))
@@ -312,8 +326,8 @@ export const getStats = (window: StatsWindow = 'all', now = new Date()) => {
     funnel: {
       submitted: cohort.length,
       heard: cohort.filter(heard).length,
-      talked: cohort.filter((a) => a.top >= ORDER.screening!).length,
-      interviewed: cohort.filter((a) => a.top >= ORDER.interviewing!).length,
+      talked: cohort.filter((a) => a.talkedAt).length,
+      interviewed: cohort.filter((a) => a.interviewedAt).length,
       offers: cohort.filter((a) => a.outcome === 'offer').length,
     },
     outcomes: { offer: 0, talking: 0, waiting: 0, quiet: 0, rejected: 0, withdrew: 0, ...Object.fromEntries(tally(cohort, (a) => a.outcome).map((r) => [r.label, r.n])) } as Record<'offer' | 'talking' | 'waiting' | 'quiet' | 'rejected' | 'withdrew', number>,

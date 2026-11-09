@@ -624,6 +624,10 @@ current when making a non-obvious call. Open questions for the maintainer live i
   later, or closed after going in, so moved-back cards drop out and a recruiter's role counts.
   The funnel and Heard back follow the applications sent in the period; Rejected counts rejections
   that arrived in it, so a recent period can show rejections and 0% heard back at once.
+  A call or meeting logged on an application (not one only booked or scheduled) counts as an
+  interview, and so as talking to someone, whatever stage it was left in: agents logged recruiter
+  screens and then closed the application without ever moving it to Screening, so the stages alone
+  missed real interviews.
 - **VC portfolio boards are aggregators that list in full.** A fund's job board (Getro or Consider,
   on its own host like jobs.somefund.com) lists every open job at its portfolio companies, each
   linking to the company's ATS. So they take the aggregator path: the company comes from the

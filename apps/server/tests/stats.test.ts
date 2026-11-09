@@ -3,6 +3,7 @@ import { resolve } from 'node:path'
 import { beforeEach, expect, test } from 'vitest'
 import { db, schema } from '../src/db/client'
 import { createApplication, setStage, updateApplication } from '../src/services/applications'
+import { logInteraction } from '../src/services/people'
 import { closeKind, getStats, reachedStages } from '../src/stats'
 
 const hoursAgo = (h: number) => new Date(Date.now() - h * 3600_000).toISOString()
@@ -10,7 +11,7 @@ const job = (role: string) => createApplication({ companyName: 'Initech', role, 
 const backdate = (id: string, stage: string, at: string) => db.$client.prepare('update stage_changes set at = ? where application_id = ? and stage = ?').run(at, id, stage)
 
 beforeEach(() => {
-  db.$client.exec('delete from applications; delete from stage_changes; delete from activity')
+  db.$client.exec('delete from applications; delete from stage_changes; delete from activity; delete from interactions')
 })
 
 test('closeKind reads what happened, whoever wrote it', () => {
@@ -92,6 +93,25 @@ test('counts submissions, rejections and how far things got, by when they happen
   expect(week.tiles.rejected).toEqual({ now: 1, prev: 0 })
   expect(week.series.reduce((n, b) => n + b.submitted, 0)).toBe(2)
   expect(week.series).toHaveLength(7)
+})
+
+test('a logged call or meeting is an interview, whatever stage the application was left in', () => {
+  // Screened by a recruiter, then withdrawn, without ever being moved to Screening.
+  const screened = job('Screened')
+  logInteraction({ applicationId: screened.id, channel: 'meeting', direction: 'note', summary: 'Recruiter screen booked for tomorrow', at: hoursAgo(48) })
+  logInteraction({ applicationId: screened.id, channel: 'call', direction: 'note', summary: 'Recruiter screen with Erin', at: hoursAgo(24) })
+  setStage(screened.id, 'closed', { closedReason: 'Commute too long for a non-remote role' })
+  // Booked but not had yet: talking, not interviewed.
+  const booked = job('Booked')
+  setStage(booked.id, 'screening')
+  logInteraction({ applicationId: booked.id, channel: 'meeting', direction: 'note', summary: 'Interview scheduled for Friday', at: hoursAgo(1) })
+  // The only stage-based interview.
+  const loop = job('Loop')
+  setStage(loop.id, 'interviewing')
+
+  const all = getStats('all')
+  expect(all.funnel).toMatchObject({ submitted: 3, talked: 3, interviewed: 2 })
+  expect(all.tiles.talked.now).toBe(3)
 })
 
 test('a bare day counts on that local day, whatever the time zone', () => {
