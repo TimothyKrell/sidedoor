@@ -167,6 +167,18 @@ const handleApi = async (req: IncomingMessage, res: ServerResponse, path: string
     return json(res, 200, { text, chars: text.length })
   }
 
+  // A PDF the form fill uploads with the resume (a portfolio, a cover letter): attachFile checks it.
+  if (path === '/api/upload/attachment' && req.method === 'POST') {
+    const { attachFile, ATTACHMENT_MAX_BYTES } = await import('../services/applications')
+    const header = (k: string) => decodeURIComponent(String(req.headers[k] ?? ''))
+    const buf = await readBody(req, ATTACHMENT_MAX_BYTES)
+    try {
+      return json(res, 200, attachFile(header('x-application-id'), { label: header('x-label'), name: header('x-filename') || 'attachment.pdf', bytes: buf }))
+    } catch (e) {
+      return json(res, 400, { error: e instanceof Error ? e.message : String(e) })
+    }
+  }
+
   return json(res, 404, { error: 'Not found' })
 }
 

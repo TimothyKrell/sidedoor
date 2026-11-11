@@ -457,6 +457,13 @@ current when making a non-obvious call. Open questions for the maintainer live i
 
 ## Getting applications out
 
+- **Forms get attached PDFs, not files from anywhere.** Some forms require a portfolio or a cover
+  letter file, and the fill could only upload the resume, so those stopped for a question nobody
+  could answer in words. An application now keeps attachments (`attachFile`): PDFs only, checked by
+  their first bytes, 15 MB at most, one per label, copied under `files/attachments/<id>`. The fill
+  copies them into its upload folder beside the resume, and the browser can only upload from that
+  folder. An agent attaches with `attach_file` from a path on this computer; because only a real PDF
+  gets through, it can't hand a form a key or a dotfile.
 - **One page, in the order the work happens.** Reviewing meant opening each application and hunting
   through its tabs for what was left, with 58 of them waiting. `/review` shows one application at a
   time as four steps, with Next. It's a page rather than a list you expand, because the job is to

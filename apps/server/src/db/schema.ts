@@ -147,6 +147,8 @@ export const APPLICATION_STAGES = [
 ] as const
 export type ApplicationStage = (typeof APPLICATION_STAGES)[number]
 export type ListingStatus = 'open' | 'suspect' | 'closed' | 'unknown'
+/** A file the form fill uploads besides the resume (a portfolio, a cover letter PDF). `file` is relative to the files dir. */
+export type Attachment = { label: string; name: string; file: string; bytes: number; addedAt: string }
 
 /** A role the user is pursuing. */
 export const applications = sqliteTable(
@@ -210,6 +212,8 @@ export const applications = sqliteTable(
     /** Ambiguous misses in a row (a page 404, gone from a board list); two close the listing. */
     listingMisses: integer('listing_misses').notNull().default(0),
     listingClosedAt: text('listing_closed_at'),
+    /** Files the form fill uploads with the resume (services/applications.ts attachFile). */
+    attachments: json<Attachment[]>('attachments'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

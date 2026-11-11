@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { Bot, Check, CheckCircle2, ChevronDown, Circle, ExternalLink, FileText, ListChecks, Loader2, Mail, PartyPopper, Pencil, Plus, Search, Send, ShieldAlert, ThumbsDown, Undo2, UserSearch, WandSparkles } from 'lucide-react'
+import { Bot, Check, CheckCircle2, ChevronDown, Circle, ExternalLink, FileText, ListChecks, Loader2, Mail, Paperclip, PartyPopper, Pencil, Plus, Search, Send, ShieldAlert, ThumbsDown, Trash2, Undo2, UserSearch, WandSparkles } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { z } from 'zod'
 import { CompanyAvatar, CopyButton, Due, Empty, FitBadge, Freshness, LocationNote, Markdown, Section, StageBadge, TimeAgo } from '~/components/app/bits'
@@ -627,6 +627,7 @@ function PackageTab({ d }: { d: Detail }) {
         </Button>
       </div>
       {!editing && <ApplicationQuestions applicationId={a.id} groups={questions} hasPackage />}
+      {!editing && <Attachments d={d} />}
       {!editing && <StaleFlags applicationId={a.id} />}
       {!editing && <Decisions d={d} />}
       {!editing && <WritingCheck d={d} />}
@@ -642,6 +643,59 @@ function PackageTab({ d }: { d: Detail }) {
         <PackageText md={questions.length ? withoutQuestions(withoutDecisions(a.packageMd)) : withoutDecisions(a.packageMd)} />
       )}
     </div>
+  )
+}
+
+/** PDFs the form fill uploads besides the resume, each under the label of the field it goes in. */
+function Attachments({ d }: { d: Detail }) {
+  const a = d.application
+  const qc = useQueryClient()
+  const [label, setLabel] = useState('Portfolio')
+  const [busy, setBusy] = useState(false)
+  const remove = useAction((v: { id: string; label: string }) => rpc.removeAttachment(v), { success: 'Removed' })
+  const files = a.attachments ?? []
+  const upload = async (f: File) => {
+    setBusy(true)
+    try {
+      const res = await fetch('/api/upload/attachment', { method: 'POST', headers: { 'x-application-id': encodeURIComponent(a.id), 'x-label': encodeURIComponent(label.trim()), 'x-filename': encodeURIComponent(f.name) }, body: f })
+      const j = (await res.json()) as { error?: string }
+      if (!res.ok) throw new Error(j.error ?? 'Could not attach that file')
+      toast.success(`Attached as ${label.trim()}`)
+      await qc.invalidateQueries({ queryKey: qo.application(a.id).queryKey })
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <Section title="Files the form gets" count={files.length}>
+      <div className="space-y-2 px-1">
+        <p className="text-xs text-muted-foreground">Uploaded with the resume, each into the form field its label names.</p>
+        {files.map((x) => (
+          <div key={x.label} className="flex items-center gap-2 text-sm">
+            <Paperclip className="size-4 text-muted-foreground" />
+            <span className="font-medium">{x.label}</span>
+            <a href={fileUrl(x.file)!} target="_blank" rel="noreferrer" className="truncate text-primary">
+              {x.name}
+            </a>
+            <span className="text-muted-foreground">{Math.max(1, Math.round(x.bytes / 1024))} KB</span>
+            <Button size="icon" variant="ghost" className="ml-auto size-7" aria-label={`Remove ${x.label}`} onClick={() => void remove.run({ id: a.id, label: x.label })}>
+              <Trash2 />
+            </Button>
+          </div>
+        ))}
+        <div className="flex flex-wrap items-center gap-2">
+          <Input value={label} onChange={(e) => setLabel(e.target.value)} className="h-8 w-40" aria-label="Field label" />
+          <Button asChild size="sm" variant="outline" disabled={busy || !label.trim()}>
+            <label className="cursor-pointer">
+              {busy ? <Loader2 className="animate-spin" /> : <Plus />} Attach PDF
+              <input type="file" accept="application/pdf,.pdf" className="hidden" disabled={busy || !label.trim()} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void upload(f) }} />
+            </label>
+          </Button>
+        </div>
+      </div>
+    </Section>
   )
 }
 

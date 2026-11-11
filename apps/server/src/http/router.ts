@@ -410,6 +410,10 @@ export const router = {
   /** Send the package back to the AI to use the new answers, changing only what they affect. */
   reviseWithAnswers: proc(z.object({ applicationId: z.string() }), async ({ applicationId }) => (await qs()).reviseWithAnswers(applicationId)),
   /** Check a written answer off, saving your text first if you changed it. */
+  removeAttachment: proc(z.object({ id: z.string(), label: z.string().min(1) }), async ({ id, label }) => {
+    ;(await apps()).removeAttachment(id, label)
+    return { ok: true }
+  }),
   setWriting: proc(z.object({ id: z.string(), key: z.string(), done: z.boolean(), text: z.string().max(20_000).optional() }), async ({ id, key, done, text }) => {
     ;(await apps()).setWriting(id, key, { done, ...(text !== undefined ? { text } : {}) })
     return { ok: true }

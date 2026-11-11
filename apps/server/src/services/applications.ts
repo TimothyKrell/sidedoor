@@ -1,3 +1,5 @@
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { and, desc, eq, inArray, isNotNull, notInArray } from 'drizzle-orm'
 import { decisionsOf, setDecisionLine } from '@sidedoor/shared/decisions'
 import type { ResumeMatch } from '@sidedoor/shared/match'
@@ -5,6 +7,7 @@ import { blockingFindings } from '@sidedoor/shared/rules'
 import { extractProseSections, replaceSections } from '@sidedoor/shared/package-sections'
 import { type JobBrief, type ResumeTune, textMark } from '@sidedoor/shared/review'
 import { logActivity } from '../activity'
+import { paths } from '../config'
 import { db, schema } from '../db/client'
 import { atomic } from '../db/tx'
 import { addDays, newId, nowIso, today } from '../ids'
@@ -88,6 +91,52 @@ export const updateApplication = atomic((id: string, patch: AppPatch) => {
   const moved = patch.stage && patch.stage !== getApplication(id)?.stage
   db.update(schema.applications).set({ ...patch, updatedAt: nowIso(), lastActivityAt: nowIso() }).where(eq(schema.applications.id, id)).run()
   if (moved) recordStage(id, patch.stage!)
+  return getApplication(id)
+})
+
+export const ATTACHMENT_MAX_BYTES = 15 * 1024 * 1024
+
+/** A clean file name the form shows: letters, digits, dots, dashes; always ending in .pdf. */
+const attachmentName = (name: string) => {
+  const base = name.split(/[\\/]/).pop()!.replace(/\.pdf$/i, '').replace(/[^\w.-]+/g, '-').replace(/^[-.]+|-+$/g, '').slice(0, 80)
+  return `${base || 'attachment'}.pdf`
+}
+
+/**
+ * Attach a PDF the form fill uploads besides the resume, under a label that names the form's field
+ * ("Portfolio", "Cover letter"). One per label: attaching again under the same label replaces it.
+ * Only PDFs, so nothing else on disk can reach a form.
+ */
+export const attachFile = atomic((id: string, o: { label: string; name: string; bytes: Buffer }) => {
+  const a = getApplication(id)
+  if (!a) throw new Error('Application not found')
+  const label = o.label.trim()
+  if (!label) throw new Error('Give the attachment a label, like "Portfolio".')
+  if (o.bytes.length > ATTACHMENT_MAX_BYTES) throw new Error('That file is over 15 MB.')
+  if (o.bytes.subarray(0, 5).toString('latin1') !== '%PDF-') throw new Error('Only PDF files can be attached.')
+  const name = attachmentName(o.name)
+  const dir = `attachments/${id}`
+  mkdirSync(resolve(paths.files, dir), { recursive: true })
+  const kept = (a.attachments ?? []).filter((x) => x.label.toLowerCase() !== label.toLowerCase())
+  // Two labels can't share a file name: the second gets the label in front.
+  const file = `${dir}/${kept.some((x) => x.name === name) ? `${attachmentName(label).slice(0, -4)}-${name}` : name}`
+  const replaced = (a.attachments ?? []).find((x) => x.label.toLowerCase() === label.toLowerCase())
+  if (replaced && replaced.file !== file) rmSync(resolve(paths.files, replaced.file), { force: true })
+  writeFileSync(resolve(paths.files, file), o.bytes)
+  const attachment: schema.Attachment = { label, name: file.split('/').pop()!, file, bytes: o.bytes.length, addedAt: nowIso() }
+  db.update(schema.applications).set({ attachments: [...kept, attachment], updatedAt: nowIso(), lastActivityAt: nowIso() }).where(eq(schema.applications.id, id)).run()
+  logActivity('application', `Attached ${label} to ${a.companyName} – ${a.role}`, { link: `/applications/${id}` })
+  return attachment
+})
+
+/** Take an attachment off, and its file with it. */
+export const removeAttachment = atomic((id: string, label: string) => {
+  const a = getApplication(id)
+  if (!a) throw new Error('Application not found')
+  const gone = (a.attachments ?? []).find((x) => x.label.toLowerCase() === label.trim().toLowerCase())
+  if (!gone) throw new Error(`No attachment labeled "${label}"`)
+  rmSync(resolve(paths.files, gone.file), { force: true })
+  db.update(schema.applications).set({ attachments: (a.attachments ?? []).filter((x) => x !== gone), updatedAt: nowIso() }).where(eq(schema.applications.id, id)).run()
   return getApplication(id)
 })
 

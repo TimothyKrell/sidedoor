@@ -221,6 +221,12 @@ export const runFillForm = (task: schema.Task): Promise<TaskOutcome> =>
     const pdf = { path: resolve(workDir, basename(built.path)) }
     copyFileSync(built.path, pdf.path)
     if (!isPdf(pdf.path)) throw new Error(`The resume PDF didn't reach the form's upload folder (${pdf.path}). Nothing was filled.`)
+    // And the files attached to the application (a portfolio, a cover letter PDF), under their own names.
+    const attached = (a.attachments ?? []).map((x) => {
+      const path = resolve(workDir, x.name === basename(pdf.path) ? `${x.label.replace(/\W+/g, '-')}-${x.name}` : x.name)
+      copyFileSync(resolve(paths.files, x.file), path)
+      return { label: x.label, path }
+    })
 
     // Facts for questions the package doesn't cover: the Experience sections closest to this job and package.
     const posting = a.postingId ? db.select({ jd: schema.postings.jd }).from(schema.postings).where(eq(schema.postings.id, a.postingId)).get() : undefined
@@ -267,6 +273,7 @@ export const runFillForm = (task: schema.Task): Promise<TaskOutcome> =>
               ROLE: a.role,
               URL: url,
               RESUME_PDF: pdf.path,
+              ATTACHMENTS: attached.map((x) => `- ${x.label}: ${x.path}`).join('\n'),
               PACKAGE: a.packageMd ?? '',
               SETTLED: settledNote(a),
               PROFILE: clip(context.profile(), 12_000, "get_profile_doc 'answers' with offset"),

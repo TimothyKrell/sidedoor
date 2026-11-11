@@ -37,6 +37,9 @@ bring it to the front, so this won't interrupt them.
    `browser_file_upload` with `{{RESUME_PDF}}`, and wait for it to show the file name. Many forms
    parse the resume and autofill fields from it; doing it first means that can't overwrite your
    answers. Skip separate "autofill from resume" boxes.
+   Any other upload field (portfolio, cover letter, work sample) whose label matches a file under
+   Files below: upload that file the same way (source "package"). Upload nothing else; an upload
+   field with no matching file is like any unanswered question.
 3. Fill the rest in order. Prefer `browser_fill_form` for plain text inputs (several at once);
    use `browser_select_option` for native selects, and click-then-choose for custom dropdowns,
    Yes/No buttons, radio groups and checkboxes. For autocomplete fields (location, school), type,
@@ -84,3 +87,4 @@ Return the structured result:
 
 ## Files
 - Resume PDF to upload: {{RESUME_PDF}}
+{{ATTACHMENTS}}
