@@ -240,11 +240,11 @@ export const standardStatements = (doc: string) => {
 /** Forms offer "Man" where Standard answers say "Male". Only the whole answer: "Trans man" isn't "Male". */
 const plainSex = (value: string) => value.trim().replace(/^man$/i, 'male').replace(/^woman$/i, 'female')
 
-/** A bare "Yes" or "No" (or "not a veteran"), as 'yes' / 'no'; null for anything that says more. */
+/** Whether an answer starts "Yes" or "No" (or "not a veteran", "I am not…"), as 'yes' / 'no'; null otherwise. */
 const polarity = (s: string) => {
   const t = s.replace(/\*/g, '').trim()
   if (/^yes\b/i.test(t)) return 'yes'
-  if (/^(no|not)\b/i.test(t)) return 'no'
+  if (/^(no|not|i am not|i'?m not)\b/i.test(t)) return 'no'
   return null
 }
 
@@ -256,7 +256,11 @@ const explicitlyStandard = (kinds: string[], value: string, statements: { label:
     if (/\bconfirm\b/i.test(s.answer)) return false
     if (DECLINE.test(value)) return DECLINE.test(s.answer)
     // "Yes" and "No" are all stop words: a form's bare "No" matches an answer that starts "No".
-    if (!v.size) return polarity(value) !== null && polarity(value) === polarity(s.answer)
+    // So does a form's longer no ("No, I am not a veteran or active member") when the answer is a
+    // no: the rest restates the question in the form's words, which Standard answers can't foresee.
+    const p = polarity(value)
+    if (p !== null && p === polarity(s.answer) && (!v.size || (p === 'no' && !/\bbut\b/i.test(value)))) return true
+    if (!v.size) return false
     const a = keyWords(s.answer)
     return covers(v, a) || covers(a, v)
   })

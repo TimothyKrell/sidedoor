@@ -153,3 +153,19 @@ describe('the diff and the prefilter', () => {
     expect(t.has("haven't")).toBe(false)
   })
 })
+
+describe('repeat flags', () => {
+  test('the same line quoted with its checkbox or a sentence more is one flag', async () => {
+    const pkgApp = createApplication({ companyName: 'Docsy', role: 'Survey Lead', stage: 'review' })
+    const line = 'Diversity survey (optional): drafted as Man / White / prefer not to answer on veteran status, per your standard answers.'
+    updateApplication(pkgApp.id, { packageMd: `# Package\n\n## Needs your decision\n- [x] ${line} Change it or skip it if you like.\n` })
+    appendDoc('answers', 'Veteran status: not a veteran.')
+    ai.reply = () => [{ key: `pkg:${pkgApp.id}:rest`, sentence: line, fact: 'Veteran status: not a veteran.' }]
+    await runChecks()
+    appendDoc('answers', 'Disability: decline to self-identify; veteran status still not a veteran.')
+    ai.reply = () => [{ key: `pkg:${pkgApp.id}:rest`, sentence: `- [x] ${line} Change it or skip it if you like.`, fact: 'Veteran status: not a veteran.' }]
+    await runChecks()
+    expect(listStaleFlags({ applicationId: pkgApp.id }).map((f) => f.sentence)).toEqual([line])
+    updateApplication(pkgApp.id, { stage: 'closed' })
+  })
+})

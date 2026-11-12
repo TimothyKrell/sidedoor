@@ -121,6 +121,11 @@ current when making a non-obvious call. Open questions for the maintainer live i
   (`filledValue` on the row), and an agent's dismissal releases nothing, since agents read postings:
   it answers with the value instead. A fill still waiting on a dismissed question reopens it, so a
   form never stops with nothing to answer.
+- **A self-identification no in the form's own words matches a standard no.** "No, I am not a
+  veteran or active member" shares too few words with "not a veteran (pick …)", so the fill asked
+  about veteran status again. A value starting "No" / "Not" / "I am not" now matches an answer for
+  that kind of question that also starts with a no, unless it says "but". Yes needs the words to
+  match, and a decline still matches only a decline.
 - **An answer confirms a field more strictly than a mark holds one.** Holding errs toward asking,
   so `sameQuestion` matches either way round. Confirming lets a value through, so an answer to
   "Name" doesn't confirm "Emergency contact name" (`confirmsField`).
@@ -565,6 +570,9 @@ current when making a non-obvious call. Open questions for the maintainer live i
   The user (Use suggestion opens the editor with it; Dismiss) or an agent (`list_stale_drafts`, then
   `update_draft` / `save_package`, or `clear_stale_flag`) deals with it. A flag resolves by itself
   once its sentence is gone, or its draft is sent or discarded, or its application is submitted.
+  One line is one flag: two checks quoted the same checklist line with and without its `- [x]` and
+  its last sentence, and both showed. Quotes match without list markers, and one containing the
+  other (30+ characters) counts as the same; a later repeat already open resolves itself.
 ## Posted dates and whether a listing is up
 
 - **Ask the ATS about the one job, not the page.** `jobs/listing-check.ts` asks each ATS's public

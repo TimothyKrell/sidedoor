@@ -117,6 +117,17 @@ export const normalizeText = (s: string) =>
     .trim()
     .toLowerCase()
 
+/**
+ * Two quotes of the same flagged line: one check may quote "- [x] EEO: decline veteran status. Change
+ * it if you like." and the next just "EEO: decline veteran status.".
+ */
+const sameSentence = (a: string, b: string) => {
+  const bare = (s: string) => normalizeText(s).replace(/^(?:[-*+]|\d+[.)])\s+/, '').replace(/^\[[ x]\]\s+/, '')
+  const x = bare(a)
+  const y = bare(b)
+  return x === y || (Math.min(x.length, y.length) >= 30 && (x.includes(y) || y.includes(x)))
+}
+
 // --- flags ---------------------------------------------------------------------------------------
 
 export interface NewStaleFlag {
@@ -142,7 +153,7 @@ export const addStaleFlags = atomic((flags: NewStaleFlag[]) => {
       .from(schema.staleFlags)
       .where(and(eq(schema.staleFlags.status, 'open'), sameTarget(f)))
       .all()
-    if (open.some((o) => normalizeText(o.sentence) === normalizeText(f.sentence))) continue
+    if (open.some((o) => sameSentence(o.sentence, f.sentence))) continue
     const row = {
       id: newId('stale_'),
       draftId: f.draftId,
@@ -172,20 +183,24 @@ export const clearStaleFlag = atomic((id: string, note?: string | null) => {
 
 /**
  * Open flags whose sentence is gone (the text was fixed), or whose draft was sent, discarded or
- * submitted, resolve themselves: there's nothing left to fix.
+ * submitted, resolve themselves: there's nothing left to fix. So does a later flag on a sentence
+ * that's already flagged.
  */
 const resolveSettled = atomic(() => {
-  const open = db.select().from(schema.staleFlags).where(eq(schema.staleFlags.status, 'open')).all()
+  const open = db.select().from(schema.staleFlags).where(eq(schema.staleFlags.status, 'open')).orderBy(schema.staleFlags.createdAt).all()
   if (!open.length) return
   const texts = new Map<string, string>()
   for (const t of staleTargets()) {
     const k = t.draftId ? `d:${t.draftId}` : `a:${t.applicationId}`
     texts.set(k, `${texts.get(k) ?? ''}\n${normalizeText(t.text)}`)
   }
+  const kept: schema.StaleFlag[] = []
   for (const f of open) {
     const text = texts.get(f.draftId ? `d:${f.draftId}` : `a:${f.applicationId}`)
     const why = text === undefined ? (f.draftId ? 'The draft was sent or discarded' : 'The application was submitted or closed') : !text.includes(normalizeText(f.sentence)) ? 'The sentence was changed' : null
-    if (why) db.update(schema.staleFlags).set({ status: 'resolved', note: why, clearedAt: nowIso() }).where(eq(schema.staleFlags.id, f.id)).run()
+    const dup = !why && kept.some((k) => (k.draftId ?? `a:${k.applicationId}`) === (f.draftId ?? `a:${f.applicationId}`) && sameSentence(k.sentence, f.sentence))
+    if (why || dup) db.update(schema.staleFlags).set({ status: 'resolved', note: why ?? 'Already flagged', clearedAt: nowIso() }).where(eq(schema.staleFlags.id, f.id)).run()
+    else kept.push(f)
   }
 })
 

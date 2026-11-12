@@ -258,6 +258,21 @@ describe('self-identification questions', () => {
     )
     expect(r.audit.map((e) => e.confirmed)).toEqual([true, true, false, false])
   })
+
+  test('a no in the form\'s own words goes in when Standard answers say no', () => {
+    const std = `| Field | Answer |\n|---|---|\n| EEO | Veteran status: **not a veteran** (pick "I am not a protected veteran" / "No"). Disability: decline to self-identify |\n`
+    const r = check(
+      [
+        { field: 'Are you a veteran or active member of the United States Armed Forces?', value: 'No, I am not a veteran or active member', source: 'standard_answer' },
+        { field: 'Veteran status', value: 'I am not a veteran', source: 'standard_answer' },
+        { field: 'Protected veteran?', value: 'No, but I am a veteran', source: 'standard_answer' },
+        { field: 'Do you have a disability?', value: "No, I don't have a disability", source: 'standard_answer' },
+      ],
+      '# Package\n',
+      std,
+    )
+    expect(r.audit.map((e) => e.confirmed)).toEqual([true, true, false, false])
+  })
 })
 
 describe('open questions in the package', () => {
