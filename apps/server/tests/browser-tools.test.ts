@@ -1,9 +1,23 @@
+import { runInNewContext } from 'node:vm'
 import { expect, test } from 'vitest'
+import { GUARD } from '../src/browser/guard'
 import { browserArgsProblem, isBlockedBrowserTool } from '../src/mcp/server'
 
 test('agents filling forms never get script or window-control browser tools', () => {
   for (const t of ['browser_evaluate', 'browser_run_code', 'browser_run_code_unsafe', 'browser_close', 'browser_install', 'browser_resize', 'browser_drop', 'browser_network_request', 'browser_network_requests', 'browser_console_messages', 'browser_some_future_tool']) expect(isBlockedBrowserTool(t), t).toBe(true)
   for (const t of ['browser_snapshot', 'browser_click', 'browser_fill_form', 'browser_file_upload', 'browser_select_option', 'browser_type', 'browser_tabs', 'browser_wait_for']) expect(isBlockedBrowserTool(t), t).toBe(false)
+})
+
+test("the form window hides the File System Access picker, so drop zones open a chooser the agent's upload tool can answer", () => {
+  // Chromium puts showOpenFilePicker on Window.prototype; react-dropzone (Gem) uses it when it's there.
+  class Window {
+    showOpenFilePicker() {}
+  }
+  const window = Object.assign(new Window(), { fetch: () => Promise.resolve(), location: { href: 'https://jobs.example.com/' } })
+  const document = { addEventListener: () => {} }
+  const ctx = { window, Window, document, Promise, URL, Request: class {}, setTimeout }
+  runInNewContext(GUARD, ctx)
+  expect('showOpenFilePicker' in window).toBe(false)
 })
 
 test('form agents may only open web pages and upload the files prepared for the fill', () => {

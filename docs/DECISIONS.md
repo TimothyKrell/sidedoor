@@ -475,6 +475,15 @@ current when making a non-obvious call. Open questions for the maintainer live i
   copies them into its upload folder beside the resume, and the browser can only upload from that
   folder. An agent attaches with `attach_file` from a path on this computer; because only a real PDF
   gets through, it can't hand a form a key or a dotfile.
+- **Form windows have no File System Access picker.** Gem's upload box (react-dropzone) calls
+  `window.showOpenFilePicker` when the browser has it, instead of clicking its `<input type=file>`.
+  That picker isn't a file chooser Playwright can answer, so the fill's `browser_file_upload` always
+  failed with "no related modal state" and Gem applications stopped without a resume. The submit
+  guard, which runs before every form page's own scripts, removes `showOpenFilePicker`; drop zones
+  then fall back to the input, as they do in Firefox and Safari. Uploading by hand in the window
+  still works the same way. Setting files straight on a hidden input was the other option, but it
+  would give the agent a second upload path to police, and the chooser path already checks the
+  folder.
 - **One page, in the order the work happens.** Reviewing meant opening each application and hunting
   through its tabs for what was left, with 58 of them waiting. `/review` shows one application at a
   time as four steps, with Next. It's a page rather than a list you expand, because the job is to

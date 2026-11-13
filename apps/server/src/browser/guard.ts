@@ -19,6 +19,12 @@ export const GUARD = `(() => {
     e.preventDefault(); e.stopImmediatePropagation()
     console.warn('[sidedoor] blocked ' + what + ' while filling; you submit')
   }
+  // Upload drop zones built on react-dropzone (Gem) open the File System Access picker when the
+  // browser has one, and that picker never reaches the agent's browser_file_upload. Without it they
+  // click their <input type=file> like every other form, which does.
+  for (const k of ['showOpenFilePicker']) {
+    try { delete Window.prototype[k]; delete window[k] } catch {}
+  }
   document.addEventListener('click', (e) => { if (finalButton(e.target)) block(e, 'submit click') }, true)
   document.addEventListener('submit', (e) => {
     const s = e.submitter
