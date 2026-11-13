@@ -275,6 +275,47 @@ describe('self-identification questions', () => {
   })
 })
 
+describe('consent and certification boxes', () => {
+  const boxes = [
+    { field: 'I certify that all statements in this application are true and complete', value: 'Checked' },
+    { field: 'I agree to the Dell Applicant Privacy Policy', value: 'Yes' },
+    { field: 'I agree to resolve disputes through binding arbitration', value: 'Checked' },
+    { field: 'I agree to receive text messages about my application', value: 'Checked' },
+  ]
+  // The filler can't tick these on its own say-so, and Needs your decision listing one doesn't hold it.
+  const pkg = '# Package\n\n## Needs your decision\n- [ ] Tick the Dell applicant privacy policy box.\n'
+
+  test('with a yes in Standard answers, the routine ones go in; arbitration and texts still ask', () => {
+    const r = check(boxes.map((b) => ({ ...b, source: 'ai_generated' })), pkg, `${STANDARD}\n- Consent and certification boxes: Yes, accept\n`)
+    expect(r.audit.map((e) => e.confirmed)).toEqual([true, true, false, false])
+  })
+
+  test('said in their own words when a form asked once: "Always certify all these"', () => {
+    const std = '- **Certify all statements are true and complete** Always certify all these\n- **GDPR Disclosure** Acknowledge/Confirm. You can always acknowledge and confirm all things like this\n'
+    const r = check(boxes.map((b) => ({ ...b, source: 'ai_generated' })), pkg, std)
+    expect(r.audit.map((e) => e.confirmed)).toEqual([true, true, false, false])
+  })
+
+  test('without it, or with only the template line, each one asks', () => {
+    for (const std of [STANDARD, '- Consent and certification boxes (privacy policy, "I certify this is true"): (say "Yes, accept" to have them ticked)\n']) {
+      const r = check(boxes.slice(0, 2).map((b) => ({ ...b, source: 'ai_generated' })), pkg, std)
+      expect(r.audit.map((e) => e.confirmed)).toEqual([false, false])
+    }
+  })
+
+  test('a yes never lets a declined box or another question through', () => {
+    const r = check(
+      [
+        { field: 'I agree to the privacy policy', value: 'I do not agree', source: 'ai_generated' },
+        { field: 'Do you have any certifications?', value: 'AWS', source: 'ai_generated' },
+      ],
+      '# Package\n',
+      '- Consent boxes: Yes\n',
+    )
+    expect(r.audit.map((e) => e.confirmed)).toEqual([false, false])
+  })
+})
+
 describe('open questions in the package', () => {
   test('a field listed only under "Questions for …" or "Needs your decision" is a question, though its table answer looks fine', () => {
     const pkg = `## Questions for Sam

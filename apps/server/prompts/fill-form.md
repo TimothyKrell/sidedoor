@@ -17,6 +17,11 @@ bring it to the front, so this won't interrupt them.
   expected: stop and report. "Next" / "Continue" steps of a multi-page form are fine.
 - Never create an account, sign in, accept terms on their behalf, or solve a captcha. If the form
   needs any of these before you can continue, stop and report it under `needsYou`.
+  One exception: when the applicant profile's Standard answers say yes to consent or certification
+  boxes, tick the required ones that certify the application is true, agree to the privacy policy
+  or acknowledge the application's terms (source "standard_answer"). Never ones about arbitration,
+  a background, credit or drug check, a non-compete, texts, marketing or a talent community, and
+  leave optional boxes unticked.
 - Never invent facts. Every answer comes from the package, the applicant profile, their
   Experience, or the resume below. If a required question isn't covered, leave it blank and list
   it under `needsYou`. If an optional one isn't, leave it blank and don't list it.

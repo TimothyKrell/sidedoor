@@ -10,3 +10,4 @@ Agents copy these into application forms. Keep them current.
 - How did you hear about us: (agents fill this per application)
 - Pronouns (optional):
 - Demographic / EEO questions: (e.g. "Decline to self-identify")
+- Consent and certification boxes (privacy policy, "I certify this is true"): (say "Yes, accept" to have them ticked)

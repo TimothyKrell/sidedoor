@@ -266,6 +266,22 @@ const explicitlyStandard = (kinds: string[], value: string, statements: { label:
   })
 }
 
+/**
+ * The routine boxes an application asks you to tick: certify it's true, agree to the privacy
+ * policy, acknowledge the terms. Not ones that sign you up for more (texts, a talent community)
+ * or agree to something bigger (arbitration, a background or credit check, a drug test).
+ */
+const CONSENT = /\b(certify|certifies|attest|acknowledge|acknowledges|consent|agree|agrees)\b|privacy (policy|notice|statement)|\bterms\b|\bgdpr\b/i
+const NOT_ROUTINE = /arbitrat|background|drug|credit|\bsms\b|text message|marketing|newsletter|talent (community|network|pool)|job alert|non-?compete/i
+export const isConsent = (label: string) => CONSENT.test(label) && !NOT_ROUTINE.test(label)
+
+/** Standard answers give blanket permission for those boxes: a line about them that says yes. */
+const consentGiven = (statements: { label: string; answer: string }[]) =>
+  statements.some((s) => /consent|certif|attest|acknowledg|agree|privacy|terms|gdpr/i.test(s.label) && !/\bCONFIRM\b/.test(s.answer) && (polarity(s.answer) === 'yes' || /^\W*(always\s+)?(accept|agree|tick|check|certify|acknowledge|consent)/i.test(s.answer)))
+
+/** Ticked or agreed to, not declined. */
+const affirms = (value: string) => !/^\W*(no|not|unchecked|false)\b|\b(do not|don'?t|disagree|decline)\b/i.test(value)
+
 export interface FilledField {
   field: string
   value: string
@@ -309,6 +325,7 @@ export const checkFill = (o: { filled: FilledField[]; needsYou: { field: string 
       return explicitlyStandard(kinds, f.value, std)
         ? { ...base, source: 'standard_answer', confirmed: true }
         : { ...base, source: 'unconfirmed', confirmed: false, why: 'A self-identification question your Standard answers don’t answer in so many words.' }
+    if (isConsent(f.field) && affirms(f.value) && consentGiven(std)) return { ...base, source: 'standard_answer', confirmed: true }
     const row = pkg.answers.find((r) => r.flag && same(r.question, f.field))
     if (row) return { ...base, source: 'unconfirmed', confirmed: false, why: `The package marks its answer “${row.answer || row.source}” as not confirmed (${row.flag}).` }
     // The resume file itself: open items about its wording aren't about this field.

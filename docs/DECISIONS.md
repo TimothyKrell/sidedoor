@@ -135,6 +135,12 @@ current when making a non-obvious call. Open questions for the maintainer live i
   answered it through `answer_questions` (those go to Standard answers automatically). An explicit
   Standard answer wins over the package's own "(confirm)" on the same field. One answer isn't read
   into another: "Race/ethnicity: White" doesn't answer "Are you Hispanic/Latino?".
+- **Routine consent boxes go in on one yes in Standard answers.** "I certify this is true" and
+  "I agree to the privacy policy" stopped nearly every submit, and the answer is always the same.
+  A line in Standard answers about consent or certification boxes that says yes ("Yes, accept")
+  lets the fill tick the required ones, and the audit confirms them from that line, not from the
+  filler's say-so. It never covers arbitration, background/credit/drug checks, non-competes, texts,
+  marketing or talent communities: those still ask. Without the line, nothing changes.
 - **A batch sends one form at a time, and decides each at its turn.** It queues the next fill only
   when the last one is done, instead of queueing all of them: the form lock already serializes
   fills, but queueing ahead would make pause and cancel race the queue, and a company's limit has
