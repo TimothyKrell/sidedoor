@@ -3,7 +3,7 @@ import { Link } from '@tanstack/react-router'
 import { ArrowLeft, Bot, Check, ChevronUp, FileDown, Loader2, MessageSquarePlus, Minus, PanelRightClose, PanelRightOpen, Plus, TriangleAlert } from 'lucide-react'
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { diffResume, type ResumeContent, resumeLines, setLine, type ThemeOptions } from '@sidedoor/shared/resume'
+import { diffResume, headerLine, type ResumeContent, resumeLines, setLine, type ThemeOptions } from '@sidedoor/shared/resume'
 import { renderResume, THEMES } from '@sidedoor/shared/resume-themes'
 import { LEVEL_META, type MatchLevel } from '@sidedoor/shared/match'
 import { checkTellsWith, STRONG_WEIGHT } from '@sidedoor/shared/tells'
@@ -211,7 +211,11 @@ export function ResumeEditor({ resumeId }: { resumeId: string }) {
 
   const changes = useMemo(() => (content && resume ? diffResume(resume.reviewBase, content) : []), [content, resume])
   const lineList = useMemo(() => (content ? resumeLines(content) : []), [content])
-  const lineText = useMemo(() => new Map(lineList.map((l) => [l.id, l.text])), [lineList])
+  // The match can cite the header (location, links), so it's here too, or its evidence reads as removed.
+  const lineText = useMemo(() => {
+    const header = content ? headerLine(content) : null
+    return new Map([...(header ? [header] : []), ...lineList].map((l) => [l.id, l.text]))
+  }, [content, lineList])
   const notes = resume?.notes ?? []
   const match = data?.match ?? null
   const tells = useMemo(() => {

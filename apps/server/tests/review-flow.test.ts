@@ -42,15 +42,16 @@ vi.mock('../src/match', async (orig) => ({
 }))
 const pdf = join(mkdtempSync(join(tmpdir(), 'sd-pdf-')), 'Resume.pdf')
 writeFileSync(pdf, '%PDF')
-const pages = vi.hoisted(() => ({ n: 1 }))
-vi.mock('../src/services/resumes', async (orig) => ({ ...(await orig<typeof import('../src/services/resumes')>()), buildResumePdf: async () => ({ path: pdf, pages: pages.n }) }))
+// Each PDF build reads the next page count from `seq`, then `n`.
+const pages = vi.hoisted(() => ({ n: 1, seq: [] as number[] }))
+vi.mock('../src/services/resumes', async (orig) => ({ ...(await orig<typeof import('../src/services/resumes')>()), buildResumePdf: async () => ({ path: pdf, pages: pages.seq.shift() ?? pages.n }) }))
 
 const { db, schema } = await import('../src/db/client')
 const { applicationThread } = await import('../src/chat')
 const { executeTask } = await import('../src/jobs/tasks')
 const { queueBriefs, reviewQueue, tuneAll } = await import('../src/review')
 const { toolsFor } = await import('../src/mcp/tools')
-const { createApplication, getApplication, requestSubmit, setBrief, setResumeTune, setWriting, settleDecisions } = await import('../src/services/applications')
+const { createApplication, getApplication, requestSubmit, setBrief, setResumeTune, setWriting, settleDecisions, updateApplication } = await import('../src/services/applications')
 const { answerQuestions, askQuestions, listQuestions } = await import('../src/services/questions')
 const { baseResume, createResume, requireResume, saveContent, tailoredFor } = await import('../src/services/resumes')
 const { enqueueTask } = await import('../src/services/tasks')
@@ -89,6 +90,7 @@ afterEach(() => {
   ai.act = null
   scores.next = []
   pages.n = 1
+  pages.seq = []
   tab.calls = []
   db.delete(schema.tasks).run()
 })
@@ -280,6 +282,47 @@ describe('tuning the resume', () => {
     expect(t.status).toBe('failed')
     expect(t.error).toContain('pages')
     expect(getApplication(a.id)!.tuneJson).toBeNull()
+  })
+
+  test('a pass that runs past the pages it started on is undone, even when it scored higher', async () => {
+    const a = ready('Longer')
+    const before = requireResume(a.resumeId!).content
+    pages.seq = [1, 2, 1] // start, after the pass, after the restore; Settings allow 2
+    scores.next = [75, 94, 75]
+    ai.replies = [{ summary: 'Added four bullets.', rounds: 2, stopped: 'no_gain' }]
+    ai.act = () => void saveContent(a.resumeId!, { ...before, highlights: [{ id: 'h9', value: '99%', label: 'uptime' }] }, { by: 'agent' })
+    const t = await run(a.id)
+    expect(t.status).toBe('done')
+    expect(ai.prompts[0]).toContain('Page budget: 1 page(s)')
+    expect(requireResume(a.resumeId!).content).toEqual(before)
+    expect(getApplication(a.id)!.tuneJson).toMatchObject({ from: 75, to: 75, reverted: true })
+    expect(getApplication(a.id)!.tuneJson!.summary).toContain('it ran to 2 pages, past 1')
+  })
+
+  test('a pass that adds a skills section is undone', async () => {
+    const a = ready('Skills')
+    const before = requireResume(a.resumeId!).content
+    const lean = { ...before, sections: before.sections.filter((x) => x.type !== 'skills') }
+    saveContent(a.resumeId!, lean, { by: 'agent' })
+    scores.next = [75, 90, 75]
+    ai.replies = [{ summary: 'Added the tools.', rounds: 1, stopped: 'target' }]
+    ai.act = () => void saveContent(a.resumeId!, { ...lean, sections: [...lean.sections, { id: 'sk1', type: 'skills', title: 'Skills', groups: [{ id: 'g1', label: 'Tools', text: 'A, B, C' }] }] }, { by: 'agent' })
+    await run(a.id)
+    expect(requireResume(a.resumeId!).content.sections.map((x) => x.id)).toEqual(lean.sections.map((x) => x.id))
+    expect(getApplication(a.id)!.tuneJson).toMatchObject({ reverted: true })
+    expect(getApplication(a.id)!.tuneJson!.summary).toContain('it added a Skills section')
+  })
+
+  test("it's given the instructions its prep got and the application's notes", async () => {
+    const a = ready('Instructed')
+    enqueueTask('prep', 'Prep', { applicationId: a.id, input: { instructions: 'Keep it to one page. No skills section.' }, dedupe: false })
+    updateApplication(a.id, { notesMd: 'The recruiter passes on dense resumes.' })
+    scores.next = [75, 80]
+    ai.replies = [{ summary: 'Reworded two bullets.', rounds: 1, stopped: 'page_full' }]
+    expect((await run(a.id)).status).toBe('done')
+    expect(ai.prompts[0]).toContain('Keep it to one page. No skills section.')
+    expect(ai.prompts[0]).toContain('The recruiter passes on dense resumes.')
+    expect(getApplication(a.id)!.tuneJson).toMatchObject({ stopped: 'page_full', to: 80 })
   })
 
   test('tune all queues only the untuned, once each', () => {

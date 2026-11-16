@@ -169,13 +169,16 @@ that no form asked for are optional (`holdsApplication`): they're listed apart a
 order. `review.ts` works out each one's step, using `packages/shared/src/review.ts` so Today, the
 page and agents agree.
 
-1. **Resume.** A `tune` task (`jobs/tune.ts`, `prompts/tune.md`) runs after every prep, or from Tune
-   on the page. The AI edits and re-checks until the match reaches 95 or stops rising, then may
+1. **Resume.** A `tune` task (`jobs/tune.ts`, `prompts/tune.md`) runs after every prep the user
+   gave no instructions (one with instructions is kept as prepared), or from Tune on the page. It
+   gets those instructions and the application's notes, which win over the score. The AI edits and
+   re-checks until the match reaches 95 or stops rising, then may
    propose questions that could raise it further; `worthAsking` keeps at most four, on
    requirements still short, most points first. They're optional and shown folded under the
    resume, not with step 2. Answers go to Experience; answers since the last pass let a re-tune run
-   past 95. Sidedoor measures the start and finish itself and restores
-   the resume if the pass left it lower.
+   past 95. Sidedoor measures the start and finish itself and restores the resume if the pass left
+   it lower, longer than it started (or than Settings allow), or with a new section or skills group
+   (`tuneBreaks`).
 2. **Questions and decisions.** The question store, and the package's "Needs your decision" list.
    Talk it through opens the application's own chat (`applicationThread`), which starts with what
    the AI found and costs nothing until the user writes.

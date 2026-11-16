@@ -465,6 +465,16 @@ current when making a non-obvious call. Open questions for the maintainer live i
   `MATCH_NOISE_MARGIN`, 3 points). Loops that raise the score stop when a round doesn't clear it.
 - Checks from before v2 keep their stored score. They have no breakdown until they're re-checked,
   and the first v2 check re-judges everything.
+- **The header is evidence.** The check read only the resume's editable lines, and the location,
+  links and contact sit in the header, which isn't one. So a "US / Canada" requirement came back
+  "the resume shows no location" on a resume whose header said where they live, at 10 points, and
+  tuning then wrote the location into the summary. The check now reads the header as one more line,
+  `header` (`matchLines`: location and links; email and phone answer nothing), which it can cite and
+  which no edit can touch. No rubric bump: to a check from before, `header` is a new line, so the
+  frozen list stays and only requirements that now cite it are judged again. Stored checks don't
+  re-run on their own, so once after the update, open applications whose check couldn't see the
+  header and has a logistics requirement short with no line behind it get one re-check each
+  (`recheckHeaderBlind`); it was 8 of 328.
 
 ## Getting applications out
 
@@ -545,6 +555,29 @@ current when making a non-obvious call. Open questions for the maintainer live i
   the match check itself, and a pass that ends lower is undone, so "raised from 80 to 91" can be
   trusted. The AI stops at 95, or when two rounds don't beat the noise margin, and after 4 rounds at
   most. It stops short of inventing anything: what's left becomes questions.
+- **Tuning keeps to what the user asked for, and the code holds the limits it can.** A prep run with
+  the user's instructions (one page, no skills section, don't mirror the posting, because the
+  company's recruiter had said so) left a lean one-page resume at 75. Tuning started on its own and
+  took it to 94 in two minutes by undoing all of it: back to two pages, a tool list in the summary,
+  lines written to tick off "builds trust" and "writes crisp docs". It never saw the instructions or
+  the notes, its only page limit was the Settings maximum, and its prompt said to use "the posting's
+  own words". Now:
+  - A prep with instructions doesn't queue tuning. The resume is recorded as kept as prepared
+    (`stopped: 'kept'`), so it doesn't sit in "Not tuned yet" and Tune all leaves it alone. Tune on
+    the page still runs it. Tuning is a score chaser, and the instructions are the user saying the
+    score isn't the point here; following them in the prompt alone is a request the model can lose
+    when the score is in front of it.
+  - Tuning gets the instructions every prep on the application had (and its own), and the
+    application's notes, and is told they win over the score.
+  - Its page budget is the pages it started on, never more than Settings allow. Sidedoor builds the
+    PDF before and after and undoes the whole pass if it ran over, or added a section or a skills
+    group (`tuneBreaks`). Undoing it all is blunt, but a pass's edits lean on each other, and the
+    prep's resume is a good one to fall back to. It used to fail the task and leave the long resume.
+  - The prompt: replace or reword before adding; no tool or keyword lists in the summary or bullets;
+    never word a line after a requirement or add one to tick it off (soft traits aren't lines); and
+    a new stop, `page_full`, for when the next gain needs more on a resume at its budget. Those are
+    judgment calls a check would get wrong (a tool named in a bullet about what was built with it
+    is fine), so they stay in the prompt.
 - **A check-off belongs to the text.** If the AI revises an essay after the user checked it, the
   check would otherwise vouch for words they never read, so it's stored as a mark of the text.
 - **An application's chat costs nothing to open.** Its first message is built from stored data, not

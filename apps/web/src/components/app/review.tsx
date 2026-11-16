@@ -100,7 +100,7 @@ export function ResumeStep({ d, working, questions }: { d: Detail; working: bool
           ) : t ? (
             <>
               <div className="font-medium">
-                {t.rounds === 0 ? `Already at ${t.to}` : t.to > t.from ? `Your AI raised it from ${t.from} to ${t.to}` : `Your AI held it at ${t.to}`}
+                {t.stopped === 'kept' ? `Left as prepared, at ${t.to}` : t.rounds === 0 ? `Already at ${t.to}` : t.to > t.from ? `Your AI raised it from ${t.from} to ${t.to}` : `Your AI held it at ${t.to}`}
                 {t.rounds > 0 && <span className="font-normal text-muted-foreground"> in {t.rounds} round{t.rounds === 1 ? '' : 's'}</span>}
               </div>
               <div className="text-xs text-muted-foreground">
@@ -119,7 +119,7 @@ export function ResumeStep({ d, working, questions }: { d: Detail; working: bool
           <MessageSquare /> Talk it through
         </Button>
         <Button size="sm" variant={t && !fresh ? 'outline' : 'default'} disabled={working || tune.pending} onClick={() => void tune.run({ kind: 'tune', applicationId: a.id })}>
-          <WandSparkles /> {fresh ? `Tune again with ${fresh} answer${fresh === 1 ? '' : 's'}` : t ? 'Tune again' : 'Tune resume'}
+          <WandSparkles /> {fresh ? `Tune again with ${fresh} answer${fresh === 1 ? '' : 's'}` : t && t.stopped !== 'kept' ? 'Tune again' : 'Tune resume'}
         </Button>
         {d.resume && (
           <Button asChild size="sm" variant="outline">

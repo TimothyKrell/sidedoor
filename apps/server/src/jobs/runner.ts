@@ -175,6 +175,12 @@ const scheduleTick = Effect.gen(function* () {
     enqueueTask('discover', 'Discover new companies and job boards')
   }
   if (aiReady) queueBriefs()
+  // Once: match checks from before the header counted as evidence get re-checked where it matters.
+  if (aiReady && !getMeta('headerRecheckQueued')) {
+    setMeta('headerRecheckQueued', nowIso())
+    const r = (yield* Effect.promise(() => import('../match'))).recheckHeaderBlind()
+    if (r.queued) log(`[match] re-checking ${r.queued} match(es) that couldn't see the resume header`)
+  }
   refreshPrepOrder()
   // Listing checks call the ATSs' public APIs, a few each half hour; not AI work, so no AI needed.
   if (!refreshRunning() && due('lastListingCheck', 30 * 60_000)) {

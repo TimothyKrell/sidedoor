@@ -179,6 +179,25 @@ export function resumeLines(c: ResumeContent): LineInfo[] {
   return out
 }
 
+/** The id the match check cites the header by. It isn't an editable line, so no edit can use it. */
+export const HEADER_LINE_ID = 'header'
+
+/**
+ * The header as one line the match check reads and can cite: where they're based and their links.
+ * A posting's "US / Canada" or "a GitHub we can look at" is answered here, not in any bullet.
+ * Email and phone answer nothing, so they stay out.
+ */
+export function headerLine(c: ResumeContent): { id: string; text: string } | null {
+  const parts = [c.basics.location.trim() && `Location: ${c.basics.location.trim()}`, ...c.basics.links.map((l) => (l.label && !l.url.includes(l.label) ? `${l.label}: ${l.url}` : l.url))].filter(Boolean)
+  return parts.length ? { id: HEADER_LINE_ID, text: `Header: ${parts.join(' | ')}` } : null
+}
+
+/** What the match check reads: the header, then every line but section headings. */
+export function matchLines(c: ResumeContent): { id: string; text: string }[] {
+  const header = headerLine(c)
+  return [...(header ? [header] : []), ...resumeLines(c).filter((l) => l.kind !== 'heading').map((l) => ({ id: l.id, text: l.text }))]
+}
+
 /** Plain-text resume, for prompts and the match check: one line per entry, prefixed with its id. */
 export function resumeAsText(c: ResumeContent, withIds = true): string {
   const head = [c.basics.name, [c.basics.location, c.basics.email, c.basics.phone, ...c.basics.links.map((l) => l.url)].filter(Boolean).join(' | ')]

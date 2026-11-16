@@ -1,6 +1,7 @@
-import { eq } from 'drizzle-orm'
+import { and, desc, eq } from 'drizzle-orm'
 import { z } from 'zod'
-import { TUNE_MAX_QUESTIONS, TUNE_STOPS, TUNE_TARGET, type TuneStop } from '@sidedoor/shared/review'
+import { TUNE_AI_STOPS, TUNE_MAX_QUESTIONS, TUNE_TARGET, type TuneStop } from '@sidedoor/shared/review'
+import { HEADER_LINE_ID, headerLine, type ResumeContent } from '@sidedoor/shared/resume'
 import { MATCH_NOISE_MARGIN, type ResumeMatch } from '@sidedoor/shared/match'
 import { logActivity } from '../activity'
 import { mcpFor, runJob } from '../ai'
@@ -18,7 +19,7 @@ import { jdText, type TaskOutcome } from './tasks'
 const TuneOut = z.object({
   summary: z.string(),
   rounds: z.number().int().min(0),
-  stopped: z.enum(TUNE_STOPS),
+  stopped: z.enum(TUNE_AI_STOPS),
   questions: z.array(z.object({ question: z.string(), why: z.string(), requirement: z.string() })).optional(),
 })
 
@@ -42,10 +43,43 @@ const worthAsking = (asks: NonNullable<z.infer<typeof TuneOut>['questions']>, m:
 }
 
 /**
+ * What the user asked of this application, newest first: this task's own instructions and those
+ * every prep pass on it was given. A resume shaped by these was shaped on purpose.
+ */
+export const instructionsFor = (applicationId: string, task?: Pick<schema.Task, 'input'>) => {
+  const T = schema.tasks
+  const preps = db.select({ input: T.input }).from(T).where(and(eq(T.applicationId, applicationId), eq(T.kind, 'prep'))).orderBy(desc(T.createdAt)).all()
+  const said = [task?.input, ...preps.map((p) => p.input)].flatMap((i) => (typeof i?.instructions === 'string' && i.instructions.trim() ? [i.instructions.trim()] : []))
+  return [...new Set(said)]
+}
+
+/** The most pages a pass may leave: never more than it started with, nor than Settings allow. */
+export const pageBudget = (startPages: number, maxPages: number) => Math.min(startPages, maxPages)
+
+/**
+ * What a pass may not do, whatever it does for the score: run past its page budget, or add a
+ * section or a skills group (a list of tools is a skills section, wherever it sits). The rest of
+ * "don't stuff it" is judgment, and it's in the prompt. A pass that breaks one is undone.
+ */
+export const tuneBreaks = (start: ResumeContent, end: ResumeContent, pages: { start: number; end: number; max: number }) => {
+  const why: string[] = []
+  const budget = pageBudget(pages.start, pages.max)
+  if (pages.end > budget) why.push(`it ran to ${pages.end} pages, past ${budget}`)
+  const had = new Set(start.sections.map((x) => x.id))
+  const added = end.sections.filter((x) => !had.has(x.id))
+  if (added.length) why.push(`it added ${added.map((x) => `a ${x.title || x.type} section`).join(' and ')}`)
+  const groups = (c: ResumeContent) => new Set(c.sections.flatMap((x) => (x.type === 'skills' ? x.groups.map((g) => g.id) : [])))
+  const before = groups(start)
+  if ([...groups(end)].some((g) => !before.has(g))) why.push('it added a skills group')
+  return why
+}
+
+/**
  * Work the tailored resume up against the posting: edit, re-check, repeat, then leave a few optional
  * questions whose answers could push it further. Answers go to Experience, so every later pass
  * (here and elsewhere) can use them. Sidedoor measures the start and the finish itself, and puts the resume
- * back if the pass left it scoring lower than it found it.
+ * back if the pass left it scoring lower than it found it, or broke a limit (`tuneBreaks`). The pass
+ * works within the user's instructions for the application and its notes, and its page budget.
  */
 export const runTune = async (task: schema.Task): Promise<TaskOutcome> => {
   const a = task.applicationId ? getApplication(task.applicationId) : undefined
@@ -69,6 +103,10 @@ export const runTune = async (task: schema.Task): Promise<TaskOutcome> => {
   }
 
   const start = requireResume(resume.id)
+  const startPages = (await buildResumePdf(resume.id)).pages
+  const budget = pageBudget(startPages, s.prep.maxPages)
+  const told = instructionsFor(a.id, task)
+  const header = headerLine(start.content)
   const p = a.postingId ? db.select().from(schema.postings).where(eq(schema.postings.id, a.postingId)).get() : undefined
   const r = await runJob({
     job: 'prep',
@@ -76,7 +114,11 @@ export const runTune = async (task: schema.Task): Promise<TaskOutcome> => {
       APP_ID: a.id,
       LEAD_NAME: `${a.companyName} – ${a.role}`,
       RESUME_ID: resume.id,
-      MAX_PAGES: s.prep.maxPages,
+      MAX_PAGES: budget,
+      START_PAGES: startPages,
+      INSTRUCTIONS: truncate(told.join('\n\n---\n\n'), 12000) || '(none)',
+      APP_NOTES: truncate(a.notesMd?.trim() ?? '', 12000) || '(none)',
+      HEADER: header ? `[${HEADER_LINE_ID}] ${header.text}` : '(no location or links in the header)',
       TARGET: target,
       NOISE: MATCH_NOISE_MARGIN,
       JD: jdText(a, p, 'resume tuning'),
@@ -95,14 +137,18 @@ export const runTune = async (task: schema.Task): Promise<TaskOutcome> => {
   const log = [...r.log]
   const cost = (before.costUsd ?? 0) + (r.costUsd ?? 0)
   let after = await runMatch(a.id)
-  let reverted = false
-  if (after.match.score < from) {
+  let pdf = await buildResumePdf(resume.id)
+  // Undo the whole pass if it scored lower or broke a limit: a higher score isn't worth a longer
+  // resume or a tool list the user didn't want.
+  const breaks = tuneBreaks(start.content, requireResume(resume.id).content, { start: startPages, end: pdf.pages, max: s.prep.maxPages })
+  const why = after.match.score < from ? [`it scored lower (${after.match.score}, from ${from})`, ...breaks] : breaks
+  if (why.length) {
     saveContent(resume.id, start.content, { by: 'agent', reason: 'restore' })
     after = await runMatch(a.id)
-    reverted = true
-    log.push(`the pass finished lower than it started (${from}); restored the resume`)
+    pdf = await buildResumePdf(resume.id)
+    log.push(`restored the resume: ${why.join('; ')}`)
   }
-  const pdf = await buildResumePdf(resume.id)
+  const reverted = why.length > 0
   if (pdf.pages > s.prep.maxPages) throw Object.assign(new Error(`resume is ${pdf.pages} pages (max ${s.prep.maxPages}). The AI said: ${truncate(r.data.summary, 400)}`), { log })
   const asks = worthAsking(r.data.questions ?? [], after.match)
   if (asks.length) askQuestions(a.id, 'tune', asks.map((q) => ({ question: q.question, why: q.why, about: 'you' as const, saveTo: 'experience' as const })))
@@ -110,7 +156,7 @@ export const runTune = async (task: schema.Task): Promise<TaskOutcome> => {
     to: after.match.score,
     rounds: r.data.rounds,
     stopped: r.data.stopped,
-    summary: reverted ? `Its edits scored lower, so the resume is back as it was. ${r.data.summary}` : r.data.summary,
+    summary: reverted ? `The resume is back as it was, because ${why.join(' and ')}. ${r.data.summary}` : r.data.summary,
     ...(reverted ? { reverted } : {}),
   })
   return { output, sessionId: r.sessionId, costUsd: cost + (after.costUsd ?? 0) || undefined, log, provider: r.provider, model: r.model }

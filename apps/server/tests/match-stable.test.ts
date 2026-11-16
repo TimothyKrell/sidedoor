@@ -1,10 +1,10 @@
 import { eq } from 'drizzle-orm'
-import { beforeEach, expect, test, vi } from 'vitest'
+import { beforeEach, describe, expect, test, vi } from 'vitest'
 
 // A deterministic scorer stands in for the AI: it reads the resume lines out of the prompt and
 // judges each requirement by keyword. `wobble` makes it flip one verdict on every call, the way a
 // real model does between runs on the same input.
-const ai = vi.hoisted(() => ({ matchCalls: 0, wobble: false, prep: null as null | (() => Promise<unknown>) }))
+const ai = vi.hoisted(() => ({ matchCalls: 0, wobble: false, location: false, prompts: [] as string[], prep: null as null | (() => Promise<unknown>) }))
 vi.mock('../src/ai', async (orig) => ({
   ...(await orig<typeof import('../src/ai')>()),
   runJob: async (o: { job: string; prompt: string }) => {
@@ -12,6 +12,7 @@ vi.mock('../src/ai', async (orig) => ({
     if (o.job === 'prep') return { ...base, data: await ai.prep!() }
     if (o.job !== 'match') throw new Error('no AI for this job in tests')
     ai.matchCalls++
+    ai.prompts.push(o.prompt)
     const resume = o.prompt.split('# The resume')[1]!.split('# Experience document')[0]!
     const line = (word: string) => /\[(\S+)\] (.*)/g.exec(resume.split('\n').find((l) => l.includes(word)) ?? '')?.[1]
     const req = (id: string, short: string, area: string, word: string, hit: 'strong' | 'partial') => {
@@ -26,6 +27,7 @@ vi.mock('../src/ai', async (orig) => ({
           req('r1', 'Go in production', 'skills', 'Go', ai.wobble && ai.matchCalls % 2 ? 'partial' : 'strong'),
           req('r2', 'Rust', 'skills', 'Rust', 'strong'),
           req('r3', 'Led a team', 'scope', 'Led', 'strong'),
+          ...(ai.location ? [req('r4', 'US / Canada', 'logistics', 'Location:', 'strong')] : []),
         ],
       },
     }
@@ -35,7 +37,7 @@ vi.mock('../src/services/resumes', async (orig) => ({ ...(await orig<typeof impo
 
 const { db, schema } = await import('../src/db/client')
 const { executeTask } = await import('../src/jobs/tasks')
-const { matchForAgent, runMatch } = await import('../src/match')
+const { headerBlindChecks, matchForAgent, runMatch } = await import('../src/match')
 const { createApplication, getApplication, updateApplication } = await import('../src/services/applications')
 const { addLine, createResume, saveContent, setLines, tailoredFor } = await import('../src/services/resumes')
 const { enqueueTask } = await import('../src/services/tasks')
@@ -43,6 +45,8 @@ const { enqueueTask } = await import('../src/services/tasks')
 const mainResume = () => {
   const r = createResume({ title: 'Main resume' })
   const content = r.content
+  content.basics.location = ''
+  content.basics.links = []
   const exp = content.sections.find((s) => s.type === 'experience')!
   if (exp.type === 'experience')
     exp.companies.push({
@@ -56,6 +60,8 @@ const mainResume = () => {
 beforeEach(() => {
   ai.matchCalls = 0
   ai.wobble = false
+  ai.location = false
+  ai.prompts = []
   db.delete(schema.resumes).run()
 })
 
@@ -150,4 +156,62 @@ test('edits after the last check get one final check, and the summary reports th
   const stored = getApplication(a.id)!.matchJson!
   expect(stored.score).toBe(100)
   expect(task.output).toBe('match 69 -> 100; questions: none')
+})
+
+test('the header counts as evidence, and a "no location" verdict from before it did is judged again', async () => {
+  const r = mainResume()
+  ai.location = true
+  const a = app('Globex')
+  updateApplication(a.id, { stage: 'review' })
+  // No location in the header: nothing answers "US / Canada", as when the check never saw the header.
+  const before = await runMatch(a.id)
+  expect(before.match.requirements.find((q) => q.id === 'r4')).toMatchObject({ level: 'missing', evidence: [] })
+  expect(headerBlindChecks().map((x) => x.id)).toEqual([])
+
+  // The header gets a location. The stored check has no header line, so it's due a re-check...
+  const content = r.content
+  content.basics.location = 'Springfield, IL'
+  saveContent(r.id, content, { by: 'user' })
+  expect(headerBlindChecks().map((x) => x.id)).toEqual([a.id])
+  // ...which judges r4 again, though it cited no line, and leaves the rest alone.
+  ai.wobble = true
+  const after = await runMatch(a.id)
+  expect(after.reused).toBe(false)
+  expect(ai.prompts.at(-1)).toContain('[header] Header: Location: Springfield, IL')
+  expect(ai.prompts.at(-1)).toMatch(/# Resume lines changed since the last check\nheader\n/)
+  const r4 = after.match.requirements.find((q) => q.id === 'r4')!
+  expect(r4).toMatchObject({ level: 'strong', evidence: [{ lineId: 'header', text: 'Header: Location: Springfield, IL' }] })
+  expect(after.match.requirements.filter((q) => q.id !== 'r4')).toEqual(before.match.requirements.filter((q) => q.id !== 'r4'))
+  expect(after.match.score).toBeGreaterThan(before.match.score)
+  expect(matchForAgent(getApplication(a.id)!)!.requirements.find((q) => q.id === 'r4')!.lines).toEqual(['header'])
+  expect(headerBlindChecks()).toEqual([])
+})
+
+describe('tuning after prep', () => {
+  const tunes = (id: string) => db.select().from(schema.tasks).all().filter((t) => t.kind === 'tune' && t.applicationId === id)
+  const prepWith = async (company: string, instructions?: string) => {
+    mainResume()
+    const a = app(company)
+    ai.prep = async () => {
+      updateApplication(a.id, { packageMd: `# Review: ${company}` })
+      return { summary: 'Done.' }
+    }
+    const t = enqueueTask('prep', 'Prep', { applicationId: a.id, priority: 10, dedupe: false, ...(instructions ? { input: { instructions } } : {}) })
+    db.update(schema.tasks).set({ status: 'running', attempts: 1 }).where(eq(schema.tasks.id, t.id)).run()
+    await executeTask({ ...t, status: 'running', attempts: 1 })
+    return a
+  }
+
+  test('starts on its own after a plain prep', async () => {
+    const a = await prepWith('Plain')
+    expect(tunes(a.id)).toHaveLength(1)
+    expect(getApplication(a.id)!.tuneJson).toBeNull()
+  })
+
+  test("doesn't start after a prep the user gave instructions: the resume stays as prepared", async () => {
+    const a = await prepWith('Told', 'One page, no skills section.')
+    expect(tunes(a.id)).toEqual([])
+    const stored = getApplication(a.id)!
+    expect(stored.tuneJson).toMatchObject({ stopped: 'kept', rounds: 0, from: stored.matchJson!.score, to: stored.matchJson!.score })
+  })
 })

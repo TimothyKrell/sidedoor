@@ -1,13 +1,15 @@
 import { createHash } from 'node:crypto'
-import { desc, eq, or } from 'drizzle-orm'
+import { desc, eq, inArray, or } from 'drizzle-orm'
 import { z } from 'zod'
 import { MATCH_AREAS, MATCH_NOISE_MARGIN, MATCH_RUBRIC_VERSION, type MatchRequirement, type ResumeMatch, scoreMatch } from '@sidedoor/shared/match'
 import { mcpFor, runJob } from './ai'
 import { render } from './prompts'
 import { db, schema } from './db/client'
 import { nowIso } from './ids'
-import { linesOf, resumeForApplication } from './services/resumes'
+import { HEADER_LINE_ID, headerLine, matchLines } from '@sidedoor/shared/resume'
+import { resumeForApplication } from './services/resumes'
 import { getApplication, setResumeMatch } from './services/applications'
+import { enqueueTask } from './services/tasks'
 import { experienceContext, experienceLogLine } from './experience'
 import { fenceUntrusted, noPostingText } from './untrusted'
 import { logInjection } from './activity'
@@ -125,7 +127,8 @@ export const runMatch = async (applicationId: string) => {
   if (!resume) throw new Error('No resume to check')
   const doc = resume.id
   const version = String(resume.version)
-  const lines = linesOf(resume).filter((l) => l.kind !== 'heading')
+  // The header counts too: "US / Canada" is answered by where they live, which no bullet says.
+  const lines = matchLines(resume.content)
   const jd = p?.jd || null
   const url = a.jobUrl ?? a.applyUrl
   if (!jd && !url) throw new Error('No job description or listing URL to check against')
@@ -160,6 +163,33 @@ export const runMatch = async (applicationId: string) => {
   const match = buildMatch(r.data, lines, prev, { at: nowIso(), model: `${r.provider}${r.model ? `/${r.model}` : ''}`, doc, resumeVersion: version, jdKey })
   setResumeMatch(a.id, match)
   return { match, reused: false, costUsd: r.costUsd, sessionId: r.sessionId, log: [...r.log, experienceLogLine(experience)] }
+}
+
+/**
+ * Checks made before the header counted, that judged a logistics requirement (location, time zone,
+ * travel...) short with no line behind it, on applications not yet sent. The header may answer it,
+ * so each gets one re-check: the header is a new line to that check, so those requirements are
+ * judged again and the rest keep their verdicts. Without this, a stored "the resume shows no
+ * location" stood until something else changed the resume.
+ */
+export const headerBlindChecks = () =>
+  db
+    .select()
+    .from(schema.applications)
+    .where(inArray(schema.applications.stage, ['interested', 'review', 'approved']))
+    .all()
+    .filter((a) => {
+      const m = a.matchJson
+      if (!m?.lineHashes || HEADER_LINE_ID in m.lineHashes) return false
+      const r = resumeForApplication(a)
+      return !!r && !!headerLine(r.content) && m.requirements.some((q) => q.area === 'logistics' && q.level !== 'strong' && !q.evidence.length)
+    })
+
+/** Queue the re-checks above, once each. */
+export const recheckHeaderBlind = () => {
+  const apps = headerBlindChecks()
+  for (const a of apps) enqueueTask('match', `Check resume match: ${a.companyName} – ${a.role}`, { applicationId: a.id, priority: 1 })
+  return { queued: apps.length }
 }
 
 /** "match 64 -> 81" in a pass's summary, with the score after the arrow. */

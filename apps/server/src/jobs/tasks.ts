@@ -10,7 +10,7 @@ import { notifyPromise } from '../notify'
 import { AGGREGATOR_KINDS, ATS_LINK, detectAts, detectSource, fetchJson, fetchText, isAdapterKind, parseRss, probeBoard } from '../scout/adapters'
 import { readyToScore, scan } from '../scout/scan'
 import { appQueueScore } from '../queries'
-import { getApplication, setStage, trackPosting, updateApplication } from '../services/applications'
+import { getApplication, setResumeTune, setStage, trackPosting, updateApplication } from '../services/applications'
 import { answersFor, askedBefore } from '../services/questions'
 import { checkApplicationRules } from '../services/rules'
 import { enqueueTask, URGENT_PRIORITY } from '../services/tasks'
@@ -333,8 +333,15 @@ const runPrep = async (task: schema.Task): Promise<TaskOutcome> => {
   if (final) r.log.push(final.reused ? `match ${final.match.score}/100: the pass's last check was of the final resume` : `match ${final.match.score}/100: re-checked the resume as the pass left it`)
   const summary = final ? withStoredScore(r.data.summary, final.match) : r.data.summary
   setStage(a.id, 'review', { note: summary })
-  // Then push the resume as far as the facts allow, so the review starts from its best.
-  enqueueTask('tune', `Tune resume: ${a.companyName} – ${a.role}`, { applicationId: a.id, priority: 5 })
+  // Then push the resume as far as the facts allow, so the review starts from its best. Unless the
+  // user gave this application instructions: then its shape is on purpose, and tuning chases the
+  // score. It stays as prepared until they press Tune, which keeps to those instructions.
+  const { instructionsFor } = await import('./tune')
+  if (!instructionsFor(a.id).length) enqueueTask('tune', `Tune resume: ${a.companyName} – ${a.role}`, { applicationId: a.id, priority: 5 })
+  else if (final) {
+    setResumeTune(a.id, { at: nowIso(), from: final.match.score, to: final.match.score, rounds: 0, stopped: 'kept', summary: 'Not tuned, because this resume was prepared to your instructions and tuning works for the match score. Tune it if you want it pushed further; tuning keeps to those instructions and your notes.' })
+    r.log.push('not tuned automatically: this application has your instructions')
+  }
   await notifyPromise({
     kind: 'package-ready',
     title: `Ready to review: ${a.companyName}`,

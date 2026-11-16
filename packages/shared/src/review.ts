@@ -12,7 +12,10 @@ export const TUNE_TARGET = 95
  */
 export const TUNE_MAX_QUESTIONS = 4
 
-export const TUNE_STOPS = ['target', 'no_gain', 'no_more_facts', 'limit'] as const
+/** Why the AI stopped a pass. `page_full`: the next gain needed more on a resume already at its page budget. */
+export const TUNE_AI_STOPS = ['target', 'no_gain', 'no_more_facts', 'limit', 'page_full'] as const
+/** Plus `kept`: Sidedoor didn't tune, because the user's instructions shaped this resume on purpose. */
+export const TUNE_STOPS = [...TUNE_AI_STOPS, 'kept'] as const
 export type TuneStop = (typeof TUNE_STOPS)[number]
 
 /** One pass of the AI working the resume up against the posting. */
@@ -41,6 +44,8 @@ export const TUNE_STOP_LABEL: Record<TuneStop, string> = {
   no_gain: 'More edits stopped helping',
   no_more_facts: 'Used every fact it has',
   limit: 'Hit the round limit',
+  page_full: 'The page is full',
+  kept: 'Kept as prepared, to your instructions',
 }
 
 /** Changes whenever the text does, so a check-off doesn't outlive what you checked. */
