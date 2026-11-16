@@ -146,7 +146,8 @@ body { position: relative; }
 .callout-title { margin-bottom: 3px; color: var(--callout); font-size: 10.5pt; font-weight: 700; }
 .callout ul { display: grid; grid-template-columns: auto auto; column-gap: 10px; row-gap: 2px; margin: 0; }
 .callout li, .callout li + li { margin: 0; padding-left: 13px; white-space: nowrap; }
-.callout li::before { content: '\\2713'; position: absolute; left: 0; top: 0.18em; width: 8px; height: 8px; border: 1px solid var(--callout); border-radius: 2px; background: none; color: var(--callout); font-size: 7pt; font-weight: 700; line-height: 8px; text-align: center; }
+.callout li::before { content: ''; position: absolute; left: 0; top: 2.2px; width: 9px; height: 9px; border: 0; border-radius: 2px; background: var(--callout); }
+.callout li::after { content: ''; position: absolute; left: 3.2px; top: 3.1px; width: 2.4px; height: 4.6px; border: solid #fff; border-width: 0 1.4px 1.4px 0; transform: rotate(45deg); }
 .callout strong { font-weight: 700; }
 body.has-callout header { padding-right: 2.5in; }
 `
