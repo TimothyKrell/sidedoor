@@ -286,7 +286,8 @@ h2::after { content: ''; flex: 1; border-top: 1px solid var(--rule); margin-top:
 .role-line { margin-top: 2px; font-weight: 600; letter-spacing: 0.3px; }
 .dates { color: var(--gold); font-size: 8.8pt; font-weight: 600; letter-spacing: 0.6px; }
 ul { margin: 2px 0 0 15px; }
-li { margin: 2px 0; padding-left: 2px; }
+li { margin: 0; padding-left: 2px; }
+li + li { margin-top: 6px; }
 li::before { content: '\\25c6'; position: absolute; left: -13px; top: 0.28em; color: var(--gold-bright); font-size: 5.5pt; }
 .role + .role { margin-top: 6px; }
 .page-break { position: relative; padding-top: calc(0.4in + 12px); }

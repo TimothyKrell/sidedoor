@@ -1,4 +1,5 @@
 import { resumeAsText } from '@sidedoor/shared/resume'
+import { THEMES } from '@sidedoor/shared/resume-themes'
 import { z } from 'zod'
 import { logActivity } from '../activity'
 import { DOCS, type DocEdit, type DocKey, MAX_UNCONFIRMED_REMOVAL, editDoc, getDoc, listRevisions, revertRevision } from '../services/documents'
@@ -198,11 +199,31 @@ Every edit keeps a revision (list_profile_doc_revisions, revert_profile_doc). An
       const m = await resumes()
       const r = resumeId ? m.requireResume(resumeId) : m.baseResume()
       if (!r) throw new Error('There is no resume yet. Ask the user to create one on the Resume page or import one.')
-      const base = { id: r.id, kind: r.kind, title: r.title, applicationId: r.applicationId, theme: r.theme, pdfPages: r.pdfPages, version: r.version, pendingChanges: m.resumeChanges(r).length }
+      const base = { id: r.id, kind: r.kind, title: r.title, applicationId: r.applicationId, theme: r.theme, themeOptions: r.themeOptions, pdfPages: r.pdfPages, version: r.version, pendingChanges: m.resumeChanges(r).length }
       if (format === 'json') return { ...base, content: r.content }
       return { ...base, lines: m.linesOf(r).map((l) => ({ id: l.id, kind: l.kind, where: l.path, text: l.html })), asText: resumeAsText(r.content) }
     }),
     ro,
+  ),
+
+  tool(
+    'set_resume_theme',
+    `Change how a resume looks, as the user can in the resume editor: its theme (${THEMES.map((t) => `'${t.id}': ${t.description}`).join(' ')}) and options. scale (0.85–1.15) sizes the type and spacing; above 1 reads more easily but can add a page. Options you leave out stay as they are. Run build_resume_pdf afterwards to check the page count.`,
+    {
+      resumeId: z.string(),
+      theme: z.enum(THEMES.map((t) => t.id) as [string, ...string[]]).optional(),
+      scale: z.number().min(0.85).max(1.15).optional(),
+      accent: z.string().regex(/^#[0-9a-f]{3,8}$/i).optional().describe('hex color, e.g. "#a8862a"'),
+      paper: z.enum(['letter', 'a4']).optional(),
+      showHighlights: z.boolean().optional().describe('the row of headline numbers under the name'),
+    },
+    safe(async ({ resumeId, theme, ...opts }) => {
+      const m = await resumes()
+      const r = m.requireResume(resumeId)
+      const given = Object.fromEntries(Object.entries(opts).filter(([, v]) => v !== undefined))
+      const next = m.setTheme(resumeId, theme ?? r.theme, { ...r.themeOptions, ...given })
+      return { id: next.id, theme: next.theme, themeOptions: next.themeOptions }
+    }),
   ),
 
   tool(
