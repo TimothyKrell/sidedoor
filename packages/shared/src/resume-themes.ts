@@ -136,6 +136,7 @@ li { position: relative; break-inside: avoid; }
 .company { break-inside: auto; }
 .role-line, .company-line, .edu-line { display: flex; justify-content: space-between; gap: 14px; align-items: baseline; }
 .dates { white-space: nowrap; }
+.company-line, .role-line { break-after: avoid; }
 .page-break { break-before: page; }
 .stats { display: flex; }
 .stat { flex: 1; text-align: center; }
@@ -272,8 +273,8 @@ const deco: ResumeTheme = {
   css: (a) => `
 :root { --paper: #faf6ea; --ink: #1c1c24; --muted: #6f6650; --gold: ${a}; --gold-bright: color-mix(in srgb, ${a} 80%, #fff 20%); --rule: color-mix(in srgb, ${a} 45%, transparent); --display: 'Poiret One', 'Josefin Sans', sans-serif; --sans: 'Josefin Sans', ui-sans-serif, sans-serif; }
 html { background: var(--paper); }
-body { color: var(--ink); font-family: var(--sans); font-size: 9.4pt; line-height: 1.34; padding: 0.4in 0.55in; }
-header { text-align: center; padding: 0 0 8px; margin-bottom: 8px; border-bottom: 1px solid var(--rule); position: relative; }
+body { color: var(--ink); font-family: var(--sans); font-size: 9.4pt; line-height: 1.34; padding: 0.36in 0.55in; }
+header { text-align: center; padding: 0 0 8px; margin-bottom: 10px; border-bottom: 1px solid var(--rule); position: relative; }
 header::after { content: ''; position: absolute; left: 0; right: 0; bottom: 2px; border-bottom: 1px solid var(--rule); }
 body.has-callout header { padding-right: 0; }
 .sunburst { display: block; width: 360px; height: 34px; margin: 0 auto; stroke: var(--gold); overflow: visible; }
@@ -285,28 +286,29 @@ h1 { margin: 4px 0 0; font-family: var(--display); font-weight: 400; font-size: 
 .headline::before, .headline::after { content: '\\25c6'; font-size: 5pt; letter-spacing: 0; color: var(--gold-bright); }
 .contact { margin-top: 4px; color: var(--muted); font-size: 8.5pt; letter-spacing: 0.4px; line-height: 1.5; }
 .contact .sep { color: var(--gold-bright); padding: 0 5px; }
-section { margin-top: 8px; }
-h2 { display: flex; align-items: center; gap: 9px; margin: 0 0 5px; font-family: var(--display); font-weight: 400; font-size: 11pt; line-height: 1.2; letter-spacing: 3.2px; text-transform: uppercase; white-space: nowrap; }
+section { margin-top: 14px; }
+h2 { display: flex; align-items: center; gap: 9px; margin: 0 0 7px; font-family: var(--display); font-weight: 400; font-size: 11pt; line-height: 1.2; letter-spacing: 3.2px; text-transform: uppercase; white-space: nowrap; }
 h2::before { content: '\\25c6'; color: var(--gold); font-size: 6pt; letter-spacing: 0; }
 h2::after { content: ''; flex: 1; border-top: 1px solid var(--rule); margin-top: 2px; }
 .summary { font-size: 9.4pt; line-height: 1.38; }
 .skills p { margin: 2px 0; }
 .skills strong { color: var(--gold); font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; font-size: 8.8pt; }
-.company { margin-top: 6px; }
+.company { margin-top: 12px; }
+h2 + .company { margin-top: 0; }
 .company-line { font-size: 10.8pt; font-weight: 700; letter-spacing: 1.4px; text-transform: uppercase; }
 .company-line .co-note, .company-line .note { color: var(--muted); font-size: 8.8pt; font-weight: 400; font-style: italic; text-transform: none; letter-spacing: 0; }
 .company-line .location { color: var(--muted); font-size: 8.8pt; font-weight: 400; letter-spacing: 0.4px; text-transform: none; }
 .role-line { margin-top: 2px; font-weight: 600; letter-spacing: 0.3px; }
 .dates { color: var(--gold); font-size: 8.8pt; font-weight: 600; letter-spacing: 0.6px; }
-ul { margin: 2px 0 0 15px; }
+ul { margin: 3px 0 0 15px; }
 li { margin: 0; padding-left: 2px; }
-li + li { margin-top: 6px; }
+li + li { margin-top: 5px; }
 li::before { content: '\\25c6'; position: absolute; left: -13px; top: 0.28em; color: var(--gold-bright); font-size: 5.5pt; }
-.role + .role { margin-top: 6px; }
+.role + .role { margin-top: 10px; }
 .page-break { position: relative; padding-top: calc(0.4in + 12px); }
 .company.page-break .continued { margin-bottom: 6px; }
 .page-break::before { content: ''; position: absolute; top: 0.4in; left: 0; right: 0; border-top: 1px solid var(--rule); box-shadow: 0 3px 0 -2px var(--rule); }
-.stats { justify-content: space-between; margin: 0 0 8px; padding: 0 0 7px; border-bottom: 1px solid var(--rule); }
+.stats { justify-content: space-between; margin: 0; padding: 0 0 8px; border-bottom: 1px solid var(--rule); }
 .stat + .stat { border-left: 1px solid var(--rule); }
 .stat-num { font-family: var(--display); font-size: 17pt; line-height: 1.1; color: var(--gold); letter-spacing: 0.5px; }
 .stat-label { margin-top: 1px; color: var(--muted); font-size: 7pt; font-weight: 600; letter-spacing: 0.3px; text-transform: uppercase; }

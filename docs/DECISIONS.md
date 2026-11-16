@@ -767,5 +767,8 @@ current when making a non-obvious call. Open questions for the maintainer live i
   two columns so it clears the headline; left-aligned headers leave room for it on the right, and
   Compact, whose contact block already sits there, starts the page below it. The user sets it under
   Design → Corner note, an agent with `set_resume_callout`, and only when the user asks for one.
-- **Bullets breathe in Deco.** Bullets are 6px apart, more than the gap between a bullet's own
-  wrapped lines, so a two-line bullet doesn't read as two.
+- **Deco spaces by level.** The gaps grow with the level they separate: 5px between bullets (more
+  than between a bullet's own wrapped lines, so a two-line bullet doesn't read as two), 10px between
+  roles, 12px between companies, 14px before a section, so a company no longer runs into the one
+  above it. The page margin went from 0.4in to 0.36in to pay for some of it. A company or role line
+  never ends a page apart from what follows it.
