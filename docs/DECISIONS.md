@@ -755,3 +755,17 @@ current when making a non-obvious call. Open questions for the maintainer live i
   list and background prep all go by it, after any order the user set by hand. Newness changes by
   the hour, so waiting prep is re-scored every minute. Its priority stays 0-9, under the 10 that
   user-requested work gets, so the cap on packages awaiting review still holds.
+
+## Resume layout
+
+- **A corner note for one reader.** A recruiter who says in public what she wants from a resume
+  (one page, no skills section, sans serif) can be answered on the page itself: a short checklist
+  pinned to the top-right corner ("Hi, Sam" over ticked items). It lives in the resume's content
+  (`callout`), so a tailored copy keeps its own, but it isn't one of the resume's lines: the match
+  check, the review of edits and the resume text never see it, because a note to the reader isn't
+  evidence. Themes with a centered header (Deco) put it in the empty corner beside the name, in
+  two columns so it clears the headline; left-aligned headers leave room for it on the right, and
+  Compact, whose contact block already sits there, starts the page below it. The user sets it under
+  Design → Corner note, an agent with `set_resume_callout`, and only when the user asks for one.
+- **Bullets breathe in Deco.** Bullets are 6px apart, more than the gap between a bullet's own
+  wrapped lines, so a two-line bullet doesn't read as two.

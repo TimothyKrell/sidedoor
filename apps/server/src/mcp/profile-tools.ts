@@ -227,6 +227,21 @@ Every edit keeps a revision (list_profile_doc_revisions, revert_profile_doc). An
   ),
 
   tool(
+    'set_resume_callout',
+    'Pin a short checklist note to the top-right corner of a resume, written for one reader, e.g. title "Hi, Sam" over items "One page", "<strong>No skills section!</strong>". Each item gets a ticked box. Only when the user asks for one. Items are inline HTML (plain text, optionally <strong>/<em>); keep them short and few, since the note sits beside the header. clear: true takes it off. Run build_resume_pdf afterwards to check the page.',
+    {
+      resumeId: z.string(),
+      title: z.string().optional(),
+      items: z.array(z.string()).max(8).optional(),
+      clear: z.boolean().optional(),
+    },
+    safe(async ({ resumeId, title, items, clear }) => {
+      const r = (await resumes()).setCallout(resumeId, clear ? null : { title: title ?? '', items: items ?? [] }, 'agent')
+      return { id: r.id, callout: r.content.callout ?? null, version: r.version }
+    }),
+  ),
+
+  tool(
     'update_resume_lines',
     "Edit resume lines in place by id. The user reviews every line you change in the resume editor (keep or undo), so edit directly instead of listing suggestions. Facts come only from the Experience document. Run build_resume_pdf afterwards to check the page count.",
     { resumeId: z.string(), lines: z.record(z.string(), lineHtml).describe('{ lineId: newHtml }') },

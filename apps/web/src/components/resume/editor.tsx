@@ -3,7 +3,7 @@ import { Link } from '@tanstack/react-router'
 import { ArrowLeft, Bot, Check, ChevronUp, FileDown, Loader2, MessageSquarePlus, Minus, PanelRightClose, PanelRightOpen, Plus, TriangleAlert } from 'lucide-react'
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { diffResume, headerLine, type ResumeContent, resumeLines, setLine, type ThemeOptions } from '@sidedoor/shared/resume'
+import { diffResume, headerLine, type ResumeCallout, type ResumeContent, resumeLines, setLine, type ThemeOptions } from '@sidedoor/shared/resume'
 import { renderResume, THEMES } from '@sidedoor/shared/resume-themes'
 import { LEVEL_META, type MatchLevel } from '@sidedoor/shared/match'
 import { checkTellsWith, STRONG_WEIGHT } from '@sidedoor/shared/tells'
@@ -409,7 +409,20 @@ export function ResumeEditor({ resumeId }: { resumeId: string }) {
                   <Outline content={content} update={update} onFocusLine={focusLine} />
                 </TabsContent>
                 <TabsContent value="design">
-                  <DesignPanel theme={theme} options={options} onChange={setDesign} pages={pages} onFit={fitTo} />
+                  <DesignPanel
+                    theme={theme}
+                    options={options}
+                    onChange={setDesign}
+                    pages={pages}
+                    onFit={fitTo}
+                    callout={content.callout ?? null}
+                    onCallout={(c) =>
+                      update((next) => {
+                        if (c) next.callout = c
+                        else delete next.callout
+                      })
+                    }
+                  />
                 </TabsContent>
                 <TabsContent value="review">
                   <ChangesPanel changes={changes} onKeep={(ids) => void review('keep', ids)} onUndo={(ids) => void review('undo', ids)} onSpot={setSpot} onFocus={focusLine} />
@@ -579,7 +592,15 @@ function LineBar({ onDone, onNote }: { onDone: () => void; onNote: () => void })
   )
 }
 
-function DesignPanel({ theme, options, onChange, pages, onFit }: { theme: string; options: ThemeOptions; onChange: (t: string, o: ThemeOptions) => void; pages: number; onFit: (n: number) => void }) {
+function DesignPanel({ theme, options, onChange, pages, onFit, callout, onCallout }: {
+  theme: string
+  options: ThemeOptions
+  onChange: (t: string, o: ThemeOptions) => void
+  pages: number
+  onFit: (n: number) => void
+  callout: ResumeCallout | null
+  onCallout: (c: ResumeCallout | null) => void
+}) {
   const t = THEMES.find((x) => x.id === theme) ?? THEMES[0]!
   const accent = options.accent ?? t.accent
   const scale = options.scale ?? 1
@@ -657,7 +678,34 @@ function DesignPanel({ theme, options, onChange, pages, onFit }: { theme: string
           <Switch checked={options.showHighlights ?? true} onCheckedChange={(v) => onChange(theme, { ...options, showHighlights: v })} />
         </label>
       </section>
+      <CalloutEditor callout={callout} onChange={onCallout} />
     </div>
+  )
+}
+
+/** The corner note: a title and one ticked item per line. Typing keeps blank lines; saving drops them. */
+function CalloutEditor({ callout, onChange }: { callout: ResumeCallout | null; onChange: (c: ResumeCallout | null) => void }) {
+  const [items, setItems] = useState((callout?.items ?? []).join('\n'))
+  useEffect(() => setItems((callout?.items ?? []).join('\n')), [callout?.items])
+  const set = (title: string, text: string) => {
+    setItems(text)
+    const c = { title, items: text.split('\n') }
+    onChange(c.title.trim() || c.items.some((i) => i.trim()) ? c : null)
+  }
+  return (
+    <section className="space-y-2">
+      <div className="flex items-center justify-between">
+        <h3 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">Corner note</h3>
+        {callout && (
+          <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => onChange(null)}>
+            Remove
+          </Button>
+        )}
+      </div>
+      <p className="text-xs text-muted-foreground">A short checklist in the top-right corner, for one reader. Each line gets a ticked box; wrap a line in &lt;strong&gt; to make it bold.</p>
+      <Input value={callout?.title ?? ''} placeholder="Hi, Sam" onChange={(e) => set(e.target.value, items)} aria-label="Corner note title" />
+      <Textarea value={items} rows={5} placeholder={'One page\nNo skills section'} onChange={(e) => set(callout?.title ?? '', e.target.value)} aria-label="Corner note items, one per line" />
+    </section>
   )
 }
 

@@ -6,7 +6,9 @@ import {
   emptyResume,
   insertLineAfter,
   keepChange,
+  normalizeCallout,
   normalizeContent,
+  type ResumeCallout,
   removeLine,
   type ResumeContent,
   type ResumeNote,
@@ -163,6 +165,14 @@ export const reviewAction = atomic((id: string, action: 'keep' | 'undo' | 'keep-
     .run()
   return requireResume(id)
 })
+
+/** Put a callout in the page's top-right corner, or take it off (null). */
+export const setCallout = (id: string, callout: ResumeCallout | null, by: 'user' | 'agent') => {
+  const r = requireResume(id)
+  const content = { ...r.content, callout: normalizeCallout(callout) }
+  const res = saveContent(id, content, { by, reason: content.callout ? 'corner note' : 'removed corner note' })
+  return res.resume
+}
 
 export const setTheme = (id: string, theme: string, themeOptions?: ThemeOptions) => {
   requireResume(id)

@@ -74,11 +74,22 @@ export type Section =
   | (SectionBase & { type: 'list'; items: Line[] })
 export type SectionType = Section['type']
 
+/**
+ * A short checklist pinned to the page's top-right corner, written for one reader ("Hi, Sam" over
+ * "One page", "No skills section"). Not part of the resume's lines: the match check and the review
+ * of edits don't see it. Items are inline HTML, so one can be <strong>.
+ */
+export interface ResumeCallout {
+  title: string
+  items: string[]
+}
+
 export interface ResumeContent {
   version: 1
   basics: ResumeBasics
   highlights: Highlight[]
   sections: Section[]
+  callout?: ResumeCallout | null
 }
 
 export type PaperSize = 'letter' | 'a4'
@@ -392,7 +403,18 @@ export function normalizeContent(input: ResumeContent): ResumeContent {
     if (s.type === 'list') s.items = (s.items ?? []).map((i) => fix(i, 'li'))
     return s
   })
+  c.callout = normalizeCallout(c.callout)
+  if (!c.callout) delete c.callout
   return c
+}
+
+/** A callout with its blank items dropped, or null when nothing is left to show. */
+export function normalizeCallout(v: unknown): ResumeCallout | null {
+  if (!v || typeof v !== 'object') return null
+  const o = v as { title?: unknown; items?: unknown }
+  const title = typeof o.title === 'string' ? o.title.trim() : ''
+  const items = Array.isArray(o.items) ? o.items.filter((i): i is string => typeof i === 'string').map((i) => i.trim()).filter(Boolean) : []
+  return title || items.length ? { title, items } : null
 }
 
 export const emptyResume = (basics: Partial<ResumeBasics> = {}): ResumeContent =>

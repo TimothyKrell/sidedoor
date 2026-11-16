@@ -2,7 +2,7 @@
 // work identically across themes); a theme is a stylesheet plus a little header decoration.
 // Output is a complete HTML document sized for print (letter or A4), with `data-id` on each line
 // and `data-edit` on lines that can be edited in place.
-import type { Company, Highlight, ResumeContent, Section, ThemeOptions } from './resume'
+import { normalizeCallout, type Company, type Highlight, type ResumeCallout, type ResumeContent, type Section, type ThemeOptions } from './resume'
 
 export interface ResumeTheme {
   id: string
@@ -80,6 +80,9 @@ const contactLine = (c: ResumeContent, sep: string) => {
   return [first, links].filter(Boolean).join('<br>')
 }
 
+const calloutBox = (c: ResumeCallout, accent: string) =>
+  `<aside class="callout" style="--callout: ${esc(accent)}">${c.title ? `<div class="callout-title">${esc(c.title)}</div>` : ''}${c.items.length ? `<ul>${c.items.map((i) => `<li>${sanitizeInline(i)}</li>`).join('')}</ul>` : ''}</aside>`
+
 const highlights = (hs: Highlight[]) =>
   hs.length
     ? `<div class="stats">${hs.map((h) => `<div class="stat" data-id="${esc(h.id)}"><span class="stat-num">${esc(h.value)}</span><span class="stat-label">${esc(h.label)}</span></div>`).join('')}</div>`
@@ -137,6 +140,14 @@ li { position: relative; break-inside: avoid; }
 .stats { display: flex; }
 .stat { flex: 1; text-align: center; }
 .stat-num, .stat-label { display: block; }
+body { position: relative; }
+.callout { position: absolute; top: 0.15in; right: 0.16in; max-width: 2.55in; padding: 6px 10px 7px; border: 1px solid var(--callout); border-radius: 6px; background: color-mix(in srgb, var(--callout) 7%, #fff); font-size: 8pt; line-height: 1.3; transform: rotate(1deg); }
+.callout-title { margin-bottom: 3px; color: var(--callout); font-size: 10.5pt; font-weight: 700; }
+.callout ul { display: grid; grid-template-columns: auto auto; column-gap: 10px; row-gap: 2px; margin: 0; }
+.callout li, .callout li + li { margin: 0; padding-left: 13px; white-space: nowrap; }
+.callout li::before { content: '\\2713'; position: absolute; left: 0; top: 0.18em; width: 8px; height: 8px; border: 1px solid var(--callout); border-radius: 2px; background: none; color: var(--callout); font-size: 7pt; font-weight: 700; line-height: 8px; text-align: center; }
+.callout strong { font-weight: 700; }
+body.has-callout header { padding-right: 2.5in; }
 `
 
 // ------------------------------------------------------------------------------------- themes
@@ -220,6 +231,7 @@ const compact: ResumeTheme = {
   css: (a) => `
 body { font-family: "Source Sans 3", "Source Sans Pro", "Segoe UI", Helvetica, Arial, sans-serif; color: #1b1b1b; font-size: 9pt; line-height: 1.3; padding: 0.35in 0.45in; }
 header { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid ${a}; padding-bottom: 5px; margin-bottom: 6px; }
+body.has-callout header { padding-right: 0; margin-top: 0.75in; }
 h1 { margin: 0; font-size: 18pt; font-weight: 700; }
 .headline { font-size: 9.5pt; color: ${a}; font-weight: 600; }
 .contact { text-align: right; font-size: 8.2pt; color: #444; max-width: 55%; }
@@ -263,6 +275,7 @@ html { background: var(--paper); }
 body { color: var(--ink); font-family: var(--sans); font-size: 9.4pt; line-height: 1.34; padding: 0.4in 0.55in; }
 header { text-align: center; padding: 0 0 8px; margin-bottom: 8px; border-bottom: 1px solid var(--rule); position: relative; }
 header::after { content: ''; position: absolute; left: 0; right: 0; bottom: 2px; border-bottom: 1px solid var(--rule); }
+body.has-callout header { padding-right: 0; }
 .sunburst { display: block; width: 360px; height: 34px; margin: 0 auto; stroke: var(--gold); overflow: visible; }
 .sunburst line { stroke-width: 1.5; stroke-linecap: round; }
 .sunburst .flank { stroke-width: 1; }
@@ -313,6 +326,7 @@ export function renderResume(c: ResumeContent, themeId: string, opts: ThemeOptio
   const scale = Math.min(1.15, Math.max(0.8, opts.scale ?? 1))
   const showHighlights = opts.showHighlights ?? true
   const b = c.basics
+  const callout = normalizeCallout(c.callout)
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -322,7 +336,8 @@ ${t.fonts ? `<link rel="preconnect" href="https://fonts.googleapis.com"><link re
 html { zoom: ${scale}; }
 @media screen { html { background: transparent; } body { width: ${paper === 'A4' ? '210mm' : '8.5in'}; min-height: ${paper === 'A4' ? '297mm' : '11in'}; margin: 0 auto; background: ${t.id === 'deco' ? 'var(--paper)' : '#fff'}; } }
 </style></head>
-<body data-theme="${t.id}">
+<body data-theme="${t.id}"${callout ? ' class="has-callout"' : ''}>
+${callout ? calloutBox(callout, accent) : ''}
 <header>${t.decoration ?? ''}
 <h1>${esc(b.name)}</h1>
 ${b.headline ? line('div', b.headline.id, b.headline.text, 'headline') : ''}
