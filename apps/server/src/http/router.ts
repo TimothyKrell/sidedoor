@@ -200,6 +200,9 @@ export const router = {
       header: `Authorization: Bearer ${token}`,
       settings: g,
       hasKey: hasSecret('grokbot-webhook-key'),
+      hasCodeKey: hasSecret('grokbot-code-webhook-key'),
+      codeHook: (await settingsm()).getMeta<{ at: string; ok: boolean; error?: string }>('grokBotCodeHook') ?? null,
+      codeRoutine: template('grokbot-code-routine').replace(/(\S)\n(?!\n|\d+\. )\s*/g, '$1 ').trim(),
       // A Bot that runs on this computer starts Sidedoor's MCP bridge as a command, as Claude does.
       command: { ...bridge, args: [...bridge.args, 'grokbot'] },
       // Tailscale Funnel publishes only /mcp; the rest of the app stays private.
@@ -217,6 +220,7 @@ export const router = {
     else {
       setSecret('grokbot-token', '')
       setSecret('grokbot-webhook-key', '')
+      setSecret('grokbot-code-webhook-key', '')
     }
     return { ok: true }
   }),
@@ -227,17 +231,21 @@ export const router = {
     return { ok: true }
   }),
   saveGrokBot: proc(
-    z.object({ publicUrl: z.string().optional(), webhookUrl: z.string().optional(), webhookKey: z.string().optional(), research: z.boolean().optional(), x: z.boolean().optional(), submit: z.boolean().optional(), companyLimits: z.array(z.object({ company: z.string().min(1), max: z.number().int().min(0), days: z.number().int().min(1) })).optional() }),
-    async ({ webhookKey, ...patch }) => {
+    z.object({ publicUrl: z.string().optional(), webhookUrl: z.string().optional(), webhookKey: z.string().optional(), codeWebhookUrl: z.string().optional(), codeWebhookKey: z.string().optional(), research: z.boolean().optional(), x: z.boolean().optional(), submit: z.boolean().optional(), companyLimits: z.array(z.object({ company: z.string().min(1), max: z.number().int().min(0), days: z.number().int().min(1) })).optional() }),
+    async ({ webhookKey, codeWebhookKey, ...patch }) => {
       if (patch.publicUrl) patch.publicUrl = new URL(patch.publicUrl.trim()).origin
-      if (patch.webhookUrl) {
-        const u = new URL(patch.webhookUrl.trim())
+      for (const k of ['webhookUrl', 'codeWebhookUrl'] as const) {
+        const v = patch[k]?.trim()
+        if (!v) continue
+        const u = new URL(v)
         if (u.protocol !== 'https:') throw new Error('The webhook URL starts with https://')
-        patch.webhookUrl = u.href
+        patch[k] = u.href
       }
       ;(await settingsm()).updateSettings('grokBot', patch)
       // The routine's key is shown as a whole header in Grok Bot; keep only the key.
-      if (webhookKey !== undefined) (await import('../secrets')).setSecret('grokbot-webhook-key', webhookKey.trim().replace(/^authorization:\s*/i, '').replace(/^bearer\s+/i, ''))
+      const bare = (k: string) => k.trim().replace(/^authorization:\s*/i, '').replace(/^bearer\s+/i, '')
+      if (webhookKey !== undefined) (await import('../secrets')).setSecret('grokbot-webhook-key', bare(webhookKey))
+      if (codeWebhookKey !== undefined) (await import('../secrets')).setSecret('grokbot-code-webhook-key', bare(codeWebhookKey))
       return { ok: true }
     },
   ),
@@ -251,6 +259,10 @@ export const router = {
   }),
   testGrokBot: proc(none, async () => {
     await (await import('../jobs/handoff')).wakeGrokBot()
+    return { ok: true }
+  }),
+  testCodeWebhook: proc(none, async () => {
+    await (await import('../jobs/code-relay')).testCodeWebhook()
     return { ok: true }
   }),
 

@@ -56,13 +56,16 @@ export function GrokBotRow() {
   const [publicUrl, setPublicUrl] = useState('')
   const [webhookUrl, setWebhookUrl] = useState('')
   const [key, setKey] = useState('')
+  const [codeUrl, setCodeUrl] = useState('')
+  const [codeKey, setCodeKey] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
   const [open, setOpen] = useState<boolean | null>(null)
   useEffect(() => {
     if (!data) return
     setPublicUrl(data.settings.publicUrl)
     setWebhookUrl(data.settings.webhookUrl)
-  }, [data?.settings.publicUrl, data?.settings.webhookUrl])
+    setCodeUrl(data.settings.codeWebhookUrl)
+  }, [data?.settings.publicUrl, data?.settings.webhookUrl, data?.settings.codeWebhookUrl])
   if (!data) return null
 
   const run = async (what: string, fn: () => Promise<unknown>, done?: string) => {
@@ -197,6 +200,26 @@ export function GrokBotRow() {
               <>
                 <Hint>Give your Bot these instructions (as a skill or saved instructions), then ask it to “submit my approved applications”.</Hint>
                 <CopyBox text={data.submitRoutine} label="Copy submit instructions" />
+                <div className="pt-2 font-medium">Security codes</div>
+                <Hint>
+                  Some forms email you a code after submit is clicked. Sidedoor keeps the window open and calls this routine once per code, so your Bot fetches it from your email and answers. Create a routine with these instructions and a webhook trigger, then paste its URL and key. Left empty, the routine from step 3 is called.
+                </Hint>
+                <CopyBox text={data.codeRoutine} label="Copy code instructions" />
+                <Input value={codeUrl} onChange={(e) => setCodeUrl(e.target.value)} placeholder="Security code webhook URL (https://…)" />
+                <Input type="password" value={codeKey} onChange={(e) => setCodeKey(e.target.value)} placeholder={data.hasCodeKey ? 'Key saved (paste a new one to replace it)' : 'Key'} />
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    disabled={(codeUrl === data.settings.codeWebhookUrl && !codeKey.trim()) || !!busy}
+                    onClick={() => void run('code', () => rpc.saveGrokBot({ codeWebhookUrl: codeUrl, ...(codeKey.trim() ? { codeWebhookKey: codeKey } : {}) }).then(() => setCodeKey('')), 'Saved')}
+                  >
+                    {spin('code')} Save
+                  </Button>
+                  <Button variant="ghost" disabled={!(data.settings.codeWebhookUrl ? data.hasCodeKey : data.settings.webhookUrl && data.hasKey) || !!busy} onClick={() => void run('codeTest', () => rpc.testCodeWebhook(), 'Grok Bot started a run. Its reply is in the Bot’s chat.')}>
+                    {spin('codeTest')} Test
+                  </Button>
+                </div>
+                {data.codeHook && <Hint>{data.codeHook.ok ? `Last told it about a code ${timeAgo(data.codeHook.at)}.` : `Last call failed ${timeAgo(data.codeHook.at)}: ${data.codeHook.error}`}</Hint>}
               </>
             )}
           </Step>

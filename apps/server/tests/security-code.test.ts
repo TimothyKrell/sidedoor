@@ -38,6 +38,14 @@ vi.mock('../src/services/resumes', async (orig) => ({ ...(await orig<typeof impo
 vi.mock('../src/mcp/server', async (orig) => ({ ...(await orig<typeof import('../src/mcp/server')>()), browserSnapshot: async () => '- Page URL: https://jobs.example.com/thanks\n- Page Title: Thanks' }))
 vi.mock('../src/notify', async (orig) => ({ ...(await orig<typeof import('../src/notify')>()), notifyPromise: async () => undefined }))
 
+// The Grok Bot routine webhook: every POST Sidedoor makes, and how it answers.
+const hook = vi.hoisted(() => ({ calls: [] as { url: string; headers: Record<string, string>; body: Record<string, unknown> }[], status: 200, down: false }))
+vi.stubGlobal('fetch', async (url: string, init: { headers: Record<string, string>; body: string }) => {
+  if (hook.down) throw new TypeError('fetch failed')
+  hook.calls.push({ url, headers: init.headers, body: JSON.parse(init.body) as Record<string, unknown> })
+  return new Response('{}', { status: hook.status })
+})
+
 const { db, schema } = await import('../src/db/client')
 const { executeTask } = await import('../src/jobs/tasks')
 const { codesWaiting, submissions } = await import('../src/jobs/fill-form')
@@ -45,8 +53,18 @@ const { stoppedForms } = await import('../src/jobs/form-windows')
 const { toolsFor } = await import('../src/mcp/tools')
 const { grokBotToken, setSecret } = await import('../src/secrets')
 const { createApplication, getApplication, requestSubmit, setStage } = await import('../src/services/applications')
+const { nowIso } = await import('../src/ids')
 const { answerQuestions, askQuestions, listQuestions, savePackage, scrubSecurityCodes, SPENT_CODE } = await import('../src/services/questions')
 const { updateSettings } = await import('../src/settings')
+const { announceCode, CODE_WAIT_MS } = await import('../src/jobs/code-relay')
+
+const HOOK = 'https://routines.example.com/hooks/abc'
+const KEY = 'whk_test_key'
+const setHook = (o: { url?: string; key?: string; codeUrl?: string; codeKey?: string } = { url: HOOK, key: KEY }) => {
+  updateSettings('grokBot', { webhookUrl: o.url ?? '', codeWebhookUrl: o.codeUrl ?? '' })
+  setSecret('grokbot-webhook-key', o.key ?? '')
+  setSecret('grokbot-code-webhook-key', o.codeKey ?? '')
+}
 
 const CODE = 'Xq7Lm2Pa'
 const NEW_CODE = 'Hb4Tz9Wc'
@@ -81,6 +99,10 @@ const stopAtCode = async (company: string) => {
 }
 
 afterEach(() => {
+  setHook({})
+  hook.calls = []
+  hook.status = 200
+  hook.down = false
   setSecret('grokbot-token', '')
   updateSettings('grokBot', { submit: false })
   db.delete(schema.tasks).run()
@@ -228,6 +250,136 @@ describe('a submit that stops at a security code', () => {
     const r = await tool('security_codes_waiting').handler({})
     const body = JSON.parse(r.content[0]!.text) as { waiting: { applicationId: string; windowOpen: boolean }[] }
     expect(body.waiting).toEqual([expect.objectContaining({ applicationId: a.id, windowOpen: true })])
+  })
+})
+
+describe('telling Grok Bot a code is waiting', () => {
+  test('without a webhook nothing is sent: the question just waits, as before', async () => {
+    const { a, t } = await stopAtCode('Quiet')
+    expect(hook.calls).toEqual([])
+    expect(codeQuestion(a.id).status).toBe('open')
+    expect(task(t.id).log).toContain('No security code webhook set: the question waits in Sidedoor')
+    expect(codesWaiting()[0]).toMatchObject({ grokBotTold: false, windowOpen: true })
+  })
+
+  test('a code prompt POSTs once to the routine, with no personal details and no code', async () => {
+    setHook()
+    const { a, t } = await stopAtCode('Greenhouse Co')
+    expect(hook.calls).toHaveLength(1)
+    const [c] = hook.calls
+    expect(c!.url).toBe(HOOK)
+    expect(c!.headers.authorization).toBe(`Bearer ${KEY}`)
+    const w = codesWaiting()[0]!
+    expect(c!.body).toEqual({
+      sidedoor: 'security-code',
+      appId: a.id,
+      company: 'Greenhouse Co',
+      role: 'Engineering Manager',
+      questionId: codeQuestion(a.id).id,
+      requestedAt: w.codeRequestedAt,
+      ats: 'unknown',
+      waitUntil: new Date(Date.parse(w.codeRequestedAt) + CODE_WAIT_MS).toISOString(),
+    })
+    // The window waits at least 15 minutes for it.
+    expect(Date.parse(w.waitUntil) - Date.parse(w.codeRequestedAt)).toBeGreaterThanOrEqual(15 * 60_000)
+    expect(w).toMatchObject({ grokBotTold: true, resendsLeft: 2 })
+    expect(JSON.stringify(c!.body)).not.toMatch(/@|\+1|resume/i)
+    expect(task(t.id).log).toContain('Told Grok Bot the form is waiting on a security code')
+    // The key never lands in the task's record or the activity.
+    expect(JSON.stringify(task(t.id))).not.toContain(KEY)
+    expect(JSON.stringify(db.select().from(schema.activity).all())).not.toContain(KEY)
+
+    // Grok Bot answers: the code goes into the window left open, and nothing is POSTed again.
+    const r = answerQuestions([{ id: codeQuestion(a.id).id, answer: CODE }], 'grokbot')
+    expect(r.submits[0]).toMatchObject({ window: 'open' })
+    ai.replies = [submitted]
+    await run(r.submits[0]!.taskId!)
+    expect(getApplication(a.id)!.stage).toBe('applied')
+    expect(hook.calls).toHaveLength(1)
+  })
+
+  test('the ATS is named from the form, e.g. Greenhouse behind a company careers page', () => {
+    setHook()
+    const a = createApplication({ companyName: 'Payco', role: 'EM', stage: 'approved', applyUrl: 'https://payco.example.com/jobs/search?gh_jid=123', packageMd: '# P' })
+    return announceCode(a, { questionId: 'q_1', requestedAt: '2026-11-17T12:00:00.000Z' }).then((r) => {
+      expect(r).toBe('sent')
+      expect(hook.calls[0]!.body.ats).toBe('greenhouse')
+    })
+  })
+
+  test('debounced: one request per code prompt, even asked twice at once', async () => {
+    setHook()
+    const a = app('Twice')
+    const o = { questionId: 'q_x', requestedAt: '2026-11-17T12:00:00.000Z' }
+    expect(await Promise.all([announceCode(a, o), announceCode(a, o)])).toEqual(['sent', 'duplicate'])
+    expect(await announceCode(a, o)).toBe('duplicate')
+    expect(hook.calls).toHaveLength(1)
+    // A new prompt (a new code) is a new request.
+    expect(await announceCode(a, { ...o, requestedAt: '2026-11-17T12:20:00.000Z' })).toBe('sent')
+    expect(hook.calls).toHaveLength(2)
+  })
+
+  test("a webhook that fails isn't retried, doesn't fail the submit, and doesn't say where it points", async () => {
+    setHook()
+    hook.down = true
+    const { a, t } = await stopAtCode('Offline')
+    expect(task(t.id).status).toBe('done')
+    expect(codeQuestion(a.id).status).toBe('open')
+    expect(task(t.id).log).toContain("Couldn't reach the security code webhook: the question waits in Sidedoor")
+    hook.down = false
+    expect(await announceCode(getApplication(a.id)!, { questionId: codeQuestion(a.id).id, requestedAt: codesWaiting()[0]!.codeRequestedAt })).toBe('duplicate')
+    expect(JSON.stringify(db.select().from(schema.activity).all())).not.toContain('routines.example.com')
+  })
+
+  test('the security code routine, when set, is called instead of the task routine, with its own key', async () => {
+    setHook({ url: HOOK, key: KEY, codeUrl: 'https://routines.example.com/hooks/codes', codeKey: 'whk_codes' })
+    await stopAtCode('Own')
+    expect(hook.calls.map((c) => [c.url, c.headers.authorization])).toEqual([['https://routines.example.com/hooks/codes', 'Bearer whk_codes']])
+    // Its URL without its key is not configured: the task routine's key never goes to another URL.
+    hook.calls = []
+    setHook({ url: HOOK, key: KEY, codeUrl: 'https://routines.example.com/hooks/codes' })
+    expect(await announceCode(app('NoKey'), { questionId: 'q', requestedAt: nowIso() })).toBe('not_configured')
+    expect(hook.calls).toEqual([])
+  })
+
+  test('an expired code asks for a new one and tells Grok Bot again, at most twice per application', async () => {
+    setHook()
+    const { a } = await stopAtCode('Expiry')
+    expect(hook.calls).toHaveLength(1)
+    const rejected = { outcome: 'code_rejected', summary: 'The code expired. Clicked "Resend code".', problems: [], confirmation: '', newCodeSent: true }
+    for (const n of [2, 3]) {
+      reset()
+      const r = answerQuestions([{ id: codeQuestion(a.id).id, answer: CODE }], 'grokbot')
+      ai.replies = [rejected]
+      await run(r.submits[0]!.taskId!)
+      expect(ai.prompts[0]).toContain('click that once and set `newCodeSent`')
+      expect(hook.calls).toHaveLength(n)
+      expect(hook.calls[n - 1]!.body.requestedAt).toBe(codesWaiting()[0]!.codeRequestedAt)
+    }
+    expect(codesWaiting()[0]).toMatchObject({ resendsLeft: 0 })
+    // Two new codes asked for: the third rejection asks for none, and Grok Bot isn't called again.
+    reset()
+    const r = answerQuestions([{ id: codeQuestion(a.id).id, answer: CODE }], 'grokbot')
+    ai.replies = [{ ...rejected, summary: 'The code expired.', newCodeSent: false }]
+    await run(r.submits[0]!.taskId!)
+    expect(ai.prompts[0]).toContain("Don't ask it for a new code")
+    expect(hook.calls).toHaveLength(3)
+    expect(getApplication(a.id)!.nextAction).toMatch(/finish it in the Sidedoor window/)
+    expect(codeQuestion(a.id).status).toBe('open')
+  })
+
+  test('after the window is gone, the answer starts a fresh submit, whose new code prompt is announced', async () => {
+    setHook()
+    const { a } = await stopAtCode('Restarted')
+    stoppedForms.clear()
+    const r = answerQuestions([{ id: codeQuestion(a.id).id, answer: CODE }], 'grokbot')
+    expect(r.submits[0]).toMatchObject({ window: 'new' })
+    ai.replies = [filled, askedForCode]
+    await run(r.submits[0]!.taskId!)
+    expect(tab.opens).toBe(1)
+    expect(hook.calls).toHaveLength(2)
+    expect(hook.calls[1]!.body.requestedAt).not.toBe(hook.calls[0]!.body.requestedAt)
+    expect(JSON.stringify(hook.calls)).not.toContain(CODE)
   })
 })
 

@@ -15,9 +15,8 @@ The code: `{{CODE}}`
 4. Click the button that sends it ("Submit application", "Submit", "Verify") once.
 5. `browser_wait_for` a few seconds, then `browser_snapshot`. A confirmation means `submitted`.
    If the page is still working, wait and look again.
-6. If the form says the code is wrong, expired or invalid: report `code_rejected`. If it offers a
-   new code ("Resend code", "Send a new code", "Didn't get a code?"), click that once and set
-   `newCodeSent`. Don't click submit again and don't type the code again.
+6. If the form says the code is wrong, expired or invalid: report `code_rejected`. {{RESEND}}
+   Don't click submit again and don't type the code again.
 7. A captcha or sign-in that appeared means `blocked`. Validation errors on other fields mean
    `not_submitted`: list each field and its message under `problems`.
 8. Never click submit a second time, even if you can't tell whether it went in: report

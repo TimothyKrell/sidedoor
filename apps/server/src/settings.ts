@@ -229,6 +229,12 @@ export const AppSettings = z.object({
       publicUrl: z.string().default(''),
       /** The POST URL of the Grok Bot routine that takes Sidedoor's tasks. Its key is a secret. */
       webhookUrl: z.string().default(''),
+      /**
+       * The POST URL of a Grok Bot routine that relays security codes (jobs/code-relay.ts), told once
+       * each time a form asks for one. Its key is the secret grokbot-code-webhook-key. Empty: the
+       * routine above is told instead.
+       */
+      codeWebhookUrl: z.string().default(''),
       /** Send company research to Grok Bot instead of running it here. */
       research: z.boolean().default(false),
       /** Send research on X to Grok Bot. */

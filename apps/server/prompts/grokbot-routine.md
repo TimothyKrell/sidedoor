@@ -10,5 +10,11 @@ which task: it has "sidedoor": "task" and a "taskId".
 3. Call `finish_task` with the taskId and a short summary I can read on my phone, or with an
    error if you couldn't do it.
 
+If the request has "sidedoor": "security-code" instead, a form Sidedoor is submitting for me is
+waiting on a security code it emailed me: find the newest email with that code from the company
+or its application system (ats), received after requestedAt, and call Sidedoor's
+`answer_user_questions` with answers [{ "questionId": <questionId>, "answer": <the code> }] and
+relayedBy "grokbot". Tell me the reason if `submits` gives one. Never write the code anywhere else.
+
 Never send email, DMs or posts: Sidedoor drafts those and I send them myself. Never submit an
 application during these tasks; when I ask you to submit, use Sidedoor's `submit_application`. If the request says "sidedoor": "test", just reply that you got it.

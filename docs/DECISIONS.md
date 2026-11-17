@@ -594,6 +594,17 @@ current when making a non-obvious call. Open questions for the maintainer live i
   and whether the window is still there, and `answer_user_questions` says per application what
   went on or why not. It used to swallow the reason: a Stripe code answered an hour late went
   nowhere because the application had been marked Applied by hand, and nothing said so.
+- **Grok Bot is told when a code is waiting, once.** No polling: when a form asks for a code,
+  Sidedoor POSTs to a Grok Bot routine webhook (Settings → Grok Bot → Security codes; the task
+  routine's when that's empty) with the application, company, role, question id, when the code
+  was sent and the ATS, never the user's details or a code. It follows the task routine's
+  convention, `Authorization: Bearer <key>` and `"sidedoor": "security-code"`. One POST per code
+  prompt, recorded before it's sent, so a failure isn't retried and two runs can't both send it.
+  A code URL is used only with its own key, so the task routine's key never goes elsewhere.
+  Without a webhook the question waits, as before. A turned-down code makes the form send a new
+  one at most twice per application, each announced once; after that the user finishes it in the
+  window. The window has no timer: it waits until answered or Sidedoor restarts (the payload's
+  `waitUntil` promises 15 minutes), and after a restart the answer starts a fresh submit.
 - **A code is kept only until it's used.** It's an answer for one window, not about the user: it
   never goes into the package or a document, isn't reused for another application, and once
   entered (or on any restart) its answer is replaced. The task's output and log show

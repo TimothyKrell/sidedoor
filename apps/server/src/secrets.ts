@@ -7,7 +7,7 @@ import { paths } from './config'
  * Secrets live one per file in userdata/secrets (0600), never in the settings table, and are never
  * sent to clients (T3 Code stores its secrets the same way).
  */
-export const SECRET_NAMES = ['agent-token', 'connected-token', 'access-token', 'hunter-api-key', 'ntfy-token', 'grokbot-token', 'grokbot-webhook-key'] as const
+export const SECRET_NAMES = ['agent-token', 'connected-token', 'access-token', 'hunter-api-key', 'ntfy-token', 'grokbot-token', 'grokbot-webhook-key', 'grokbot-code-webhook-key'] as const
 export type SecretName = (typeof SECRET_NAMES)[number]
 
 const file = (name: SecretName) => resolve(paths.secrets, `${name}.bin`)

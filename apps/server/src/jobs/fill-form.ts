@@ -22,6 +22,7 @@ import { getSettings } from '../settings'
 import { clip, truncate } from '../text'
 import { experienceContext, experienceLogLine } from '../experience'
 import { type AuditEntry, checkFill, FILL_SOURCES, readPackage, submitRefusal } from '../form-answers'
+import { announceCode, CODE_WAIT_MS, codeAnnounced, noteResend, resendsLeft } from './code-relay'
 import { codeWindowOpen, stoppedForms as stopped } from './form-windows'
 import type { TaskOutcome } from './tasks'
 
@@ -63,6 +64,9 @@ export const CodeReport = z.object({
 })
 
 const CODE_FIELD = 'Security code'
+
+const RESEND = 'If it offers a new code ("Resend code", "Send a new code", "Didn\'t get a code?"), click that once and set `newCodeSent`.'
+const NO_RESEND = "Don't ask it for a new code: Sidedoor has asked this form for new ones enough times. Leave `newCodeSent` false."
 
 /** The submit stopped at a code the form sent: the report says so, or one of its problems is the code. */
 export const stoppedForCode = (s: Pick<SubmitReport, 'outcome' | 'problems'> & { codeRequested?: boolean } | null | undefined) =>
@@ -296,7 +300,7 @@ export const runFillForm = (task: schema.Task): Promise<TaskOutcome> =>
             await tab.unguard()
             allowSubmit(true)
             db.update(schema.tasks).set({ input: { ...task.input, submitStartedAt: at } }).where(eq(schema.tasks.id, task.id)).run()
-            const j = await runJob({ job: 'fill', prompt: render('enter-code', { COMPANY: a.companyName, ROLE: a.role, CODE: code.answer }), mcp: mcpFor('browser'), schema: CodeReport, maxTurns: 25, timeoutMs: 8 * 60_000 })
+            const j = await runJob({ job: 'fill', prompt: render('enter-code', { COMPANY: a.companyName, ROLE: a.role, CODE: code.answer, RESEND: resendsLeft(a.id) > 0 ? RESEND : NO_RESEND }), mcp: mcpFor('browser'), schema: CodeReport, maxTurns: 25, timeoutMs: 8 * 60_000 })
             return { j, snap: await browserSnapshot() }
           })
           // Used, or turned down: either way it's never entered again, so keep no copy.
@@ -315,6 +319,7 @@ export const runFillForm = (task: schema.Task): Promise<TaskOutcome> =>
                   codeRequested: true,
                 }
               : { outcome: c.outcome, summary: c.summary, problems: c.problems, confirmation: c.confirmation, codeRequested: false }
+          if (c.newCodeSent) noteResend(a.id)
           if (c.outcome === 'code_rejected') codeAskedAt = c.newCodeSent ? at : prior.codeAskedAt
           evidence = evidenceFrom(go.snap, c.confirmation)
           if (c.outcome !== 'submitted') db.update(schema.tasks).set({ input: task.input }).where(eq(schema.tasks.id, task.id)).run()
@@ -439,10 +444,27 @@ export const runFillForm = (task: schema.Task): Promise<TaskOutcome> =>
     }
     const asked = s ? s.problems.map((p) => ({ question: p.field, why: p.why })) : report.needsYou.map((n) => ({ question: n.field, why: n.why, options: n.options, filledValue: audit.find((e) => e.field === n.field && !e.confirmed)?.value ?? null }))
     // Kept as questions: the user answers them in Sidedoor (or through their AI), and the answers stay for next time.
-    if (asked.length) askQuestions(a.id, 'fill', asked)
+    const raised = asked.length ? askQuestions(a.id, 'fill', asked) : []
     const asks = asked.length
+    // A new code prompt: tell Grok Bot once, so it fetches the code instead of checking on a schedule.
+    const codeQ = raised.find((q) => isSecurityCode(q.question))
+    if (codeAskedAt && codeAskedAt !== prior?.codeAskedAt && codeQ) {
+      const told = await announceCode(a, { questionId: codeQ.id, requestedAt: codeAskedAt, pageUrl: (evidence as Evidence | null)?.url ?? null })
+      log.push(
+        told === 'sent'
+          ? 'Told Grok Bot the form is waiting on a security code'
+          : told === 'not_configured'
+            ? 'No security code webhook set: the question waits in Sidedoor'
+            : told === 'failed'
+              ? "Couldn't reach the security code webhook: the question waits in Sidedoor"
+              : 'Grok Bot was already told about this code',
+      )
+      done.log = log.map(hide)
+    }
     const next = codeAskedAt
-      ? 'Waiting on the security code the form emailed: answer it in Sidedoor and it finishes the submit in the open window'
+      ? codeAskedAt === prior?.codeAskedAt
+        ? "The form turned the code down and won't send a new one: finish it in the Sidedoor window"
+        : 'Waiting on the security code the form emailed: answer it in Sidedoor and it finishes the submit in the open window'
       : s
       ? `Not submitted: ${truncate(s.summary, 120)}${s.outcome === 'not_submitted' ? ' The form is open in the Sidedoor browser window.' : ''}`
       : report.outcome === 'ready'
@@ -565,6 +587,12 @@ export interface CodeWait {
   resumingTaskId: string | null
   /** Set when the stage was moved to Applied by hand after the submit stopped: Sidedoor never saw it go in. */
   markedAppliedAt: string | null
+  /** Sidedoor POSTed this code prompt to the Grok Bot code webhook. */
+  grokBotTold: boolean
+  /** The window waits for the code at least until then. */
+  waitUntil: string
+  /** New codes Sidedoor may still ask the form for if this one is turned down. */
+  resendsLeft: number
   next: string
 }
 
@@ -607,7 +635,22 @@ export const codesWaiting = (): CodeWait[] => {
         : windowOpen
           ? `Relay the newest code emailed after ${at}: answer_user_questions with questionId ${q?.id ?? '(see list_questions)'} and relayedBy. Sidedoor enters it in the open window and submits.`
           : `The window that asked is gone (Sidedoor restarted or it was closed), so that code can't be used. Answering the question anyway starts the submit again in a new window, and the form emails a new code: relay that one when it's listed here.`
-    out.push({ applicationId: id, application: `${a.companyName} – ${a.role}`, stage: a.stage, questionId: q?.id ?? null, code, codeRequestedAt: at, windowOpen, taskId: last.id, resumingTaskId: live?.id ?? null, markedAppliedAt, next })
+    out.push({
+      applicationId: id,
+      application: `${a.companyName} – ${a.role}`,
+      stage: a.stage,
+      questionId: q?.id ?? null,
+      code,
+      codeRequestedAt: at,
+      windowOpen,
+      taskId: last.id,
+      resumingTaskId: live?.id ?? null,
+      markedAppliedAt,
+      grokBotTold: codeAnnounced(id, at),
+      waitUntil: new Date(Date.parse(at) + CODE_WAIT_MS).toISOString(),
+      resendsLeft: resendsLeft(id),
+      next,
+    })
   }
   return out
 }
