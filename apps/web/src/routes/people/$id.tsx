@@ -6,6 +6,7 @@ import { CopyButton, Empty, Markdown, Section, StageBadge, TimeAgo } from '~/com
 import { DraftCard } from '~/components/app/cards'
 import { useChat, usePageContext } from '~/components/app/chat'
 import { FollowupPicker, InteractionForm, PersonDialog } from '~/components/app/forms'
+import { NotesLog, Touchpoint } from '~/components/app/notes'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
@@ -122,13 +123,7 @@ function PersonPage() {
             {data.interactions.length ? (
               <div className="space-y-1.5">
                 {data.interactions.map((i) => (
-                  <div key={i.id} className="flex gap-3 rounded-lg border bg-card px-3 py-2 text-sm">
-                    <span className="w-16 shrink-0 text-xs text-muted-foreground">{fmtDate(i.at)}</span>
-                    <span className="w-16 shrink-0 text-xs text-muted-foreground">
-                      {i.direction === 'in' ? '←' : i.direction === 'out' ? '→' : '•'} {i.channel}
-                    </span>
-                    <span className="min-w-0">{i.summary}</span>
-                  </div>
+                  <Touchpoint key={i.id} i={i} />
                 ))}
               </div>
             ) : (
@@ -147,7 +142,7 @@ function PersonPage() {
           {p.notesMd && (
             <Section title="Notes">
               <div className="rounded-xl border bg-card p-4">
-                <Markdown>{p.notesMd}</Markdown>
+                <NotesLog md={p.notesMd} />
               </div>
             </Section>
           )}

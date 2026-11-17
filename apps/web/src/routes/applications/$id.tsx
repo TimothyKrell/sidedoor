@@ -12,6 +12,8 @@ import { ApplicationQuestions } from '~/components/app/questions'
 import { StaleFlags } from '~/components/app/stale'
 import { RulesCard } from '~/components/app/rules'
 import { WritingReview } from '~/components/app/writing'
+import { Note, NotesLog, Touchpoint } from '~/components/app/notes'
+import { notePreview } from '@sidedoor/shared/notes'
 import { FollowupPicker, InteractionForm, PersonDialog } from '~/components/app/forms'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
@@ -835,7 +837,7 @@ function PeopleTab({ d }: { d: Detail }) {
               return (
                 <div key={p.id}>
                   <PersonRow p={p} extra={p.role ? <span className="text-xs text-muted-foreground">{roleLabel(p.role)}</span> : undefined} />
-                  {p.whyMd && <div className="mx-3 mt-1 line-clamp-3 text-xs text-muted-foreground">{p.whyMd.replace(/[*#]/g, '')}</div>}
+                  {p.whyMd && <div className="mx-3 mt-1 line-clamp-3 text-xs text-muted-foreground">{notePreview(p.whyMd)}</div>}
                   {/* Their drafts sit under them, so "I sent it" can't be credited to the wrong person. */}
                   {theirs.length > 0 && (
                     <div className="mt-2 ml-3 space-y-2 border-l-2 border-primary/30 pl-3">
@@ -868,17 +870,23 @@ function PeopleTab({ d }: { d: Detail }) {
 
 function ResearchTab({ d }: { d: Detail }) {
   const task = useAction((v: { kind: 'research'; applicationId: string }) => startTaskFn({ data: v }), { success: 'Your AI is researching' })
-  if (!d.research.length)
-    return (
-      <Empty>
-        No research yet.{' '}
-        <button type="button" className="text-primary" onClick={() => void task.run({ kind: 'research', applicationId: d.application.id })}>
-          Research {d.application.companyName}
-        </button>
-      </Empty>
-    )
+  const notes = d.company?.notes?.trim()
   return (
     <div className="space-y-4">
+      {notes && (
+        <div className="rounded-xl border bg-card p-4">
+          <div className="mb-2 text-xs font-medium">Notes on {d.company?.name ?? d.application.companyName}</div>
+          <Note text={notes} />
+        </div>
+      )}
+      {!d.research.length && (
+        <Empty>
+          No research yet.{' '}
+          <button type="button" className="text-primary" onClick={() => void task.run({ kind: 'research', applicationId: d.application.id })}>
+            Research {d.application.companyName}
+          </button>
+        </Empty>
+      )}
       {d.research.map((r) => (
         <div key={r.id} className="rounded-xl border bg-card p-4">
           <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
@@ -898,15 +906,11 @@ function TimelineTab({ d }: { d: Detail }) {
       <InteractionForm applicationId={a.id} />
       <div className="space-y-2">
         {d.interactions.map((i) => (
-          <div key={i.id} className="flex gap-3 rounded-lg border bg-card px-3 py-2 text-sm">
-            <span className="w-20 shrink-0 text-xs text-muted-foreground">{fmtDate(i.at)}</span>
-            <span className="shrink-0 text-xs text-muted-foreground">{i.direction === 'in' ? '←' : i.direction === 'out' ? '→' : '•'} {i.channel}</span>
-            <span className="min-w-0">{i.summary}</span>
-          </div>
+          <Touchpoint key={i.id} i={i} who={d.people.find((p) => p.id === i.personId)?.name} />
         ))}
         {d.tasks.map((t) => (
           <Link key={t.id} to="/tasks" className="flex gap-3 rounded-lg border border-dashed px-3 py-2 text-sm text-muted-foreground hover:text-foreground">
-            <span className="w-20 shrink-0 text-xs">{fmtDate(t.createdAt)}</span>
+            <span className="w-16 shrink-0 text-xs">{fmtDate(t.createdAt)}</span>
             <Bot className="size-3.5 shrink-0" />
             <span className="min-w-0 truncate">
               {t.title} ({t.status})
@@ -917,7 +921,7 @@ function TimelineTab({ d }: { d: Detail }) {
       {a.notesMd && (
         <Section title="Notes">
           <div className="rounded-xl border bg-card p-4">
-            <Markdown>{a.notesMd}</Markdown>
+            <NotesLog md={a.notesMd} />
           </div>
         </Section>
       )}

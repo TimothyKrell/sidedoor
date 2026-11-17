@@ -142,9 +142,9 @@ export function CopyButton({ text, label = 'Copy', className, size = 'sm' }: { t
 }
 
 /** Renders agent/package markdown. Internal links (/applications/…) navigate in-app. */
-export function Markdown({ children, className }: { children: string | null | undefined; className?: string }) {
+export function Markdown({ children, className, breaks = false }: { children: string | null | undefined; className?: string; breaks?: boolean }) {
   const router = useRouter()
-  const html = useMemo(() => renderMarkdown(children), [children])
+  const html = useMemo(() => renderMarkdown(children, { breaks }), [children, breaks])
   return (
     <div
       className={cn('prose-sd break-words', className)}

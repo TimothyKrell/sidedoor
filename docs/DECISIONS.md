@@ -803,3 +803,18 @@ current when making a non-obvious call. Open questions for the maintainer live i
   roles, 12px between companies, 14px before a section, so a company no longer runs into the one
   above it. The page margin went from 0.4in to 0.36in to pay for some of it. A company or role line
   never ends a page apart from what follows it.
+
+## Notes and call summaries
+
+- **Labels are read from plain text, not required as markdown.** Agents write call summaries and
+  notes as paragraphs that open with a label ("Comp:", "Process (5 interviews):"), and older ones
+  were written that way before the tools asked for markdown. So the display treats a paragraph that
+  opens with a short label (at most four words, capitalized, no sentence punctuation) as a small
+  heading over the rest (`shared/notes.ts`), and keeps single line breaks. A sentence with a colon
+  in it ("They booked the call themselves: …") is longer than that and stays as written. The stored
+  text never changes; only the display does.
+- **Long notes show their opening.** A call summary leads with how it went and what's next, so a
+  long touchpoint or note shows its first lines and expands on a click. One-line touchpoints stay on
+  one row beside their date.
+- **appendNote keeps a long note as one entry.** The dated log is a markdown list, so a note of
+  several lines is indented under its date line and shown as one entry, newest first.

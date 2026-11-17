@@ -175,6 +175,19 @@
 .prose-sd hr { @apply my-4 border-border; }
 .prose-sd strong { @apply font-semibold text-foreground; }
 
+/* Notes an agent wrote (call summaries, company notes): a label opening a paragraph is a small
+   heading over it, so a long summary scans by section. */
+.prose-note > :first-child { @apply mt-0; }
+.prose-note > :last-child { @apply mb-0; }
+.prose-note h1, .prose-note h2, .prose-note h3, .prose-note h4 {
+  @apply mt-4 mb-1 text-[11px] font-semibold tracking-wider text-primary uppercase;
+}
+.prose-note h1:first-child, .prose-note h2:first-child, .prose-note h3:first-child, .prose-note h4:first-child { @apply mt-0.5; }
+.prose-note p { @apply my-1.5; }
+.prose-note ol, .prose-note ul { @apply my-1.5 space-y-1; }
+.prose-note li::marker { @apply text-muted-foreground; }
+.prose-note ol > li::marker { @apply font-medium tabular-nums; }
+
 .pb-safe { padding-bottom: max(env(safe-area-inset-bottom), 0.5rem); }
 .pt-safe { padding-top: env(safe-area-inset-top); }
 .scrollbar-none { scrollbar-width: none; }

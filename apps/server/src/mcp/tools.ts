@@ -57,6 +57,7 @@ import { appendFileSync, readFileSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { STRONG_WEIGHT, strongHits } from '@sidedoor/shared/tells'
 import { rulesSummary } from '@sidedoor/shared/rules'
+import { appendDatedNote } from '@sidedoor/shared/notes'
 import { checkApplicationRules, checkOpenApplications, clearRulesOverride, overrideRules } from '../services/rules'
 import { LETTER_VOICES, restyleCoverLetter } from '../writing/cover-letter'
 import { deleteLetterTemplate, listLetterTemplates, saveLetterTemplate, setDefaultLetterTemplate } from '../writing/letter-templates'
@@ -407,7 +408,7 @@ export const appTools = [
       priority: z.enum(['high', 'medium', 'low']).optional(),
       nextAction: z.string().optional(),
       nextActionDate: z.string().nullable().optional().describe('YYYY-MM-DD or null'),
-      appendNote: z.string().optional(),
+      appendNote: z.string().optional().describe('adds a dated entry; markdown, and may run several lines (labels, lists)'),
       closedReason: z.string().optional().describe('why it closed, whenever it closes; start with "Rejected by <company>" when they said no, so it counts as a rejection in Stats'),
       role: z.string().optional(),
       location: z.string().optional(),
@@ -447,7 +448,7 @@ export const appTools = [
       if (a.notes !== undefined) patch.notesMd = a.notes
       if (a.appendNote) {
         const base = patch.notesMd ?? cur.notesMd
-        patch.notesMd = `${base ? `${base}\n` : ''}- **${today()}:** ${a.appendNote}`
+        patch.notesMd = appendDatedNote(base, today(), a.appendNote)
       }
       if (a.shot !== undefined || a.shotWhy !== undefined) setShot(a.id, a.shot === undefined ? cur.shot : a.shot, a.shotWhy ?? cur.shotWhy)
       if (a.brief) setBrief(a.id, a.brief)
@@ -533,7 +534,11 @@ export const appTools = [
       applicationId: z.string().optional(),
       channel: z.enum(['email', 'linkedin', 'call', 'meeting', 'text', 'x', 'other']),
       direction: z.enum(['out', 'in', 'note']),
-      summary: z.string(),
+      summary: z
+        .string()
+        .describe(
+          'Markdown. One line for a quick touchpoint. For a call or meeting: open with a sentence or two on how it went and what happens next, then short paragraphs separated by blank lines, each starting with a label ("Company:", "Comp:", "Process:", "Next steps:"); use "- " or "1. " lists for steps and questions asked. The app shows each label as a heading and collapses long summaries to that opening.',
+        ),
       at: z.string().optional().describe('ISO time; defaults to now'),
       nextContactInDays: z.number().optional(),
     },
@@ -595,7 +600,7 @@ export const appTools = [
       fundingAmount: z.string().optional(),
       fundingAt: z.string().optional(),
       fundingNote: z.string().optional(),
-      notes: z.string().optional(),
+      notes: z.string().optional().describe('replaces the notes. Markdown: short paragraphs separated by blank lines, each starting with a label ("Customers:", "Team:", "Stack:")'),
     },
     safe(({ name, ...rest }) => {
       const c = ensureCompany(name)
@@ -903,7 +908,7 @@ export const appTools = [
       cadenceDays: z.number().int().nullable().optional().describe('days between follow-ups'),
       whyMd: z.string().nullable().optional(),
       notes: z.string().nullable().optional().describe('replaces all notes; prefer appendNote'),
-      appendNote: z.string().optional(),
+      appendNote: z.string().optional().describe('adds a dated entry; markdown, and may run several lines (labels, lists)'),
     },
     safe(({ id, notes, appendNote, ...rest }) => {
       const cur = getPerson(id)
@@ -913,7 +918,7 @@ export const appTools = [
       if (notes !== undefined) patch.notesMd = notes
       if (appendNote) {
         const base = notes !== undefined ? notes : cur.notesMd
-        patch.notesMd = `${base ? `${base}\n` : ''}- **${today()}:** ${appendNote}`
+        patch.notesMd = appendDatedNote(base, today(), appendNote)
       }
       return personBrief(updatePerson(id, patch)!)
     }),
