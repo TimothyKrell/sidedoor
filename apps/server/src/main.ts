@@ -19,6 +19,8 @@ export const startServer = async (o: { open: boolean }) => {
   normalizeStages()
   // Once: the questions in packages saved before Sidedoor kept them.
   void import('./services/questions').then((m) => m.importPackageQuestions()).catch((e: unknown) => console.error('[questions] import failed', e))
+  // Every start: no form window outlives a restart, so no security code answered before one is kept.
+  void import('./services/questions').then((m) => m.scrubSecurityCodes()).catch((e: unknown) => console.error('[questions] security code scrub failed', e))
   // SIDEDOOR_NO_JOBS=1: serve data without polling boards or running AI jobs (inspecting a copy).
   const stopJobs = process.env.SIDEDOOR_NO_JOBS === '1' ? async () => {} : startJobs()
   // Probe the AI CLIs in the background so Settings opens with their status ready.

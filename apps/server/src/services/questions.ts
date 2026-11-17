@@ -1,13 +1,14 @@
-import { and, desc, eq, inArray, isNull, ne, or } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNotNull, isNull, ne, or } from 'drizzle-orm'
 import { holdsApplication, packageQuestions } from '@sidedoor/shared/questions'
 import { logActivity } from '../activity'
 import { db, schema } from '../db/client'
 import { atomic } from '../db/tx'
 import { isDemographic, type Settled } from '../form-answers'
 import { newId, nowIso } from '../ids'
+import { codeWindowOpen } from '../jobs/form-windows'
 import { getMeta, getSettings, setMeta } from '../settings'
 import { truncate } from '../text'
-import { getApplication, requestChanges, requestSubmit, submitByOf, submitterAllowed, updateApplication } from './applications'
+import { getApplication, requestChanges, requestSubmit, STAGE_LABEL, submitByOf, submitterAllowed, updateApplication } from './applications'
 import { type DocKey, getDoc, setDoc } from './documents'
 
 /**
@@ -38,6 +39,19 @@ const clean = (s: string) =>
     .replace(/^\s*(?:\d+[.)]|[-*])\s+/, '')
     .replace(/\s+/g, ' ')
     .trim()
+
+const SECURITY_CODE = /\b(security|verification|confirmation|one[- ]?time|access|login|sign[- ]?in|2fa)\s+(code|pin|passcode)\b|\bpass ?code\b|\botp\b/i
+
+/**
+ * A code the form emailed or texted to prove the applicant is a person (Greenhouse's "security
+ * code"). It's good for one use and only for the window that asked for it, so it's never kept in
+ * the package or a document, never reused for another application, and asked again each time a
+ * form sends a new one.
+ */
+export const isSecurityCode = (text: string) => SECURITY_CODE.test(text)
+
+/** What a security code's answer becomes once it's been entered, or is too old to use: the code itself isn't kept. */
+export const SPENT_CODE = '(entered in the form or expired; Sidedoor keeps no copy)'
 
 const FORM_ANSWER = /salary|compensation|pay expectation|start date|notice period|relocat|sponsor|visa|authori[sz]|citizen|permanent resident|clearance|pronoun|gender|veteran|disabilit|ethnicity|how did you hear/i
 const ABOUT_PAST = /\b(did|have|had|were|was)\s+you\b|\b(your|you) (role|experience|background|work)\b|\bhave you (ever )?(used|built|led|shipped|managed|worked)\b/i
@@ -176,7 +190,8 @@ export const askQuestions = atomic((applicationId: string | null, askedBy: strin
       .orderBy(desc(Q.createdAt))
       .get()
     if (here) {
-      const back = here.status === 'dismissed' && askedBy === 'fill'
+      // A form asking for a code again has sent a new one: the last answer is no good.
+      const back = askedBy === 'fill' && (here.status === 'dismissed' || (here.status === 'answered' && isSecurityCode(text)))
       if (back || (here.status === 'open' && (x.why || x.options?.length || x.filledValue)))
         db.update(Q)
           .set({ why: x.why ?? here.why, options: x.options?.length ? x.options : here.options, filledValue: x.filledValue ?? here.filledValue, updatedAt: nowIso(), ...(back ? { status: 'open' as const, answer: null, answeredAt: null, answeredBy: null } : {}) })
@@ -186,14 +201,15 @@ export const askQuestions = atomic((applicationId: string | null, askedBy: strin
       out.push({ id: here.id, question: here.text, status, answer: here.answer, known: status !== 'open' })
       continue
     }
-    const known = knownForAll(key)
+    const code = isSecurityCode(text)
+    const known = code ? undefined : knownForAll(key)
     if (known && !applicationId) {
       out.push({ id: known.id, question: known.text, status: 'answered', answer: known.answer, known: true })
       continue
     }
-    const guess = guessAbout(text)
-    const about = x.about ?? guess.about
-    const saveTo = x.saveTo ?? (about === 'you' ? (guess.saveTo ?? 'answers') : null)
+    const guess = code ? { about: 'application' as const, saveTo: null } : guessAbout(text)
+    const about = code ? 'application' : (x.about ?? guess.about)
+    const saveTo = code ? null : (x.saveTo ?? (about === 'you' ? (guess.saveTo ?? 'answers') : null))
     if (!known && !holdsApplication({ about, saveTo, askedBy })) {
       const passed = passedOn(key)
       if (passed) {
@@ -240,17 +256,31 @@ export interface AnswerInput {
 /**
  * Record the user's answers. Each goes into its application's package. One for every application
  * also answers the same question still open in the others, and is kept in Standard answers or
- * Experience. When Grok Bot was submitting an application and these were the last questions its
- * form asked, the fill is queued again (unless `continueSubmit` is false).
+ * Experience. When a submit stopped on these and they were the last questions its form asked, the
+ * submit goes on (unless `continueSubmit` is false): in the window it left open when Sidedoor still
+ * has it, else in a new one. `submits` says, for each application waiting on a submit, the task
+ * that goes on with it or why none does. A security code is kept only on its question, for the
+ * submit that enters it, and never goes into the package or a document.
  */
 export const answerQuestions = atomic((items: AnswerInput[], by: string, o: { continueSubmit?: boolean } = {}) => {
   const touched = new Set<string>()
+  const codes = new Set<string>()
   const answered: string[] = []
   for (const x of items) {
     const q = byId(x.id)
     if (!q) throw new Error(`No question ${x.id}`)
     const answer = x.answer.trim()
     if (!answer) throw new Error(`Give an answer for "${q.text}", or dismiss it.`)
+    if (isSecurityCode(q.text)) {
+      const at = nowIso()
+      db.update(Q).set({ status: 'answered', answer, answeredAt: at, answeredBy: by, scope: 'application', saveTo: null, revisedAt: at, updatedAt: at }).where(eq(Q.id, q.id)).run()
+      answered.push(q.id)
+      if (q.applicationId) {
+        touched.add(q.applicationId)
+        codes.add(q.applicationId)
+      }
+      continue
+    }
     const forAll = x.allApplications ?? q.scope === 'global'
     const saveTo = forAll ? (x.saveTo ?? q.saveTo ?? 'answers') : q.saveTo
     // For every application: the same question wherever it's open, and wherever this answer was already used.
@@ -274,13 +304,13 @@ export const answerQuestions = atomic((items: AnswerInput[], by: string, o: { co
       putInDoc(saveTo, q.text, answer)
     }
   }
-  const resubmitted = o.continueSubmit === false ? [] : [...touched].filter(continueSubmit)
+  const submits = o.continueSubmit === false ? [] : [...touched].flatMap((id) => continueSubmit(id, codes.has(id)) ?? [])
   const texts = [...new Set(items.map((x) => byId(x.id)?.text).filter(Boolean))]
   logActivity('application', `You answered ${texts.length} question${texts.length === 1 ? '' : 's'}${by === 'you' ? '' : ` (via ${by})`}`, {
     detail: texts.join('\n'),
     link: '/questions',
   })
-  return { answered: [...new Set(answered)], applications: [...touched], resubmitted }
+  return { answered: [...new Set(answered)], applications: [...touched], resubmitted: submits.flatMap((s) => (s.taskId ? [s.applicationId] : [])), submits }
 })
 
 /**
@@ -297,7 +327,8 @@ export const dismissQuestions = atomic((ids: string[], by: string) => {
     if (by === 'you' && q.status === 'open' && q.askedBy === 'fill' && q.applicationId) waiting.add(q.applicationId)
     db.update(Q).set({ status: 'dismissed', answer: null, answeredAt: nowIso(), answeredBy: by, updatedAt: nowIso() }).where(eq(Q.id, id)).run()
   }
-  return { dismissed: ids, resubmitted: [...waiting].filter(continueSubmit) }
+  const submits = [...waiting].flatMap((id) => continueSubmit(id) ?? [])
+  return { dismissed: ids, resubmitted: submits.flatMap((s) => (s.taskId ? [s.applicationId] : [])), submits }
 })
 
 /**
@@ -335,30 +366,104 @@ export const reopenQuestion = atomic((id: string) => {
   return byId(id)!
 })
 
-/** A submit stopped for questions, and none of the form's is left open: fill (and submit) it again. */
-const continueSubmit = (applicationId: string) => {
-  const T = schema.tasks
-  const last = db.select().from(T).where(and(eq(T.kind, 'submit-assist'), eq(T.applicationId, applicationId))).orderBy(desc(T.createdAt)).get()
-  if (!last || last.input.submit !== true || last.status !== 'done' || !last.output) return false
-  const by = submitByOf(last.input)
-  if (!submitterAllowed(by)) return false
-  let waiting = false
+/** What answering did for an application whose submit was waiting: the task that goes on with it, or why none does. */
+export interface SubmitResume {
+  applicationId: string
+  taskId?: string
+  /** 'open': the code goes into the window the submit left open. 'new': the form is filled again in a new window (which emails a new code, when it asks for one). */
+  window?: 'open' | 'new'
+  /** Why nothing goes on, when it doesn't. */
+  reason?: string
+}
+
+/** The last submit's output stopped on something it asked: a question, or a security code. */
+const stoppedOn = (output: string | null) => {
   try {
-    const o = JSON.parse(last.output) as { outcome?: string; submit?: { problems?: unknown[] } | null }
-    waiting = o.submit ? (o.submit.problems?.length ?? 0) > 0 : o.outcome === 'needs_you'
+    const o = JSON.parse(output ?? '') as { outcome?: string; submit?: { outcome?: string; problems?: { field?: string }[] } | null }
+    const code = !!o.submit && o.submit.outcome !== 'submitted' && (o.submit.problems ?? []).some((p) => isSecurityCode(p.field ?? ''))
+    return { waiting: o.submit ? o.submit.outcome !== 'submitted' && (o.submit.problems?.length ?? 0) > 0 : o.outcome === 'needs_you', code, submitted: o.submit?.outcome === 'submitted' }
   } catch {
-    return false
-  }
-  if (!waiting) return false
-  if (db.select().from(Q).where(and(eq(Q.applicationId, applicationId), eq(Q.askedBy, 'fill'), eq(Q.status, 'open'))).get()) return false
-  try {
-    requestSubmit(applicationId, { dryRun: last.input.dryRun === true, by, skipRuleCheck: true, closeWhenDone: last.input.closeWhenDone === true })
-    return true
-  } catch (e) {
-    console.error('[questions] could not continue the submit', e)
-    return false
+    return null
   }
 }
+
+/**
+ * A submit stopped for questions, and none of the form's is left open: fill (and submit) it again,
+ * or for a security code, enter it in the window left open. Null when no submit was waiting on
+ * this application; otherwise the task, or why there's none (an answered security code always
+ * says, so whoever relayed it knows).
+ */
+const continueSubmit = (applicationId: string, codeAnswered = false): SubmitResume | null => {
+  const T = schema.tasks
+  const last = db.select().from(T).where(and(eq(T.kind, 'submit-assist'), eq(T.applicationId, applicationId))).orderBy(desc(T.createdAt)).get()
+  const no = (reason: string) => (codeAnswered ? { applicationId, reason } : null)
+  if (!last || last.input.submit !== true) return no('Sidedoor never sent this one to be submitted, so nothing was waiting on the code.')
+  if (last.status === 'queued' || last.status === 'running') return { applicationId, taskId: last.id, window: codeWindowOpen(applicationId) ? 'open' : 'new', reason: `A submit is already ${last.status === 'queued' ? 'queued' : 'running'} for it; it uses the answer if it hasn't passed that step.` }
+  const stop = last.status === 'done' ? stoppedOn(last.output) : null
+  if (stop?.submitted) return no('Already submitted: Sidedoor saw the confirmation.')
+  if (!stop?.waiting) return no(`The last submit ${last.status === 'done' ? "isn't waiting on any answer" : `${last.status}${last.error ? `: ${truncate(last.error, 160)}` : ''}`}. Send it again with submit_application, or the user presses Approve & submit.`)
+  const by = submitByOf(last.input)
+  if (!submitterAllowed(by)) return { applicationId, reason: `Not submitted: ${by === 'agent' ? 'letting your AI submit' : 'letting Grok Bot submit'} is turned off now.` }
+  const open = db.select({ text: Q.text }).from(Q).where(and(eq(Q.applicationId, applicationId), eq(Q.askedBy, 'fill'), eq(Q.status, 'open'))).all()
+  if (open.length) return { applicationId, reason: `Still waiting on ${open.map((q) => `"${truncate(q.text, 60)}"`).join(', ')}; it goes on once ${open.length === 1 ? 'that is' : 'those are'} answered.` }
+  const a = getApplication(applicationId)
+  if (a?.appliedAt)
+    return {
+      applicationId,
+      reason: `Marked ${STAGE_LABEL[a.stage]} by hand on ${a.appliedAt.slice(0, 10)}, but Sidedoor never saw a confirmation, so it won't submit again on its own. Ask the user whether it went in (look for the company's confirmation email). If it didn't, move it back to Approved (update_application stage "approved") and send it again.`,
+    }
+  try {
+    const t = requestSubmit(applicationId, { dryRun: last.input.dryRun === true, by, skipRuleCheck: true, closeWhenDone: last.input.closeWhenDone === true })
+    return { applicationId, taskId: t.id, window: stop.code && codeWindowOpen(applicationId) ? 'open' : 'new' }
+  } catch (e) {
+    console.error('[questions] could not continue the submit', e)
+    return { applicationId, reason: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+/** The security code answered for this application and not yet used: what the submit enters. */
+export const securityCodeFor = (applicationId: string): { id: string; text: string; answer: string } | null => {
+  const q = db
+    .select({ id: Q.id, text: Q.text, answer: Q.answer })
+    .from(Q)
+    .where(and(eq(Q.applicationId, applicationId), eq(Q.status, 'answered')))
+    .orderBy(desc(Q.answeredAt))
+    .all()
+    .find((x) => isSecurityCode(x.text) && !!x.answer && x.answer !== SPENT_CODE)
+  return q?.answer ? { id: q.id, text: q.text, answer: q.answer } : null
+}
+
+/** The code was entered (or a new window makes it useless): keep no copy of it. */
+export const spendSecurityCodes = atomic((applicationId: string) => {
+  const rows = db.select().from(Q).where(and(eq(Q.applicationId, applicationId), eq(Q.status, 'answered'))).all().filter((q) => isSecurityCode(q.text) && q.answer !== SPENT_CODE)
+  for (const q of rows) db.update(Q).set({ answer: SPENT_CODE, updatedAt: nowIso() }).where(eq(Q.id, q.id)).run()
+  return rows.length
+})
+
+/**
+ * On start: no form window outlives a restart, so no security code answered before it can be
+ * used. Keep none of them, and take any out of the packages they went into before Sidedoor knew
+ * to keep them out.
+ */
+export const scrubSecurityCodes = atomic(() => {
+  let n = 0
+  for (const q of db.select().from(Q).where(isNotNull(Q.applicationId)).all()) {
+    if (!isSecurityCode(q.text)) continue
+    const a = getApplication(q.applicationId!)
+    if (a?.packageMd) {
+      const md = packageWithAnswer(a.packageMd, q.text, null)
+      if (md !== a.packageMd) {
+        updateApplication(a.id, { packageMd: md })
+        n++
+      }
+    }
+    if (q.status === 'answered' && q.answer !== SPENT_CODE) {
+      db.update(Q).set({ answer: SPENT_CODE, updatedAt: nowIso() }).where(eq(Q.id, q.id)).run()
+      n++
+    }
+  }
+  return n
+})
 
 // ------------------------------------------------------------------ packages
 

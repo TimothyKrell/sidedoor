@@ -20,15 +20,17 @@ const LABEL: Record<Item['status'], string> = {
   ready: 'Ready (dry run)',
   filled: 'Filled, for you',
   questions: 'Needs answers',
+  code: 'Waiting on code',
   blocked: 'Blocked',
   not_submitted: 'Not submitted',
+  marked_applied: 'Marked applied',
   failed: 'Failed',
   cancelled: 'Cancelled',
 }
 const MODE = { 'dry-run': 'Dry run', fill: 'Fill only', submit: 'Submit' } as const
 
 const tone = (s: Item['status']) =>
-  s === 'submitted' || s === 'ready' || s === 'filled' ? 'secondary' : s === 'failed' || s === 'not_submitted' ? 'destructive' : s === 'blocked' || s === 'questions' ? 'default' : 'outline'
+  s === 'submitted' || s === 'ready' || s === 'filled' ? 'secondary' : s === 'failed' || s === 'not_submitted' ? 'destructive' : s === 'blocked' || s === 'questions' || s === 'code' ? 'default' : 'outline'
 
 /** The latest submit batch, your AI's or Grok Bot's: one line per application, and pause, resume or cancel. */
 export function SubmitBatchCard() {

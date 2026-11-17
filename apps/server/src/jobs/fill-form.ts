@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { blockingFindings, type RuleCheck } from '@sidedoor/shared/rules'
 import { mcpFor, runJob } from '../ai'
 import { logActivity } from '../activity'
-import { type FormTab, openFormTab, withFormLock } from '../browser'
+import { openFormTab, withFormLock } from '../browser'
 import { paths } from '../config'
 import { db, schema } from '../db/client'
 import { nowIso } from '../ids'
@@ -13,15 +13,16 @@ import { withBrowserTools } from '../mcp/playwright'
 import { allowSubmit, browserSnapshot } from '../mcp/server'
 import { notifyPromise } from '../notify'
 import { context, render } from '../prompts'
-import { forWhom, getApplication, setStage, submitByOf, submitterAllowed, updateApplication } from '../services/applications'
+import { forWhom, getApplication, setStage, STAGE_LABEL, submitByOf, submitterAllowed, updateApplication } from '../services/applications'
 import { docBody } from '../services/documents'
-import { askQuestions, settledFor } from '../services/questions'
+import { askQuestions, isSecurityCode, securityCodeFor, settledFor, spendSecurityCodes } from '../services/questions'
 import { checkApplicationRules } from '../services/rules'
 import { buildResumePdf, getResume, resumeForApplication } from '../services/resumes'
 import { getSettings } from '../settings'
 import { clip, truncate } from '../text'
 import { experienceContext, experienceLogLine } from '../experience'
 import { type AuditEntry, checkFill, FILL_SOURCES, readPackage, submitRefusal } from '../form-answers'
+import { codeWindowOpen, stoppedForms as stopped } from './form-windows'
 import type { TaskOutcome } from './tasks'
 
 export const FillReport = z.object({
@@ -46,8 +47,26 @@ export const SubmitReport = z.object({
   summary: z.string(),
   problems: z.array(z.object({ field: z.string(), why: z.string() })).default([]),
   confirmation: z.string().default(''),
+  /** The form asked for a code it emailed or texted before it would take the application. */
+  codeRequested: z.boolean().default(false),
 })
 export type SubmitReport = z.infer<typeof SubmitReport>
+
+/** The step that enters a security code in the window a submit left waiting for one. */
+export const CodeReport = z.object({
+  outcome: z.enum(['submitted', 'code_rejected', 'not_submitted', 'blocked']),
+  summary: z.string(),
+  problems: z.array(z.object({ field: z.string(), why: z.string() })).default([]),
+  confirmation: z.string().default(''),
+  /** After a rejected code: the form was asked for a new one (a "Resend code" link). */
+  newCodeSent: z.boolean().default(false),
+})
+
+const CODE_FIELD = 'Security code'
+
+/** The submit stopped at a code the form sent: the report says so, or one of its problems is the code. */
+export const stoppedForCode = (s: Pick<SubmitReport, 'outcome' | 'problems'> & { codeRequested?: boolean } | null | undefined) =>
+  !!s && s.outcome !== 'submitted' && (!!s.codeRequested || s.problems.some((p) => isSecurityCode(p.field)))
 
 /** What the page showed after the submit click, read by Sidedoor from the window itself. */
 export interface Evidence {
@@ -70,6 +89,8 @@ export interface FillOutput extends FillReport {
   audit?: AuditEntry[]
   /** Filled, then held back from submitting: it fails the user's rules and nobody overrode that. */
   rules?: RuleCheck | null
+  /** Stopped at a code the form emailed: when submit was clicked, so the code to use is the newest one sent after this. */
+  codeRequestedAt?: string | null
 }
 
 /**
@@ -159,13 +180,6 @@ separate step, so:
  * left unanswered is followed by a second, short run that clicks submit and checks it went in.
  * A dry run fills the same way and reports the questions, and never submits.
  */
-/**
- * A submit's window left open when it stopped for questions, by application: the next fill picks
- * up there. `filled` is what was in it then, so fields on steps behind it still get checked;
- * `held` are the ones Sidedoor held back, which the next fill must look at again.
- */
-const stopped = new Map<string, { tab: FormTab; url: string; filled: FillReport['filled']; held: string[] }>()
-
 /** The fill that picks up a window left open: it keeps what's there and reports all of it. */
 const RESUMED_NOTE = `## Filled before
 Sidedoor filled this form once already and stopped before submitting, for questions. They have
@@ -198,6 +212,7 @@ const withEarlier = (data: FillReport, earlier: FillReport['filled']): FillRepor
 /** What the window left open after a submit stopped says: why, and what to do. */
 const stoppedBanner = (questions: number) =>
   `Sidedoor stopped before submitting: ${questions} question${questions === 1 ? '' : 's'} for you. Answer ${questions === 1 ? 'it' : 'them'} in Sidedoor and it picks up here and submits this, or finish this form yourself.`
+const CODE_BANNER = 'Sidedoor is waiting for the security code this form emailed you. Answer "Security code" in Sidedoor and it enters the code here and finishes submitting, or enter it yourself.'
 
 export const runFillForm = (task: schema.Task): Promise<TaskOutcome> =>
   withFormLock(async () => {
@@ -245,6 +260,12 @@ export const runFillForm = (task: schema.Task): Promise<TaskOutcome> =>
       }
     }
     if (prior && !resumed) await prior.tab.close().catch(() => {})
+    // The window stopped at the form's security code and the code is in: enter it there and finish.
+    const code = submitting && resumed && prior?.codeAskedAt ? securityCodeFor(a.id) : null
+    // Any other submit fills a form that emails a new code if it wants one: one answered before is no use.
+    if (submitting && !code) spendSecurityCodes(a.id)
+    // The code is kept nowhere but its question, and only until it's used: not in the task's record, its activity or a notice.
+    const hide = (t: string) => (code ? t.replaceAll(code.answer, '[security code]') : t)
     let tab = resumed && prior ? prior.tab : await openFormTab(url)
     // Picking up the window left open: what it held then, and the fields that must be looked at again.
     let resuming = resumed && !!prior
@@ -254,18 +275,55 @@ export const runFillForm = (task: schema.Task): Promise<TaskOutcome> =>
     let sent: SubmitReport | null = null
     let evidence: Evidence | null = null
     let held: RuleCheck | null = null
-    let r: Awaited<ReturnType<typeof runJob<typeof FillReport>>>
+    let meta: { sessionId?: string | null; provider?: string; model?: string } = {}
+    // Set when the submit stopped at a code the form sent: when it was asked for.
+    let codeAskedAt: string | null = null
     let closed = false
     let message: string | undefined
     const log: string[] = []
     let costUsd = 0
     let audit: AuditEntry[] = []
     try {
-      for (;;) {
+      if (code && prior) {
+        report = { outcome: 'ready', summary: 'Entered the security code in the window the submit left open.', filled: prior.filled, needsYou: [] }
+        audit = prior.audit
+        // The rules once more before the click, as the fill does.
+        const check = checkApplicationRules(a.id, { questions: prior.filled.map((f) => f.field) })
+        if (blockingFindings(check).length) held = check
+        else {
+          const at = nowIso()
+          const go = await withBrowserTools(tab.cdpEndpoint, workDir, async () => {
+            await tab.unguard()
+            allowSubmit(true)
+            db.update(schema.tasks).set({ input: { ...task.input, submitStartedAt: at } }).where(eq(schema.tasks.id, task.id)).run()
+            const j = await runJob({ job: 'fill', prompt: render('enter-code', { COMPANY: a.companyName, ROLE: a.role, CODE: code.answer }), mcp: mcpFor('browser'), schema: CodeReport, maxTurns: 25, timeoutMs: 8 * 60_000 })
+            return { j, snap: await browserSnapshot() }
+          })
+          // Used, or turned down: either way it's never entered again, so keep no copy.
+          spendSecurityCodes(a.id)
+          log.push(...(go.j.log ?? []))
+          costUsd += go.j.costUsd ?? 0
+          meta = go.j
+          const c = CodeReport.parse(JSON.parse(hide(JSON.stringify(go.j.data))))
+          sent =
+            c.outcome === 'code_rejected'
+              ? {
+                  outcome: 'not_submitted',
+                  summary: c.summary,
+                  problems: [{ field: code.text, why: c.newCodeSent ? 'The form turned the code down (expired or mistyped) and emailed a new one. Relay the newest code.' : "The form turned the code down (expired or mistyped), and it couldn't be made to send a new one. Request one in the Sidedoor window, then relay it, or finish the form there." }],
+                  confirmation: '',
+                  codeRequested: true,
+                }
+              : { outcome: c.outcome, summary: c.summary, problems: c.problems, confirmation: c.confirmation, codeRequested: false }
+          if (c.outcome === 'code_rejected') codeAskedAt = c.newCodeSent ? at : prior.codeAskedAt
+          evidence = evidenceFrom(go.snap, c.confirmation)
+          if (c.outcome !== 'submitted') db.update(schema.tasks).set({ input: task.input }).where(eq(schema.tasks.id, task.id)).run()
+        }
+      } else for (;;) {
         // The window left open, filled without reporting a field it held back: it may still hold
         // the old answer, on a step the fill can't see. Start over in a new window instead.
         let again = false as boolean
-        r = await withBrowserTools(tab.cdpEndpoint, workDir, async () => {
+        const r = await withBrowserTools(tab.cdpEndpoint, workDir, async () => {
           const fill = await runJob({
             job: 'fill',
             prompt: render('fill-form', {
@@ -307,7 +365,8 @@ export const runFillForm = (task: schema.Task): Promise<TaskOutcome> =>
           }
           await tab.unguard()
           allowSubmit(true)
-          db.update(schema.tasks).set({ input: { ...task.input, submitStartedAt: nowIso() } }).where(eq(schema.tasks.id, task.id)).run()
+          const at = nowIso()
+          db.update(schema.tasks).set({ input: { ...task.input, submitStartedAt: at } }).where(eq(schema.tasks.id, task.id)).run()
           const go = await runJob({
             job: 'fill',
             prompt: render('submit-form', { COMPANY: a.companyName, ROLE: a.role }),
@@ -319,28 +378,37 @@ export const runFillForm = (task: schema.Task): Promise<TaskOutcome> =>
           log.push(...(go.log ?? []))
           costUsd += go.costUsd ?? 0
           sent = go.data
+          if (stoppedForCode(go.data)) {
+            codeAskedAt = at
+            // Asked under one name, so the relay finds it and a new code reopens it.
+            if (!go.data.problems.some((p) => isSecurityCode(p.field))) sent = { ...go.data, problems: [...go.data.problems, { field: CODE_FIELD, why: 'The form emailed a code to finish submitting.' }] }
+          }
           evidence = evidenceFrom(await browserSnapshot(), go.data.confirmation)
           // It reported back: unless it went in, the same task may try again.
           if (go.data.outcome !== 'submitted') db.update(schema.tasks).set({ input: task.input }).where(eq(schema.tasks.id, task.id)).run()
           return reviewed
         })
-        if (!again) break
+        meta = r
+        if (!again) {
+          report = r.data
+          break
+        }
         await tab.close().catch(() => {})
         resuming = false
         tab = await openFormTab(url)
       }
-      report = r.data
       // Submitted: no window left behind. A batch's dry run is a report, with nothing to review: its window closes too.
       const s = sent as SubmitReport | null
       const asks = s ? (s.outcome === 'submitted' ? 0 : s.problems.length) : report.outcome === 'needs_you' ? report.needsYou.length : 0
       const asking = strict && asks > 0
-      if (s?.outcome === 'submitted' || (task.input.closeWhenDone === true && (dryRun || asking))) {
+      // A window waiting on a code stays open even for a batch: a new window means a new code.
+      if (s?.outcome === 'submitted' || (task.input.closeWhenDone === true && (dryRun || asking) && !codeAskedAt)) {
         await tab.close().catch((e: unknown) => console.error('[fill] close failed', e))
         closed = true
       } else if (asking) {
         // Stopped for questions: the window stays, saying why, until the answers fill it again.
-        stopped.set(a.id, { tab, url, filled: report.filled, held: audit.filter((e) => !e.confirmed).map((e) => e.field) })
-        message = stoppedBanner(asks)
+        stopped.set(a.id, { tab, url, filled: report.filled, held: audit.filter((e) => !e.confirmed).map((e) => e.field), audit, codeAskedAt })
+        message = codeAskedAt ? CODE_BANNER : stoppedBanner(asks)
       }
     } finally {
       if (!closed) await tab.finish(message).catch((e: unknown) => console.error('[fill] finish failed', e))
@@ -348,10 +416,13 @@ export const runFillForm = (task: schema.Task): Promise<TaskOutcome> =>
     }
 
     const label = `${a.companyName} – ${a.role}`
-    const out: FillOutput = { ...report, submitting, dryRun, submit: sent, evidence, audit, rules: held }
-    log.push(experienceLogLine(experience))
-    if (resuming) log.push('Picked up the form window the last submit left open, instead of filling a new one')
-    const done = { output: JSON.stringify(out), sessionId: r.sessionId, costUsd: costUsd || undefined, log, provider: r.provider, model: r.model }
+    const out: FillOutput = { ...report, submitting, dryRun, submit: sent, evidence, audit, rules: held, codeRequestedAt: codeAskedAt }
+    if (code) log.push('Entered the security code in the form window the last submit left open')
+    else {
+      log.push(experienceLogLine(experience))
+      if (resuming) log.push('Picked up the form window the last submit left open, instead of filling a new one')
+    }
+    const done = { output: hide(JSON.stringify(out)), sessionId: meta.sessionId, costUsd: costUsd || undefined, log: log.map(hide), provider: meta.provider, model: meta.model }
     const s = sent as SubmitReport | null
     if (s?.outcome === 'submitted') {
       setStage(a.id, 'applied', { note: `Submitted by Sidedoor${forWhom(submitByOf(task.input))}. ${s.summary}` })
@@ -370,7 +441,9 @@ export const runFillForm = (task: schema.Task): Promise<TaskOutcome> =>
     // Kept as questions: the user answers them in Sidedoor (or through their AI), and the answers stay for next time.
     if (asked.length) askQuestions(a.id, 'fill', asked)
     const asks = asked.length
-    const next = s
+    const next = codeAskedAt
+      ? 'Waiting on the security code the form emailed: answer it in Sidedoor and it finishes the submit in the open window'
+      : s
       ? `Not submitted: ${truncate(s.summary, 120)}${s.outcome === 'not_submitted' ? ' The form is open in the Sidedoor browser window.' : ''}`
       : report.outcome === 'ready'
         ? dryRun
@@ -382,10 +455,10 @@ export const runFillForm = (task: schema.Task): Promise<TaskOutcome> =>
             : `Form mostly filled; ${asks} item${asks === 1 ? '' : 's'} need you, then submit`
           : `Couldn't fill the form: ${truncate(report.summary, 120)}`
     updateApplication(a.id, { nextAction: next })
-    logActivity('application', s ? `Couldn't submit: ${label}` : dryRun ? `Dry run filled the form: ${label}` : `Your AI filled the form: ${label}`, { detail: s?.summary ?? report.summary, link: `/applications/${a.id}` })
+    logActivity('application', codeAskedAt ? `Waiting on the security code: ${label}` : s ? `Couldn't submit: ${label}` : dryRun ? `Dry run filled the form: ${label}` : `Your AI filled the form: ${label}`, { detail: s?.summary ?? report.summary, link: `/applications/${a.id}` })
     await notifyPromise({
       kind: 'agent',
-      title: s ? `Couldn't submit ${a.companyName}` : report.outcome === 'blocked' ? `Couldn't fill ${a.companyName}` : strict && report.outcome === 'needs_you' ? `${a.companyName} has questions for you` : `${a.companyName} form is filled`,
+      title: codeAskedAt ? `${a.companyName} needs the security code it emailed` : s ? `Couldn't submit ${a.companyName}` : report.outcome === 'blocked' ? `Couldn't fill ${a.companyName}` : strict && report.outcome === 'needs_you' ? `${a.companyName} has questions for you` : `${a.companyName} form is filled`,
       body: `${s?.summary ?? report.summary}${report.needsYou.length ? `\nNeeds you: ${report.needsYou.map((n) => n.field).join(', ')}` : ''}`,
       path: `/applications/${a.id}`,
       priority: 4,
@@ -398,10 +471,12 @@ export interface Submission {
   application: string
   taskId: string
   /**
-   * queued/filling: Sidedoor is on it. questions: answer them (answer_questions). filled: a fill
-   * for the user, open in the window for them to check and submit. The rest are final.
+   * queued/filling: Sidedoor is on it. questions: answer them (answer_questions). code: submit was
+   * clicked and the form emailed a security code; relay it (security_codes_waiting). filled: a fill
+   * for the user, open in the window for them to check and submit. marked_applied: the user marked
+   * it Applied after this stopped, and Sidedoor never saw it go in. The rest are final.
    */
-  status: 'queued' | 'filling' | 'submitted' | 'ready' | 'filled' | 'questions' | 'blocked' | 'not_submitted' | 'failed' | 'cancelled'
+  status: 'queued' | 'filling' | 'submitted' | 'ready' | 'filled' | 'questions' | 'code' | 'blocked' | 'not_submitted' | 'marked_applied' | 'failed' | 'cancelled'
   /** Filled and reported, never submitted. ready means a real run would have submitted it. */
   dryRun: boolean
   summary: string
@@ -433,8 +508,13 @@ export const submissionOf = (t: schema.Task): Submission => {
     if (o.outcome === 'blocked') return { ...base, status: 'blocked', summary: o.summary }
     return { ...base, status: 'filled', summary: `${o.summary} Open in the Sidedoor browser window for the user to check and submit.`, questions: asked }
   }
-  if (o.rules) return { ...base, status: 'not_submitted', summary: RULES_HELD(o.rules) }
   if (o.submit?.outcome === 'submitted') return { ...base, status: 'submitted', summary: o.submit.summary, evidence: o.evidence ?? null }
+  // Marked Applied after this stopped: by hand, since Sidedoor marks it only when it sees it go in.
+  if (!o.dryRun && a?.appliedAt && a.appliedAt >= (t.finishedAt ?? t.createdAt))
+    return { ...base, status: 'marked_applied', summary: `Marked ${STAGE_LABEL[a.stage]} by hand on ${a.appliedAt.slice(0, 10)} after this submit stopped. Sidedoor never saw it go in. It had stopped here: ${o.submit?.summary ?? o.summary}` }
+  if (o.rules) return { ...base, status: 'not_submitted', summary: RULES_HELD(o.rules) }
+  if (stoppedForCode(o.submit))
+    return { ...base, status: 'code', summary: `${o.submit!.summary} Waiting on the security code it emailed: see security_codes_waiting.`, questions: o.submit!.problems.map((p) => ({ question: p.field, why: p.why, options: [] })) }
   if (o.submit) return { ...base, status: o.submit.outcome === 'blocked' ? 'blocked' : o.submit.problems.length ? 'questions' : 'not_submitted', summary: o.submit.summary, questions: o.submit.problems.map((p) => ({ question: p.field, why: p.why, options: [] })) }
   if (o.outcome === 'needs_you') return { ...base, status: 'questions', summary: o.summary, questions: asked }
   if (o.outcome === 'blocked') return { ...base, status: 'blocked', summary: o.summary }
@@ -465,3 +545,72 @@ export const submissions = (applicationId?: string): Submission[] => {
   }
   return out
 }
+
+/** An application whose last submit stopped at a security code the form emailed, and hasn't gone in since. */
+export interface CodeWait {
+  applicationId: string
+  application: string
+  stage: schema.ApplicationStage
+  /** The question to answer with the code (answer_user_questions). */
+  questionId: string | null
+  /** needed: relay the code. answered: one is in, and the submit that enters it is queued or running. */
+  code: 'needed' | 'answered'
+  /** When the form sent the code: relay the newest code that arrived after this, never an older one. */
+  codeRequestedAt: string
+  /** Sidedoor still holds the window waiting for the code, so the code goes straight in. When false, answering fills the form again in a new window, which sends a new code to relay in turn. */
+  windowOpen: boolean
+  /** The submit that stopped there. */
+  taskId: string
+  /** The submit queued or running now, if any. */
+  resumingTaskId: string | null
+  /** Set when the stage was moved to Applied by hand after the submit stopped: Sidedoor never saw it go in. */
+  markedAppliedAt: string | null
+  next: string
+}
+
+/**
+ * Applications waiting on a security code: the last submit clicked submit and the form asked for
+ * a code it emailed, and none has gone in since. Ones marked Applied by hand are listed too, since
+ * Sidedoor never saw those go in.
+ */
+export const codesWaiting = (): CodeWait[] => {
+  const T = schema.tasks
+  const Q = schema.questions
+  const rows = db.select().from(T).where(eq(T.kind, 'submit-assist')).orderBy(desc(T.createdAt)).limit(500).all().filter((t) => t.input.submit === true && t.input.dryRun !== true && t.applicationId)
+  const byApp = new Map<string, schema.Task[]>()
+  for (const t of rows) byApp.set(t.applicationId!, [...(byApp.get(t.applicationId!) ?? []), t])
+  const out: CodeWait[] = []
+  for (const [id, tasks] of byApp) {
+    const live = tasks[0]!.status === 'queued' || tasks[0]!.status === 'running' ? tasks[0]! : null
+    const last = tasks.find((t) => t.status === 'done')
+    if (!last) continue
+    let o: FillOutput | null = null
+    try {
+      o = JSON.parse(last.output ?? '') as FillOutput
+    } catch {
+      continue
+    }
+    if (!o || !stoppedForCode(o.submit)) continue
+    // Something after it ended differently (failed, cancelled): that's what submission_status reports.
+    if (tasks.some((t) => t.createdAt > last.createdAt && t.status !== 'queued' && t.status !== 'running')) continue
+    const a = getApplication(id)
+    if (!a || a.stage === 'closed') continue
+    const q = db.select().from(Q).where(and(eq(Q.applicationId, id), eq(Q.askedBy, 'fill'))).orderBy(desc(Q.updatedAt)).all().find((x) => isSecurityCode(x.text))
+    const code: CodeWait['code'] = live && q?.status === 'answered' ? 'answered' : 'needed'
+    const windowOpen = codeWindowOpen(id)
+    const markedAppliedAt = a.appliedAt && a.appliedAt >= (last.finishedAt ?? last.createdAt) ? a.appliedAt : null
+    const at = o.codeRequestedAt ?? last.finishedAt ?? last.createdAt
+    const next = markedAppliedAt
+      ? `Marked ${STAGE_LABEL[a.stage]} by hand on ${markedAppliedAt.slice(0, 10)}, but Sidedoor never saw it go in. Don't relay a code: ask the user whether it went in (look for the company's confirmation email). If it didn't, they move it back to Approved and send it again.`
+      : live
+        ? `A submit is ${live.status} for it (${live.id}); check submission_status in a few minutes.`
+        : windowOpen
+          ? `Relay the newest code emailed after ${at}: answer_user_questions with questionId ${q?.id ?? '(see list_questions)'} and relayedBy. Sidedoor enters it in the open window and submits.`
+          : `The window that asked is gone (Sidedoor restarted or it was closed), so that code can't be used. Answering the question anyway starts the submit again in a new window, and the form emails a new code: relay that one when it's listed here.`
+    out.push({ applicationId: id, application: `${a.companyName} – ${a.role}`, stage: a.stage, questionId: q?.id ?? null, code, codeRequestedAt: at, windowOpen, taskId: last.id, resumingTaskId: live?.id ?? null, markedAppliedAt, next })
+  }
+  return out
+}
+
+/** Sidedoor's last submit of this application stopped at a security code and never went in: an agent can't call it Applied on its own. */
+export const waitingOnCode = (applicationId: string) => codesWaiting().some((w) => w.applicationId === applicationId && !w.markedAppliedAt)

@@ -583,6 +583,26 @@ current when making a non-obvious call. Open questions for the maintainer live i
 - **An application's chat costs nothing to open.** Its first message is built from stored data, not
   an AI turn, so the 58 chats that could exist don't cost usage and don't fill the chat list until
   opened. A newer tuning pass adds its findings to the same chat.
+- **A security code finishes the submit it was sent for.** Greenhouse asks for a code it emails
+  only after submit is clicked, and the code works only in the window that asked. So a submit
+  stopped at a code keeps that window open (a batch's too, since a new window means a new code),
+  and answering the code (relayed by Grok Bot, or in the app) queues a short step that types it
+  there and clicks submit once (`prompts/enter-code.md`). If Sidedoor no longer holds the window (a
+  restart loses them all), answering fills the form again in a new one, which emails a new code to
+  relay. A rejected code makes the step ask the form for a new one, and the question is asked again.
+  `security_codes_waiting` lists what waits, with when the code was sent (relay only newer ones)
+  and whether the window is still there, and `answer_user_questions` says per application what
+  went on or why not. It used to swallow the reason: a Stripe code answered an hour late went
+  nowhere because the application had been marked Applied by hand, and nothing said so.
+- **A code is kept only until it's used.** It's an answer for one window, not about the user: it
+  never goes into the package or a document, isn't reused for another application, and once
+  entered (or on any restart) its answer is replaced. The task's output and log show
+  "[security code]" in its place.
+- **Applied means Sidedoor saw it go in, or the user said so.** An agent can't mark Applied an
+  application whose Sidedoor submit is waiting on a code unless it passes `appliedEvidence` (kept
+  in the notes). The user's own "I submitted it" stays, but status shows `marked_applied`, not the
+  old blocked report, and Sidedoor won't submit it again on its own. Moving it back before Applied
+  clears the applied date, so it can be sent again; that was impossible before.
 ## Profile documents
 
 - **Correct in place; every change keeps a revision.** Agents could only append to a profile

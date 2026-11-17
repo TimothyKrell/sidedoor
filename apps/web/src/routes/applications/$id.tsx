@@ -234,6 +234,13 @@ function SubmitForMe({ d, variant = 'default', size = 'sm' }: { d: Detail; varia
 
 /** Why the last submit didn't go in: the questions it stopped on, or what blocked it. */
 function SubmitResult({ s }: { s: NonNullable<Detail['submission']> }) {
+  if (s.status === 'code')
+    return (
+      <div className="space-y-2 rounded-lg bg-hot/10 p-3 text-sm">
+        <div className="font-medium">Not submitted yet: the form emailed you a security code.</div>
+        <div className="text-muted-foreground">Answer “Security code” under Questions in the Package tab (or your AI relays it) and Sidedoor enters it in the open form window and submits. You can also type it into that window yourself.</div>
+      </div>
+    )
   if (s.status === 'questions')
     return (
       <div className="space-y-2 rounded-lg bg-hot/10 p-3 text-sm">

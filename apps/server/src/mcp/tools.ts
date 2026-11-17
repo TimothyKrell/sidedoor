@@ -398,10 +398,11 @@ export const appTools = [
 
   tool(
     'update_application',
-    'Change an application. Setting stage applies pipeline bookkeeping (e.g. applied → schedules follow-up). appendNote adds a dated line to its notes; notes replaces them. To change the package (cover letter, answers) use save_package.',
+    'Change an application. Setting stage applies pipeline bookkeeping (e.g. applied → schedules follow-up; moving it back before Applied clears the applied date, so it can be submitted again). appendNote adds a dated line to its notes; notes replaces them. To change the package (cover letter, answers) use save_package. While Sidedoor\'s own submit of it is waiting on a security code, it can\'t be marked applied without appliedEvidence.',
     {
       id: z.string(),
       stage: stageEnum.optional(),
+      appliedEvidence: z.string().optional().describe("only to mark applied one whose Sidedoor submit stopped at a security code: what shows it went in (the company's confirmation email, or the user saying they finished it by hand); it's kept in the notes"),
       status: z.enum(['potential', 'active', 'on-hold', 'closed-won', 'closed-lost']).optional(),
       priority: z.enum(['high', 'medium', 'low']).optional(),
       nextAction: z.string().optional(),
@@ -419,9 +420,14 @@ export const appTools = [
       shotWhy: z.string().optional().describe('one sentence on why, shown with the estimate'),
       brief: z.object({ summary: z.string(), highlights: z.array(z.string()).max(4) }).optional().describe('what the job is, for its review card: one plain sentence and up to 4 things the user would do or build'),
     },
-    safe((a) => {
+    safe(async (a) => {
       const cur = getApplication(a.id)
       if (!cur) throw new Error('not found')
+      if (a.stage === 'applied' && cur.stage !== 'applied' && !a.appliedEvidence?.trim() && (await import('../jobs/fill-form')).waitingOnCode(a.id))
+        throw new Error(
+          "Not marked applied: Sidedoor clicked submit and the form is waiting on the security code it emailed, so it hasn't gone in. Relay the code (security_codes_waiting, then answer_user_questions) and Sidedoor marks it Applied when it sees the confirmation. If the user finished it by hand, pass appliedEvidence saying how you know.",
+        )
+      if (a.appliedEvidence?.trim() && a.stage === 'applied') a.appendNote = `${a.appendNote ? `${a.appendNote} ` : ''}Marked applied without Sidedoor seeing it go in: ${a.appliedEvidence.trim()}`
       if (a.stage && a.stage !== cur.stage) setStage(a.id, a.stage, { ...(a.closedReason ? { closedReason: a.closedReason } : {}), won: a.status === 'closed-won' })
       const patch: Parameters<typeof updateApplication>[1] = {}
       if (a.status) patch.status = a.status
@@ -1092,7 +1098,7 @@ export const appTools = [
 
   tool(
     'answer_user_questions',
-    "Record the user's answers to questions from list_questions, in their own words (don't make answers up or improve them). Each goes into its application's package. allApplications: the answer holds for every application (defaults to the question's scope): it also answers the same question open elsewhere, is kept in Standard answers (or Experience, with saveTo 'experience') and is never asked again. When Grok Bot was submitting an application and these were the last questions its form asked, Sidedoor fills it again. To have the package rewritten with the answers, set revise.",
+    "Record the user's answers to questions from list_questions, in their own words (don't make answers up or improve them). Each goes into its application's package. allApplications: the answer holds for every application (defaults to the question's scope): it also answers the same question open elsewhere, is kept in Standard answers (or Experience, with saveTo 'experience') and is never asked again. When a submit stopped on these and they were the last questions its form asked, Sidedoor goes on with it. A security code (see security_codes_waiting) is entered in the form window the submit left open, or when that window is gone the form is filled again in a new one, which emails a new code to relay next; the code is never kept in the package. `submits` says, per application that was waiting: taskId and window ('open' or 'new') when it goes on, or reason when it doesn't. To have the package rewritten with the answers, set revise.",
     {
       answers: z.array(z.object({ questionId: z.string(), answer: z.string().min(1), allApplications: z.boolean().optional(), saveTo: z.enum(['answers', 'experience']).optional() })).min(1),
       relayedBy: z.string().optional().describe("who is passing the user's answers on, e.g. 'grokbot' (default 'agent')"),
@@ -1105,6 +1111,16 @@ export const appTools = [
       )
       const revised = revise ? r.applications.filter((id) => !r.resubmitted.includes(id)).flatMap((id) => { try { reviseWithAnswers(id); return [id] } catch { return [] } }) : []
       return { ...r, revised }
+    }),
+  ),
+
+  tool(
+    'security_codes_waiting',
+    "Applications whose submit is waiting on a security code the form emailed the user (Greenhouse asks for one after submit is clicked). Each has the questionId to answer with the code, codeRequestedAt (relay only the newest code that arrived after it), windowOpen (true: the code goes straight into the open form; false: answering fills the form again in a new window, which emails a new code to relay in turn), code ('needed', or 'answered' while the submit that enters it runs), resumingTaskId, markedAppliedAt (the user marked it Applied by hand after it stopped; Sidedoor never saw it go in, so ask them rather than relay a code), and next: what to do. Relay a code with answer_user_questions [{questionId, answer: the code}], then check submission_status or this list again. Never put a code anywhere else.",
+    {},
+    safe(async () => {
+      const waiting = (await import('../jobs/fill-form')).codesWaiting()
+      return { waiting, next: waiting.length ? 'For each with code "needed" and no markedAppliedAt: get the newest code emailed after codeRequestedAt and answer_user_questions with it.' : 'Nothing is waiting on a security code.' }
     }),
   ),
 
@@ -1336,7 +1352,7 @@ export const submitTools = (by: 'agent' | 'grokbot') => [
   ),
   tool(
     'submission_status',
-    "Where the applications you sent to submit_application stand, newest first: queued or filling (wait), submitted (done; it's now Applied, and evidence holds the page URL, title and text Sidedoor read after the click), ready (a dry run with nothing left to ask; submit_application without dryRun sends it), questions (the form asked things only the user can answer, or the package had an answer the user hasn't confirmed: ask them, word for word, with the options, then answer_questions), blocked (a captcha, sign-in or closed posting: the user has to do it in the Sidedoor window), not_submitted or failed (read the summary). audit lists every field the last fill put in: its label, value, source (standard_answer, package, user_answer, profile, resume, ai_generated, unconfirmed) and whether the user confirmed it; Sidedoor never submits while any is unconfirmed.",
+    "Where the applications you sent to submit_application stand, newest first: queued or filling (wait), submitted (done; it's now Applied, and evidence holds the page URL, title and text Sidedoor read after the click), ready (a dry run with nothing left to ask; submit_application without dryRun sends it), questions (the form asked things only the user can answer, or the package had an answer the user hasn't confirmed: ask them, word for word, with the options, then answer_questions), code (submit was clicked and the form emailed a security code: relay it, see security_codes_waiting), blocked (a captcha, sign-in or closed posting: the user has to do it in the Sidedoor window), marked_applied (the user marked it Applied by hand after Sidedoor stopped; Sidedoor never saw it go in), not_submitted or failed (read the summary). audit lists every field the last fill put in: its label, value, source (standard_answer, package, user_answer, profile, resume, ai_generated, unconfirmed) and whether the user confirmed it; Sidedoor never submits while any is unconfirmed.",
     { applicationId: z.string().optional() },
     safe(async ({ applicationId }) => (await import('../jobs/fill-form')).submissions(applicationId)),
   ),

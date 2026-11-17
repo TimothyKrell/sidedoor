@@ -77,6 +77,9 @@ export const trackPosting = atomic((postingId: string, o: { prep?: boolean; rese
   return getApplication(id)!
 })
 
+/** Stages an application is still waiting to go in. */
+const UNSENT: schema.ApplicationStage[] = ['interested', 'review', 'approved']
+
 const recordStage = (applicationId: string, stage: schema.ApplicationStage) => db.insert(schema.stageChanges).values({ id: newId('stg_'), applicationId, stage, at: nowIso() }).run()
 
 export const createApplication = atomic((v: Omit<typeof schema.applications.$inferInsert, 'id'>) => {
@@ -159,6 +162,8 @@ export const setStage = atomic((id: string, stage: schema.ApplicationStage, o: {
   const s = getSettings()
   // A rank orders one stage's column; it means nothing in the next one.
   const patch: AppPatch = stage === a.stage ? { stage } : { stage, rank: null }
+  // Moved back before Applied: it didn't go in, so it may be submitted again.
+  if (UNSENT.includes(stage) && a.appliedAt) patch.appliedAt = null
   switch (stage) {
     case 'applied':
       patch.status = 'active'
@@ -280,8 +285,6 @@ export const forWhom = (by: SubmitBy) => ({ you: '', agent: ' for your AI', grok
 /** You can always send your own. An agent can only while you let it, and that's checked again before the click. */
 export const submitterAllowed = (by: SubmitBy) => by === 'you' || (by === 'agent' ? getSettings().agents.submit : getSettings().grokBot.submit && !!grokBotToken())
 
-/** Stages an application is still waiting to go in. */
-const UNSENT: schema.ApplicationStage[] = ['interested', 'review', 'approved']
 
 /**
  * You press Approve & submit, or your AI or Grok Bot asks for an application to go in: approve it if it isn't

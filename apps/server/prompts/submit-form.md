@@ -15,6 +15,10 @@ reported every required field answered. Your one job now is to submit it, once.
    applying", "Application received", a confirmation page or message) means `submitted`.
    Validation errors mean `not_submitted`: list each field and its message under `problems`. A
    captcha that appeared means `blocked`. If the page is still working, wait and look again.
+   If the form asks for a security or verification code it emailed or texted, that's expected:
+   type nothing, report `not_submitted` with `codeRequested` true, and list it under `problems`
+   as "Security code", saying where it was sent. Sidedoor gets the code and enters it in this
+   window.
 6. Never click submit a second time, even if you can't tell whether it went in: report
    `not_submitted` and say what the page shows. A second application looks worse than none.
 7. Don't change answers, don't navigate away, don't close tabs.
@@ -25,3 +29,4 @@ reported every required field answered. Your one job now is to submit it, once.
 - `summary`: one or two plain sentences, e.g. what the confirmation said.
 - `problems`: each field or step that stopped it, and why.
 - `confirmation`: for "submitted", the confirmation message on the page, word for word.
+- `codeRequested`: true when the form asked for a code it sent before it would take the application.
