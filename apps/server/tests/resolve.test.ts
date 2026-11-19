@@ -7,7 +7,7 @@ import { db, schema } from '../src/db/client'
 import { newId, nowIso } from '../src/ids'
 import type { RawJob } from '../src/scout/adapters'
 import { parseRss } from '../src/scout/adapters'
-import { matchTitle, resolveAggregatorPostings } from '../src/scout/resolve'
+import { matchTitle, resolveAggregatorPostings, unresolvedAggregatorPostings } from '../src/scout/resolve'
 import { scan } from '../src/scout/scan'
 import { createApplication, getApplication } from '../src/services/applications'
 
@@ -110,6 +110,13 @@ describe('resolving aggregator listings', () => {
     expect(co.atsCheckedAt).toBeTruthy()
     expect(co.atsKind).toBeNull()
   })
+})
+
+test('finding what to resolve reads its own small index, not every aggregator posting', () => {
+  // Polled every few seconds over hundreds of thousands of postings: a scan here kept a core busy.
+  const q = unresolvedAggregatorPostings(['src_a', 'src_b'], 25).toSQL()
+  const plan = (db.$client.prepare(`explain query plan ${q.sql}`).all(...(q.params as never[])) as { detail: string }[]).map((r) => r.detail).join('\n')
+  expect(plan).toContain('postings_unresolved')
 })
 
 describe('only originals', () => {

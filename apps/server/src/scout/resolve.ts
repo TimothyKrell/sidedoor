@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm'
 import { Effect } from 'effect'
 import { ensureCompany } from '../companies'
 import { db, schema } from '../db/client'
@@ -303,19 +303,9 @@ export const resolvePosting = async (p: schema.Posting): Promise<ResolveOutcome>
   return apply(p, company, found)
 }
 
-/**
- * Resolve aggregator postings that made it past the title/location filter: pending ones first (so
- * triage reads the full JD), then tracked ones, then the rest by fit.
- */
-export const resolveAggregatorPostings = async (limit = 25) => {
-  const aggregatorSources = db
-    .select({ id: schema.sources.id })
-    .from(schema.sources)
-    .where(inArray(schema.sources.kind, [...AGGREGATOR_KINDS]))
-    .all()
-    .map((s) => s.id)
-  if (!aggregatorSources.length) return { resolved: 0, duplicate: 0, notFound: 0 }
-  const rows = db
+/** Aggregator listings still to match, most urgent first. Exported so a test can check it stays on its index. */
+export const unresolvedAggregatorPostings = (aggregatorSources: string[], limit: number) =>
+  db
     .select()
     .from(schema.postings)
     .where(
@@ -332,7 +322,20 @@ export const resolveAggregatorPostings = async (limit = 25) => {
       desc(schema.postings.fitScore),
     )
     .limit(limit)
+
+/**
+ * Resolve aggregator postings that made it past the title/location filter: pending ones first (so
+ * triage reads the full JD), then tracked ones, then the rest by fit.
+ */
+export const resolveAggregatorPostings = async (limit = 25) => {
+  const aggregatorSources = db
+    .select({ id: schema.sources.id })
+    .from(schema.sources)
+    .where(inArray(schema.sources.kind, [...AGGREGATOR_KINDS]))
     .all()
+    .map((s) => s.id)
+  if (!aggregatorSources.length) return { resolved: 0, duplicate: 0, notFound: 0 }
+  const rows = unresolvedAggregatorPostings(aggregatorSources, limit).all()
   boardJobs.clear()
   probed.clear()
   const counts = { resolved: 0, duplicate: 0, notFound: 0 }

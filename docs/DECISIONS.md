@@ -272,8 +272,11 @@ current when making a non-obvious call. Open questions for the maintainer live i
   seconds, the server sat near a full core, and each rewrite told open pages postings had changed,
   so they refetched. Now last-seen is refreshed once it's six hours old (closing waits for a day
   missing, so that's plenty), and postings are indexed by source and last-seen, and by decision for
-  the jobs page: the same pass costs 1.4 seconds. In the app, a window that isn't focused stops
-  polling and pauses its spinners; live changes still arrive, and focusing it refetches what's stale.
+  the jobs page: the same pass costs 1.4 seconds. A partial index holds just the aggregator listings
+  still to match to the company's own posting, which that loop looks for every ten seconds: a few
+  thousand rows instead of reading every aggregator posting (80 ms to under 1 ms a look). In the
+  app, a window that isn't focused stops polling and pauses its spinners; live changes still arrive,
+  and focusing it refetches what's stale.
 - **Two age limits.** A company's own board lists only what's open, and senior roles stay up for
   months. On one user's data, the 30-day limit was dropping about as many plausible open roles on
   company boards as the title filter's gaps. Company boards get `boardMaxAgeDays` (180); feeds keep

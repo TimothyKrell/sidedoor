@@ -136,6 +136,9 @@ export const postings = sqliteTable(
     index('postings_source_seen').on(t.sourceId, t.lastSeenAt),
     // The jobs page lists triaged postings (queue / maybe), a few thousand of hundreds of thousands.
     index('postings_decision').on(t.decision),
+    // Aggregator listings still to match to the company's own posting (scout/resolve.ts), polled every
+    // few seconds: a few thousand rows instead of every aggregator posting.
+    index('postings_unresolved').on(t.sourceId).where(sql`resolved_at is null and closed_at is null and triage_status <> 'skipped'`),
   ],
 )
 

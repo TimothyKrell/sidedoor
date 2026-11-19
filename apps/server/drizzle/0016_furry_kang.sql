@@ -1,0 +1,1 @@
+CREATE INDEX `postings_unresolved` ON `postings` (`source_id`) WHERE resolved_at is null and closed_at is null and triage_status <> 'skipped';
