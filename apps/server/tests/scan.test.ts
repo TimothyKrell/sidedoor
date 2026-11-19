@@ -149,6 +149,25 @@ describe('closing postings a board stopped listing', () => {
     expect(posting('workday:big.wd1/jobs:old-em')?.closedAt).toBeNull()
   })
 
+  test('a posting still listed is written again only once its last-seen is hours old, or to reopen it', async () => {
+    const id = source('src_seen', 'greenhouse', 'seen')
+    BOARDS.seen = [job('s1', 'Engineering Manager'), job('s2', 'Engineering Manager, Growth')]
+    await Effect.runPromise(scan({ sourceIds: [id] }))
+    const first = posting('greenhouse:seen:s1')!.lastSeenAt
+    // What tells open pages postings changed (live.ts): an unchanged list mustn't bump it.
+    const seq = () => (db.$client.prepare(`select seq from change_counters where tbl = 'postings'`).get() as { seq: number }).seq
+    const before = seq()
+    await Effect.runPromise(scan({ sourceIds: [id] }))
+    expect(posting('greenhouse:seen:s1')!.lastSeenAt).toBe(first)
+    expect(seq()).toBe(before)
+
+    db.update(schema.postings).set({ lastSeenAt: new Date(Date.now() - 7 * 3600_000).toISOString() }).where(eq(schema.postings.key, 'greenhouse:seen:s1')).run()
+    db.update(schema.postings).set({ closedAt: nowIso() }).where(eq(schema.postings.key, 'greenhouse:seen:s2')).run()
+    await Effect.runPromise(scan({ sourceIds: [id] }))
+    expect(Date.parse(posting('greenhouse:seen:s1')!.lastSeenAt)).toBeGreaterThan(Date.now() - 60_000)
+    expect(posting('greenhouse:seen:s2')?.closedAt).toBeNull()
+  })
+
   test('a feed never closes what rolled off it', async () => {
     const id = source('src_rollfeed', 'rss', 'https://roll.test/rss')
     BOARDS['https://roll.test/rss'] = [job('f1', 'Engineering Manager'), job('f2', 'Engineering Manager, Platform')]

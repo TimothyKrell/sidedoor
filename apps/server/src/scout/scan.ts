@@ -68,6 +68,13 @@ const passes = (h: string | null) => h === 'pass' || h === SWEPT
 /** Filter verdicts the scout gave, as opposed to "duplicate of …" from resolving. These get a second look. */
 const filteredOut = (h: string | null) => !!h && h.startsWith('fail:')
 
+/**
+ * How stale last-seen may get before a scan writes it again. Closing waits for a day missing, so a few
+ * hours is plenty, and most polls then write nothing for listings that are still up: rewriting each of
+ * a few hundred thousand rows every poll kept the CPU busy and told every open page postings changed.
+ */
+const SEEN_EVERY_MS = 6 * 3600_000
+
 /** Most descriptions read per source per scan; the rest are read on later polls. */
 const MAX_DETAILS = 60
 
@@ -99,16 +106,21 @@ const scanSource = (source: schema.Source, f: Filters, sweep = false) =>
     const isPortfolio = PORTFOLIO_KINDS.has(source.kind)
     const maxAge = isAggregator && !isPortfolio ? f.maxAgeDays : f.boardMaxAgeDays
     const keys = jobs.map((j) => `${source.kind}:${source.board}:${j.extId}`)
-    const known = new Map<string, { heuristic: string | null; recheck: boolean }>()
+    const known = new Map<string, { heuristic: string | null; recheck: boolean; seenLately: boolean }>()
+    const lately = new Date(Date.parse(started) - SEEN_EVERY_MS).toISOString()
     for (let i = 0; i < keys.length; i += 500) {
       const chunk = keys.slice(i, i + 500)
       for (const r of db
-        .select({ key: schema.postings.key, heuristic: schema.postings.heuristic, triageStatus: schema.postings.triageStatus, userStatus: schema.postings.userStatus, applicationId: schema.postings.applicationId })
+        .select({ key: schema.postings.key, heuristic: schema.postings.heuristic, triageStatus: schema.postings.triageStatus, userStatus: schema.postings.userStatus, applicationId: schema.postings.applicationId, lastSeenAt: schema.postings.lastSeenAt, closedAt: schema.postings.closedAt })
         .from(schema.postings)
         .where(inArray(schema.postings.key, chunk))
         .all())
-        // Dropped by the filters and untouched since: the filters may have changed, so it gets another look.
-        known.set(r.key, { heuristic: r.heuristic, recheck: r.triageStatus === 'skipped' && filteredOut(r.heuristic) && r.userStatus === 'new' && !r.applicationId })
+        known.set(r.key, {
+          heuristic: r.heuristic,
+          // Dropped by the filters and untouched since: the filters may have changed, so it gets another look.
+          recheck: r.triageStatus === 'skipped' && filteredOut(r.heuristic) && r.userStatus === 'new' && !r.applicationId,
+          seenLately: r.closedAt === null && r.lastSeenAt >= lately,
+        })
     }
     const verdictOf = (j: RawJob) => {
       const h = heuristic(j, f, maxAge)
@@ -165,7 +177,7 @@ const scanSource = (source: schema.Source, f: Filters, sweep = false) =>
             revived++
             tx.update(schema.postings).set({ ...seen, heuristic: h, triageStatus: 'pending', jd: j.jd.slice(0, 40_000), location: j.location || null }).where(eq(schema.postings.key, key)).run()
           } else if (h && !passes(h) && h !== k.heuristic) tx.update(schema.postings).set({ ...seen, heuristic: h }).where(eq(schema.postings.key, key)).run()
-          else tx.update(schema.postings).set(seen).where(eq(schema.postings.key, key)).run()
+          else if (!k.seenLately) tx.update(schema.postings).set(seen).where(eq(schema.postings.key, key)).run()
           continue
         }
         if (j.url && resolved.has(j.url)) continue

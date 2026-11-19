@@ -150,6 +150,12 @@
   body {
     font-feature-settings: "cv11", "ss01";
   }
+  /* In the background (main.tsx) spinners and pulses hold still instead of repainting every frame. */
+  html[data-background] *,
+  html[data-background] *::before,
+  html[data-background] *::after {
+    animation-play-state: paused !important;
+  }
 }
 
 /* Markdown rendered from agents / packages. */

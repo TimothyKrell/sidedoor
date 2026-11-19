@@ -266,6 +266,14 @@ current when making a non-obvious call. Open questions for the maintainer live i
   the current filters again over the board's still-listed postings that the filters dropped and
   nobody touched; the ones that pass now go to triage with the description from that read. It's a
   regex per listed posting, cheap next to the fetch.
+- **A scan writes only what changed.** Every scan used to rewrite last-seen on every posting its
+  source still listed, and the close-what-went-missing step read the whole postings table once per
+  source. On one user's data (305k postings, 1,446 sources) a full pass of polls cost about 226 CPU
+  seconds, the server sat near a full core, and each rewrite told open pages postings had changed,
+  so they refetched. Now last-seen is refreshed once it's six hours old (closing waits for a day
+  missing, so that's plenty), and postings are indexed by source and last-seen, and by decision for
+  the jobs page: the same pass costs 1.4 seconds. In the app, a window that isn't focused stops
+  polling and pauses its spinners; live changes still arrive, and focusing it refetches what's stale.
 - **Two age limits.** A company's own board lists only what's open, and senior roles stay up for
   months. On one user's data, the 30-day limit was dropping about as many plausible open roles on
   company boards as the title filter's gaps. Company boards get `boardMaxAgeDays` (180); feeds keep

@@ -132,6 +132,10 @@ export const postings = sqliteTable(
     index('postings_first_seen').on(t.firstSeenAt),
     index('postings_triage').on(t.triageStatus),
     index('postings_company').on(t.companyId),
+    // A scan closes what its source stopped listing; without this every source's scan read the whole table.
+    index('postings_source_seen').on(t.sourceId, t.lastSeenAt),
+    // The jobs page lists triaged postings (queue / maybe), a few thousand of hundreds of thousands.
+    index('postings_decision').on(t.decision),
   ],
 )
 
